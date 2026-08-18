@@ -3,7 +3,9 @@ import { z } from "zod";
 import {
   COMPANY_INDUSTRIES,
   COMPANY_INDUSTRY_IDS,
+  STOCK_TUNING,
   computeCompanyHourlyRates,
+  computeTargetSharePrice,
   type CompanyIndustryId,
 } from "@dominion/shared";
 import { prisma } from "../db.js";
@@ -24,6 +26,8 @@ companiesRouter.get("/", async (_req, res) => {
       workersAssigned: c.workersAssigned,
       cash: Math.round(c.cash),
       foundedAt: c.foundedAt,
+      isPublic: c.isPublic,
+      sharePrice: c.sharePrice,
     })),
   });
 });
@@ -48,6 +52,9 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
         totalExpenses: c.totalExpenses,
         foundedAt: c.foundedAt,
         rates: computeCompanyHourlyRates(industry, c.workersAssigned),
+        isPublic: c.isPublic,
+        sharePrice: c.sharePrice,
+        sharesOutstanding: c.sharesOutstanding,
       };
     }),
   });
@@ -226,4 +233,39 @@ companiesRouter.post("/:id/withdraw", async (req: AuthedRequest, res) => {
   ]);
 
   res.json({ ok: true });
+});
+
+companiesRouter.post("/:id/ipo", async (req: AuthedRequest, res) => {
+  const company = await loadOwnedCompany(req.params.id, req.playerId!);
+  if (!company) {
+    res.status(404).json({ error: "Company not found" });
+    return;
+  }
+  if (company.isPublic) {
+    res.status(400).json({ error: "Already public" });
+    return;
+  }
+
+  const profit = company.totalRevenue - company.totalExpenses;
+  if (profit < STOCK_TUNING.minProfitToIPO) {
+    res.status(400).json({
+      error: `Needs at least ${STOCK_TUNING.minProfitToIPO} gold of lifetime profit to IPO (currently ${profit.toFixed(0)})`,
+    });
+    return;
+  }
+
+  const sharesOutstanding = STOCK_TUNING.sharesOutstandingAtIPO;
+  const sharePrice = computeTargetSharePrice({ ...company, sharesOutstanding });
+
+  await prisma.$transaction([
+    prisma.company.update({
+      where: { id: company.id },
+      data: { isPublic: true, sharesOutstanding, sharePrice, ipoAt: new Date() },
+    }),
+    prisma.shareholding.create({
+      data: { companyId: company.id, playerId: req.playerId!, shares: sharesOutstanding },
+    }),
+  ]);
+
+  res.status(201).json({ ok: true, sharePrice, sharesOutstanding });
 });

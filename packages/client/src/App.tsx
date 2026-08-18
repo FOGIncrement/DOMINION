@@ -7,6 +7,7 @@ import Login from "./pages/Login.js";
 import Dashboard from "./pages/Dashboard.js";
 import Companies from "./pages/Companies.js";
 import Market from "./pages/Market.js";
+import StockMarket from "./pages/StockMarket.js";
 import World from "./pages/World.js";
 import News from "./pages/News.js";
 
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/companies" element={<Companies />} />
         <Route path="/market" element={<Market />} />
+        <Route path="/stocks" element={<StockMarket />} />
         <Route path="/world" element={<World />} />
         <Route path="/news" element={<News />} />
         <Route path="*" element={<Navigate to="/" replace />} />

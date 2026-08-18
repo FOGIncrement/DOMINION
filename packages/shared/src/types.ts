@@ -34,6 +34,9 @@ export type MarketSide = (typeof MARKET_SIDES)[number];
 export const COMPANY_INDUSTRY_IDS = ["bakery", "sawmill", "stoneworks"] as const;
 export type CompanyIndustryId = (typeof COMPANY_INDUSTRY_IDS)[number];
 
+export const INVESTOR_ARCHETYPES = ["conservative", "growth", "speculator"] as const;
+export type InvestorArchetype = (typeof INVESTOR_ARCHETYPES)[number];
+
 export const EVENT_TYPE_IDS = [
   "bountiful_harvest",
   "harsh_storm",

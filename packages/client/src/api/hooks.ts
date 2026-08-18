@@ -34,3 +34,20 @@ export function useMyCompanies() {
 export function useAllCompanies() {
   return useQuery({ queryKey: ["allCompanies"], queryFn: api.allCompanies, refetchInterval: POLL_MS });
 }
+
+export function useStocks() {
+  return useQuery({ queryKey: ["stocks"], queryFn: api.stocks, refetchInterval: POLL_MS });
+}
+
+export function useStockDetail(companyId: string | null) {
+  return useQuery({
+    queryKey: ["stockDetail", companyId],
+    queryFn: () => api.stockDetail(companyId!),
+    enabled: !!companyId,
+    refetchInterval: POLL_MS,
+  });
+}
+
+export function usePortfolio() {
+  return useQuery({ queryKey: ["portfolio"], queryFn: api.portfolio, refetchInterval: POLL_MS });
+}

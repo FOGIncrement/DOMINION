@@ -73,6 +73,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ amount }),
     }),
+  ipoCompany: (companyId: string) =>
+    request<{ ok: true; sharePrice: number; sharesOutstanding: number }>(`/companies/${companyId}/ipo`, {
+      method: "POST",
+    }),
+
+  stocks: () => request<{ stocks: StockSummary[] }>("/stocks"),
+  stockDetail: (companyId: string) => request<StockDetail>(`/stocks/${companyId}`),
+  portfolio: () => request<{ holdings: PortfolioHolding[] }>("/stocks/me/portfolio"),
+  tradeStock: (companyId: string, side: "buy" | "sell", shares: number) =>
+    request<{ ok: true; newPrice: number; proceeds?: number; cost?: number }>(`/stocks/${companyId}/trade`, {
+      method: "POST",
+      body: JSON.stringify({ side, shares }),
+    }),
 };
 
 export interface OfflineSummary {
@@ -149,6 +162,9 @@ export interface MyCompany {
   totalExpenses: number;
   foundedAt: string;
   rates: { inputPerHour: number; goodsPerHour: number; wagePerHour: number };
+  isPublic: boolean;
+  sharePrice: number;
+  sharesOutstanding: number;
 }
 
 export interface PublicCompany {
@@ -160,4 +176,42 @@ export interface PublicCompany {
   workersAssigned: number;
   cash: number;
   foundedAt: string;
+  isPublic: boolean;
+  sharePrice: number;
+}
+
+export interface StockSummary {
+  id: string;
+  name: string;
+  industry: string;
+  sharePrice: number;
+  sharesOutstanding: number;
+  marketCap: number;
+  isPlayerOwned: boolean;
+  profitRatePerHour: number;
+}
+
+export interface StockDetail {
+  id: string;
+  name: string;
+  industry: string;
+  cash: number;
+  sharePrice: number;
+  sharesOutstanding: number;
+  marketCap: number;
+  totalRevenue: number;
+  totalExpenses: number;
+  profitRatePerHour: number;
+  workersAssigned: number;
+  ipoAt: string | null;
+  history: { price: number; recordedAt: string }[];
+  topShareholders: { name: string; isPlayer: boolean; shares: number; percent: number }[];
+}
+
+export interface PortfolioHolding {
+  companyId: string;
+  companyName: string;
+  shares: number;
+  sharePrice: number;
+  value: number;
 }

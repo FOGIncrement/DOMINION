@@ -12,15 +12,18 @@ export interface MutableCompanyState {
 /**
  * NPC-owned companies auto-trade every tick: top up input stock when low,
  * sell off goods held above a working buffer. Directly parallel to
- * settleNpcSurplus for NPC settlements.
+ * settleNpcSurplus for NPC settlements. Returns revenue earned this tick so
+ * the caller can credit totalRevenue — without this, NPC company P&L (and
+ * therefore stock valuation) never reflects their actual goods sales.
  */
 export async function settleNpcCompanyTrading(
   company: CompanySnapshot,
   state: MutableCompanyState,
   prices: Record<TradeableResource, number>,
-): Promise<void> {
+): Promise<number> {
   const industry = COMPANY_INDUSTRIES[company.industry];
   const inputPrice = prices[industry.inputResource];
+  let revenue = 0;
 
   if (state.inputStock < NPC_COMPANY_TUNING.inputBuffer && state.cash > 0) {
     const need = NPC_COMPANY_TUNING.inputBuffer - state.inputStock;
@@ -36,9 +39,12 @@ export async function settleNpcCompanyTrading(
   if (state.goodsStock > NPC_COMPANY_TUNING.goodsSellBuffer) {
     const excess = state.goodsStock - NPC_COMPANY_TUNING.goodsSellBuffer;
     state.goodsStock -= excess;
-    state.cash += excess * prices.goods;
+    revenue = excess * prices.goods;
+    state.cash += revenue;
     await applyTradeImpact("goods", "sell", excess);
   }
+
+  return revenue;
 }
 
 /** Small chance for a cash-rich NPC company to hire another worker, mirroring maybeExpand for settlements. */

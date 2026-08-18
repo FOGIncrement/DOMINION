@@ -255,6 +255,33 @@ export const NPC_COMPANY_TUNING = {
   hireChancePerTick: 0.05,
 };
 
+// Share price is a simple, deliberately-not-random valuation: a "P/E"-like
+// multiple of lifetime-average hourly profit, plus a book-value (cash per
+// share) component, drifting toward that target with a bounded step per
+// tick — same idiom as commodity price formation in market.ts.
+export const STOCK_TUNING = {
+  sharesOutstandingAtIPO: 100,
+  profitMultiplier: 40,
+  bookValueWeight: 0.3,
+  maxPriceStepPerTick: 0.05,
+  minSharePrice: 0.1,
+  tradeImpact: 0.002, // fractional price move per share traded — bigger than commodity tradeImpact since share counts are small
+  minProfitToIPO: 20, // lifetime profit (gold) required before a company can list
+};
+
+export const DIVIDEND_TUNING = {
+  cashThreshold: 150, // company needs at least this much cash to be considered for a payout
+  payoutFraction: 0.15, // fraction of cash paid out, split pro-rata across shareholders
+  chancePerTick: 0.03,
+};
+
+export const NPC_INVESTOR_TUNING = {
+  actChancePerTick: 0.08,
+  buySpendFraction: 0.2, // fraction of available cash committed to a single buy decision
+  sellFraction: 0.3, // fraction of held shares sold on a sell decision
+  minCashToAct: 20,
+};
+
 export const RESOURCE_LABELS: Record<ResourceType, string> = {
   food: "Food",
   wood: "Wood",

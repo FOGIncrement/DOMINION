@@ -21,6 +21,7 @@ model Player {
 
   settlement Settlement?
   companies  Company[]
+  shareholdings Shareholding[]
 }
 
 model Settlement {
@@ -106,23 +107,63 @@ model MarketTrade {
 }
 
 model Company {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   ownerId         String?
-  owner           Player?  @relation(fields: [ownerId], references: [id])
+  owner           Player?   @relation(fields: [ownerId], references: [id])
   name            String
   industry        String // "bakery" | "sawmill" | "stoneworks"
   cash            Float
-  inputStock      Float    @default(0)
-  goodsStock      Float    @default(0)
-  workersAssigned Int      @default(0)
-  totalRevenue    Float    @default(0)
-  totalExpenses   Float    @default(0)
-  lastTickAt      DateTime @default(now())
-  foundedAt       DateTime @default(now())
+  inputStock      Float     @default(0)
+  goodsStock      Float     @default(0)
+  workersAssigned Int       @default(0)
+  totalRevenue    Float     @default(0)
+  totalExpenses   Float     @default(0)
+  lastTickAt      DateTime  @default(now())
+  foundedAt       DateTime  @default(now())
 
-  trades MarketTrade[]
+  isPublic        Boolean   @default(false)
+  sharesOutstanding Float   @default(0)
+  sharePrice      Float     @default(0)
+  ipoAt           DateTime?
+
+  trades        MarketTrade[]
+  shareholdings Shareholding[]
+  priceHistory  SharePriceHistoryPoint[]
 
   @@index([ownerId])
+}
+
+model NpcInvestor {
+  id        String   @id @default(cuid())
+  name      String
+  archetype String // "conservative" | "growth" | "speculator"
+  cash      Float
+
+  shareholdings Shareholding[]
+}
+
+model Shareholding {
+  id            String       @id @default(cuid())
+  companyId     String
+  company       Company      @relation(fields: [companyId], references: [id])
+  playerId      String?
+  player        Player?      @relation(fields: [playerId], references: [id])
+  npcInvestorId String?
+  npcInvestor   NpcInvestor? @relation(fields: [npcInvestorId], references: [id])
+  shares        Float
+
+  @@unique([companyId, playerId])
+  @@unique([companyId, npcInvestorId])
+}
+
+model SharePriceHistoryPoint {
+  id         String   @id @default(cuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id])
+  price      Float
+  recordedAt DateTime @default(now())
+
+  @@index([companyId, recordedAt])
 }
 
 model Event {

@@ -3,6 +3,7 @@ import {
   COMPANY_INDUSTRIES,
   MAX_CATCHUP_HOURS,
   WORLD_DEMAND_TUNING,
+  computeTargetSharePrice,
   type BuildingTypeId,
   type CompanyIndustryId,
 } from "@dominion/shared";
@@ -13,7 +14,9 @@ import { maybeRollEvent } from "./events.js";
 import { ensureMarketSeeded, TRADEABLE_RESOURCES, tickMarket, type TradeableResource } from "./market.js";
 import { maybeExpand, settleNpcSurplus, type MutableResources } from "./npcEconomy.js";
 import { maybeHire, settleNpcCompanyTrading, type MutableCompanyState } from "./npcCompanyEconomy.js";
+import { runNpcInvestorTick, type PublicCompanyForInvesting } from "./npcInvestors.js";
 import { computeProduction } from "./production.js";
+import { driftSharePrice, maybeDividend } from "./stocks.js";
 import type { CompanySnapshot, SettlementSnapshot } from "./types.js";
 
 async function loadSnapshots(): Promise<SettlementSnapshot[]> {
@@ -159,8 +162,9 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
       goodsStock: result.goodsStock,
     };
 
+    let revenue = 0;
     if (!company.ownerId) {
-      await settleNpcCompanyTrading(company, state, prices);
+      revenue = await settleNpcCompanyTrading(company, state, prices);
       await maybeHire(company, state);
     }
 
@@ -172,8 +176,40 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
         goodsStock: state.goodsStock,
         lastTickAt: now,
         totalExpenses: { increment: result.wagesPaid },
+        totalRevenue: { increment: revenue },
       },
     });
+  }
+
+  // Public companies: revalue shares off this tick's fundamentals, then let
+  // NPC investors react. Runs after the loop above so totalRevenue/cash
+  // already reflect anything that happened this tick.
+  const publicCompanies = await prisma.company.findMany({ where: { isPublic: true } });
+  const investingSnapshot: PublicCompanyForInvesting[] = [];
+
+  for (const company of publicCompanies) {
+    const targetPrice = computeTargetSharePrice(company, now);
+    const newPrice = driftSharePrice(company.sharePrice, targetPrice);
+
+    await prisma.company.update({ where: { id: company.id }, data: { sharePrice: newPrice } });
+    await prisma.sharePriceHistoryPoint.create({ data: { companyId: company.id, price: newPrice } });
+
+    investingSnapshot.push({
+      id: company.id,
+      cash: company.cash,
+      sharePrice: newPrice,
+      priceDeltaThisTick: newPrice - company.sharePrice,
+      sharesOutstanding: company.sharesOutstanding,
+      totalRevenue: company.totalRevenue,
+      totalExpenses: company.totalExpenses,
+      foundedAt: company.foundedAt,
+    });
+  }
+
+  await runNpcInvestorTick(investingSnapshot);
+
+  for (const company of publicCompanies) {
+    await maybeDividend(company);
   }
 
   await tickMarket(flows);

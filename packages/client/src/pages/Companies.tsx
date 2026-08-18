@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { COMPANY_INDUSTRIES, RESOURCE_LABELS, type CompanyIndustryId, type ResourceType } from "@dominion/shared";
+import { COMPANY_INDUSTRIES, RESOURCE_LABELS, STOCK_TUNING, type CompanyIndustryId, type ResourceType } from "@dominion/shared";
 import { api, ApiError, type MyCompany } from "../api/client.js";
 import { useAllCompanies, useGameState, useMyCompanies } from "../api/hooks.js";
 
@@ -55,7 +55,18 @@ function CompanyCard({ company }: { company: MyCompany }) {
     onError: (err) => setError(err instanceof ApiError ? err.message : "Withdraw failed"),
   });
 
+  const ipo = useMutation({
+    mutationFn: () => api.ipoCompany(company.id),
+    onSuccess: (res) => {
+      setError(null);
+      setMessage(`Went public at ${res.sharePrice.toFixed(2)}g/share (${res.sharesOutstanding} shares).`);
+      invalidate();
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "IPO failed"),
+  });
+
   const netProfit = company.totalRevenue - company.totalExpenses;
+  const canIpo = netProfit >= STOCK_TUNING.minProfitToIPO;
 
   return (
     <div className="company-card">
@@ -63,6 +74,18 @@ function CompanyCard({ company }: { company: MyCompany }) {
         <span className="building-card__name">{company.name}</span>
         <span className="archetype-tag">{industry.name}</span>
       </div>
+
+      {company.isPublic ? (
+        <div className="suggestion" style={{ padding: "4px 0" }}>
+          Public · {company.sharePrice.toFixed(2)}g/share · {company.sharesOutstanding} shares
+        </div>
+      ) : (
+        <div className="trade-row" style={{ margin: "4px 0" }}>
+          <button className="btn" disabled={!canIpo || ipo.isPending} onClick={() => ipo.mutate()}>
+            {canIpo ? "Take Public (IPO)" : `Needs ${STOCK_TUNING.minProfitToIPO}g lifetime profit to IPO`}
+          </button>
+        </div>
+      )}
 
       <div className="company-card__stats">
         <div>
@@ -228,6 +251,7 @@ export default function Companies() {
                 <th>Owner</th>
                 <th>Employees</th>
                 <th>Cash</th>
+                <th>Stock</th>
                 <th>Founded</th>
               </tr>
             </thead>
@@ -241,6 +265,7 @@ export default function Companies() {
                   <td>{c.isPlayerOwned ? "Player" : "NPC"}</td>
                   <td>{c.workersAssigned}</td>
                   <td>{c.cash.toLocaleString()}</td>
+                  <td>{c.isPublic ? `${c.sharePrice.toFixed(2)}g` : "Private"}</td>
                   <td>{new Date(c.foundedAt).toLocaleDateString()}</td>
                 </tr>
               ))}

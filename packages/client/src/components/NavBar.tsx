@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 
-const LOCKED = ["Stock Market", "Banking", "Government", "Diplomacy"];
+const LOCKED = ["Banking", "Government", "Diplomacy"];
 
 export default function NavBar() {
   return (
@@ -10,6 +10,9 @@ export default function NavBar() {
       </NavLink>
       <NavLink to="/companies" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
         Companies
+      </NavLink>
+      <NavLink to="/stocks" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+        Stock Market
       </NavLink>
       <NavLink to="/market" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
         Market
