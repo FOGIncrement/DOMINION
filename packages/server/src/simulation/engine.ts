@@ -239,6 +239,9 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
 
     investingSnapshot.push({
       id: company.id,
+      name: company.name,
+      ownerId: company.ownerId,
+      isPublic: true,
       cash: company.cash,
       sharePrice: newPrice,
       priceDeltaThisTick: newPrice - company.sharePrice,

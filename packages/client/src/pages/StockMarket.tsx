@@ -78,6 +78,13 @@ function StockDetailPanel({ companyId }: { companyId: string }) {
           <div className="stat-tile__value">{stock.cash.toFixed(0)}g</div>
           <div className="stat-tile__delta">{stock.workersAssigned} employees</div>
         </div>
+        <div className="stat-tile">
+          <div className="stat-tile__label">Controlling shareholder</div>
+          <div className="stat-tile__value" style={{ fontSize: 18 }}>
+            {stock.controllerLabel}
+          </div>
+          <div className="stat-tile__delta">Majority (&gt;50%) control changes hands automatically</div>
+        </div>
       </div>
 
       <div className="card">

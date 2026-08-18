@@ -11,6 +11,7 @@ import {
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
 import { applyTradeImpact } from "../simulation/market.js";
+import { getControllerLabel, getControllingPlayerId } from "../simulation/control.js";
 
 export const companiesRouter = Router();
 
@@ -35,10 +36,28 @@ companiesRouter.get("/", async (_req, res) => {
 companiesRouter.use(requireAuth);
 
 companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
-  const companies = await prisma.company.findMany({ where: { ownerId: req.playerId! } });
-  res.json({
-    companies: companies.map((c) => {
+  const playerId = req.playerId!;
+
+  // "Mine" means founder OR controller — a company acquired by buying a
+  // majority stake belongs here just as much as one you founded, and a
+  // founder who's lost control still needs to see that it happened.
+  const majorityHeld = await prisma.shareholding.findMany({
+    where: { playerId, shares: { gt: 0 } },
+    include: { company: true },
+  });
+  const acquiredIds = majorityHeld
+    .filter((h) => h.company.isPublic && h.shares > h.company.sharesOutstanding * 0.5)
+    .map((h) => h.companyId);
+
+  const companies = await prisma.company.findMany({
+    where: { OR: [{ ownerId: playerId }, { id: { in: acquiredIds } }] },
+  });
+
+  const withControl = await Promise.all(
+    companies.map(async (c) => {
       const industry = COMPANY_INDUSTRIES[c.industry as CompanyIndustryId];
+      const controllerId = await getControllingPlayerId(c);
+      const controlledByMe = controllerId === playerId;
       return {
         id: c.id,
         name: c.name,
@@ -55,9 +74,14 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
         isPublic: c.isPublic,
         sharePrice: c.sharePrice,
         sharesOutstanding: c.sharesOutstanding,
+        isFounder: c.ownerId === playerId,
+        controlledByMe,
+        controllerLabel: controlledByMe ? "You" : await getControllerLabel(c),
       };
     }),
-  });
+  );
+
+  res.json({ companies: withControl });
 });
 
 const foundSchema = z.object({
@@ -102,10 +126,24 @@ companiesRouter.post("/", async (req: AuthedRequest, res) => {
   res.status(201).json({ ok: true, companyId: company.id });
 });
 
-async function loadOwnedCompany(id: string, playerId: string) {
+/**
+ * Distinguishes "doesn't exist" (404) from "exists but you don't control
+ * it" (403) — the latter matters now that companies are visibly listed
+ * publicly and can change hands without the requester's involvement.
+ */
+async function loadControlledCompany(id: string, playerId: string) {
   const company = await prisma.company.findUnique({ where: { id } });
-  if (!company || company.ownerId !== playerId) return null;
-  return company;
+  if (!company) return { company: null, controlled: false } as const;
+  const controllerId = await getControllingPlayerId(company);
+  return { company, controlled: controllerId === playerId } as const;
+}
+
+function respondNotControlled(res: import("express").Response, company: unknown) {
+  if (!company) {
+    res.status(404).json({ error: "Company not found" });
+  } else {
+    res.status(403).json({ error: "You don't control this company" });
+  }
 }
 
 const workersSchema = z.object({ workersAssigned: z.number().int().min(0) });
@@ -117,9 +155,9 @@ companiesRouter.post("/:id/workers", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const company = await loadOwnedCompany(req.params.id, req.playerId!);
-  if (!company) {
-    res.status(404).json({ error: "Company not found" });
+  const { company, controlled } = await loadControlledCompany(req.params.id, req.playerId!);
+  if (!company || !controlled) {
+    respondNotControlled(res, company);
     return;
   }
 
@@ -139,9 +177,9 @@ companiesRouter.post("/:id/trade", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const company = await loadOwnedCompany(req.params.id, req.playerId!);
-  if (!company) {
-    res.status(404).json({ error: "Company not found" });
+  const { company, controlled } = await loadControlledCompany(req.params.id, req.playerId!);
+  if (!company || !controlled) {
+    respondNotControlled(res, company);
     return;
   }
 
@@ -221,9 +259,9 @@ companiesRouter.post("/:id/withdraw", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const company = await loadOwnedCompany(req.params.id, req.playerId!);
-  if (!company) {
-    res.status(404).json({ error: "Company not found" });
+  const { company, controlled } = await loadControlledCompany(req.params.id, req.playerId!);
+  if (!company || !controlled) {
+    respondNotControlled(res, company);
     return;
   }
   if (company.cash < parsed.data.amount) {
@@ -246,9 +284,9 @@ companiesRouter.post("/:id/withdraw", async (req: AuthedRequest, res) => {
 });
 
 companiesRouter.post("/:id/ipo", async (req: AuthedRequest, res) => {
-  const company = await loadOwnedCompany(req.params.id, req.playerId!);
-  if (!company) {
-    res.status(404).json({ error: "Company not found" });
+  const { company, controlled } = await loadControlledCompany(req.params.id, req.playerId!);
+  if (!company || !controlled) {
+    respondNotControlled(res, company);
     return;
   }
   if (company.isPublic) {

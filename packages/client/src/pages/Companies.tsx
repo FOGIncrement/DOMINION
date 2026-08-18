@@ -69,25 +69,29 @@ function CompanyCard({ company }: { company: MyCompany }) {
 
   const netProfit = company.totalRevenue - company.totalExpenses;
   const canIpo = netProfit >= STOCK_TUNING.minProfitToIPO;
+  const { controlledByMe } = company;
 
   return (
     <div className="company-card">
       <div className="building-card__head">
         <span className="building-card__name">{company.name}</span>
         <span className="archetype-tag">{industry.name}</span>
+        <span className={`controller-tag ${controlledByMe ? "controller-tag--me" : "controller-tag--other"}`}>
+          {controlledByMe ? "Controlled by you" : `Controlled by ${company.controllerLabel}`}
+        </span>
       </div>
 
       {company.isPublic ? (
         <div className="suggestion" style={{ padding: "4px 0" }}>
           Public · {company.sharePrice.toFixed(2)}g/share · {company.sharesOutstanding} shares
         </div>
-      ) : (
+      ) : controlledByMe ? (
         <div className="trade-row" style={{ margin: "4px 0" }}>
           <button className="btn" disabled={!canIpo || ipo.isPending} onClick={() => ipo.mutate()}>
             {canIpo ? "Take Public (IPO)" : `Needs ${STOCK_TUNING.minProfitToIPO}g lifetime profit to IPO`}
           </button>
         </div>
-      )}
+      ) : null}
 
       <div className="company-card__stats">
         <div>
@@ -110,57 +114,69 @@ function CompanyCard({ company }: { company: MyCompany }) {
         </div>
       </div>
 
-      <div className="worker-row">
-        <button disabled={company.workersAssigned <= 0} onClick={() => setWorkers.mutate(company.workersAssigned - 1)}>
-          −
-        </button>
-        <span>
-          {company.workersAssigned} / {company.maxWorkers} workers
-        </span>
-        <button
-          disabled={company.workersAssigned >= company.maxWorkers}
-          onClick={() => setWorkers.mutate(company.workersAssigned + 1)}
-        >
-          +
-        </button>
-      </div>
-
       <div className="building-card__rate">
         Producing {company.rates.goodsPerHour.toFixed(1)} goods/hr from{" "}
         {company.rates.inputPerHour.toFixed(1)} {industry.inputResource}/hr, wages {company.rates.wagePerHour.toFixed(1)}
         g/hr
       </div>
 
-      {error && <div className="auth-error">{error}</div>}
-      {message && !error && (
-        <div className="suggestion" style={{ padding: "6px 0" }}>
-          {message}
+      {controlledByMe ? (
+        <>
+          <div className="worker-row">
+            <button
+              disabled={company.workersAssigned <= 0}
+              onClick={() => setWorkers.mutate(company.workersAssigned - 1)}
+            >
+              −
+            </button>
+            <span>
+              {company.workersAssigned} / {company.maxWorkers} workers
+            </span>
+            <button
+              disabled={company.workersAssigned >= company.maxWorkers}
+              onClick={() => setWorkers.mutate(company.workersAssigned + 1)}
+            >
+              +
+            </button>
+          </div>
+
+          {error && <div className="auth-error">{error}</div>}
+          {message && !error && (
+            <div className="suggestion" style={{ padding: "6px 0" }}>
+              {message}
+            </div>
+          )}
+
+          <div className="trade-row">
+            <input type="number" min={1} value={buyQty} onChange={(e) => setBuyQty(Math.max(1, Number(e.target.value)))} />
+            <button className="btn" disabled={buy.isPending} onClick={() => buy.mutate()}>
+              Buy {industry.inputResource}
+            </button>
+          </div>
+          <div className="trade-row">
+            <input type="number" min={1} value={sellQty} onChange={(e) => setSellQty(Math.max(1, Number(e.target.value)))} />
+            <button className="btn" disabled={sell.isPending} onClick={() => sell.mutate()}>
+              Sell goods
+            </button>
+          </div>
+          <div className="trade-row">
+            <input
+              type="number"
+              min={1}
+              value={withdrawAmt}
+              onChange={(e) => setWithdrawAmt(Math.max(1, Number(e.target.value)))}
+            />
+            <button className="btn btn--accent" disabled={withdraw.isPending} onClick={() => withdraw.mutate()}>
+              Withdraw to settlement
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="locked-banner">
+          Controlled by {company.controllerLabel} — you no longer manage this company.
+          {company.isPublic && " Buy back a majority stake on the Stock Market to reclaim it."}
         </div>
       )}
-
-      <div className="trade-row">
-        <input type="number" min={1} value={buyQty} onChange={(e) => setBuyQty(Math.max(1, Number(e.target.value)))} />
-        <button className="btn" disabled={buy.isPending} onClick={() => buy.mutate()}>
-          Buy {industry.inputResource}
-        </button>
-      </div>
-      <div className="trade-row">
-        <input type="number" min={1} value={sellQty} onChange={(e) => setSellQty(Math.max(1, Number(e.target.value)))} />
-        <button className="btn" disabled={sell.isPending} onClick={() => sell.mutate()}>
-          Sell goods
-        </button>
-      </div>
-      <div className="trade-row">
-        <input
-          type="number"
-          min={1}
-          value={withdrawAmt}
-          onChange={(e) => setWithdrawAmt(Math.max(1, Number(e.target.value)))}
-        />
-        <button className="btn btn--accent" disabled={withdraw.isPending} onClick={() => withdraw.mutate()}>
-          Withdraw to settlement
-        </button>
-      </div>
     </div>
   );
 }

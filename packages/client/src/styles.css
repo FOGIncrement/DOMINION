@@ -469,6 +469,32 @@ a {
   border: 1px solid var(--border);
 }
 
+.controller-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid;
+}
+
+.controller-tag--me {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.controller-tag--other {
+  color: var(--critical);
+  border-color: var(--critical);
+}
+
+.locked-banner {
+  font-size: 13px;
+  color: var(--critical);
+  border: 1px solid var(--critical);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 10px 0;
+}
+
 /* --- News --- */
 
 .news-item {

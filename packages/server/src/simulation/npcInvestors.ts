@@ -1,9 +1,13 @@
 import { NPC_INVESTOR_TUNING, computeProfitRatePerHour } from "@dominion/shared";
 import { prisma } from "../db.js";
+import { announceControlChangeIfAny, getControllingPlayerId } from "./control.js";
 import { applyShareTradeImpact, availableShareFloat } from "./stocks.js";
 
 export interface PublicCompanyForInvesting {
   id: string;
+  name: string;
+  ownerId: string | null;
+  isPublic: true;
   cash: number;
   sharePrice: number;
   priceDeltaThisTick: number; // for speculator momentum — avoids a history query per company
@@ -32,6 +36,8 @@ async function buyShares(investor: InvestorLike, company: PublicCompanyForInvest
   if (float < 0.01) return;
   const shares = Math.min(budget / company.sharePrice, float);
 
+  const beforeControllerId = await getControllingPlayerId(company);
+
   const existing = await investorHolding(investor.id, company.id);
   if (existing) {
     await prisma.shareholding.update({ where: { id: existing.id }, data: { shares: existing.shares + shares } });
@@ -40,6 +46,7 @@ async function buyShares(investor: InvestorLike, company: PublicCompanyForInvest
   }
   await prisma.npcInvestor.update({ where: { id: investor.id }, data: { cash: { decrement: budget } } });
   await applyShareTradeImpact(company.id, "buy", shares, company.sharePrice);
+  await announceControlChangeIfAny(company, beforeControllerId);
 }
 
 async function sellShares(investorId: string, company: PublicCompanyForInvesting): Promise<void> {
@@ -48,9 +55,12 @@ async function sellShares(investorId: string, company: PublicCompanyForInvesting
   const sharesToSell = holding.shares * NPC_INVESTOR_TUNING.sellFraction;
   const proceeds = sharesToSell * company.sharePrice;
 
+  const beforeControllerId = await getControllingPlayerId(company);
+
   await prisma.shareholding.update({ where: { id: holding.id }, data: { shares: holding.shares - sharesToSell } });
   await prisma.npcInvestor.update({ where: { id: investorId }, data: { cash: { increment: proceeds } } });
   await applyShareTradeImpact(company.id, "sell", sharesToSell, company.sharePrice);
+  await announceControlChangeIfAny(company, beforeControllerId);
 }
 
 /** Buys the company with the biggest cash reserves among the non-loss-making ones; rarely sells. */

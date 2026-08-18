@@ -198,6 +198,9 @@ export interface MyCompany {
   isPublic: boolean;
   sharePrice: number;
   sharesOutstanding: number;
+  isFounder: boolean;
+  controlledByMe: boolean;
+  controllerLabel: string;
 }
 
 export interface PublicCompany {
@@ -237,6 +240,7 @@ export interface StockDetail {
   profitRatePerHour: number;
   workersAssigned: number;
   ipoAt: string | null;
+  controllerLabel: string;
   history: { price: number; recordedAt: string }[];
   topShareholders: { name: string; isPlayer: boolean; shares: number; percent: number }[];
 }

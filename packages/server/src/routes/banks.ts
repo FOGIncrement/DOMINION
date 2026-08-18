@@ -3,6 +3,7 @@ import { z } from "zod";
 import { BANK_TUNING } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
+import { getControllingPlayerId } from "../simulation/control.js";
 
 export const banksRouter = Router();
 
@@ -98,8 +99,12 @@ banksRouter.post("/:bankId/loans", async (req: AuthedRequest, res) => {
   }
 
   const company = await prisma.company.findUnique({ where: { id: parsed.data.companyId } });
-  if (!company || company.ownerId !== req.playerId) {
+  if (!company) {
     res.status(404).json({ error: "Company not found" });
+    return;
+  }
+  if ((await getControllingPlayerId(company)) !== req.playerId) {
+    res.status(403).json({ error: "You don't control this company" });
     return;
   }
 

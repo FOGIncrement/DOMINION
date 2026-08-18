@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
+import { getControllingPlayerId } from "../simulation/control.js";
 
 export const governmentRouter = Router();
 governmentRouter.use(requireAuth);
@@ -70,8 +71,12 @@ governmentRouter.post("/subsidize", async (req: AuthedRequest, res) => {
   }
 
   const company = await prisma.company.findUnique({ where: { id: parsed.data.companyId } });
-  if (!company || company.ownerId !== req.playerId) {
+  if (!company) {
     res.status(404).json({ error: "Company not found" });
+    return;
+  }
+  if ((await getControllingPlayerId(company)) !== req.playerId) {
+    res.status(403).json({ error: "You don't control this company" });
     return;
   }
 
