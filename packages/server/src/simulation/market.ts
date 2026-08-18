@@ -1,5 +1,11 @@
 import { prisma } from "../db.js";
-import { BASE_PRICES, MARKET_RESOURCE_TYPES, MARKET_TUNING, type MarketResourceType } from "@dominion/shared";
+import {
+  BASE_PRICES,
+  MARKET_RESOURCE_TYPES,
+  MARKET_TUNING,
+  REFERENCE_TICK_HOURS,
+  type MarketResourceType,
+} from "@dominion/shared";
 
 export type TradeableResource = MarketResourceType;
 export const TRADEABLE_RESOURCES: TradeableResource[] = [...MARKET_RESOURCE_TYPES];
@@ -32,7 +38,9 @@ export async function ensureMarketSeeded() {
   }
 }
 
-export async function tickMarket(flows: Record<TradeableResource, ResourceFlow>) {
+export async function tickMarket(flows: Record<TradeableResource, ResourceFlow>, elapsedHours: number = REFERENCE_TICK_HOURS) {
+  const stepMultiplier = Math.max(1, elapsedHours / REFERENCE_TICK_HOURS);
+
   for (const resourceType of TRADEABLE_RESOURCES) {
     const current = await prisma.marketResource.findUniqueOrThrow({ where: { resourceType } });
     const flow = flows[resourceType];
@@ -47,7 +55,10 @@ export async function tickMarket(flows: Record<TradeableResource, ResourceFlow>)
     const base = BASE_PRICES[resourceType];
     const targetPrice = clampPrice(resourceType, base * ratio);
 
-    const maxStep = current.price * MARKET_TUNING.maxPriceStepPerTick;
+    // Scaled by elapsed time so a big catch-up (offline, or a cheat-forced
+    // jump) actually reaches the target instead of taking one normal-sized
+    // step regardless of how much time passed — see REFERENCE_TICK_HOURS.
+    const maxStep = current.price * MARKET_TUNING.maxPriceStepPerTick * stepMultiplier;
     const direction = Math.sign(targetPrice - current.price);
     const step = Math.min(Math.abs(targetPrice - current.price), maxStep);
     const newPrice = clampPrice(resourceType, current.price + direction * step);

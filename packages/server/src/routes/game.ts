@@ -167,13 +167,19 @@ gameRouter.post("/workers", async (req: AuthedRequest, res) => {
   const def = BUILDING_TYPES[building.type as BuildingTypeId];
   const desired = Math.min(parsed.data.workersAssigned, def.maxWorkers);
 
-  const workersElsewhere = settlement.buildings
-    .filter((b) => b.id !== building.id)
-    .reduce((sum, b) => sum + b.workersAssigned, 0);
+  // Only the population cap for *increasing* workers on this building —
+  // decreasing must always be allowed, even if population has since shrunk
+  // (e.g. starvation) below the total already assigned elsewhere. Otherwise
+  // a player can get stuck unable to unassign workers they no longer have.
+  if (desired > building.workersAssigned) {
+    const workersElsewhere = settlement.buildings
+      .filter((b) => b.id !== building.id)
+      .reduce((sum, b) => sum + b.workersAssigned, 0);
 
-  if (workersElsewhere + desired > settlement.population!.count) {
-    res.status(400).json({ error: "Not enough available population for that many workers" });
-    return;
+    if (workersElsewhere + desired > settlement.population!.count) {
+      res.status(400).json({ error: "Not enough available population for that many workers" });
+      return;
+    }
   }
 
   await prisma.building.update({

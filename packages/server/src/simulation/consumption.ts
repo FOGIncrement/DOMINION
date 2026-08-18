@@ -54,3 +54,35 @@ export function computeConsumption(
     wellFed,
   };
 }
+
+export interface WorkerAdjustment {
+  buildingId: string;
+  workersAssigned: number;
+}
+
+/**
+ * If population has shrunk below the total workers currently assigned
+ * across all buildings (e.g. starvation), proportionally lay off workers so
+ * the two stay consistent. Without this, buildings keep holding workers the
+ * settlement no longer has, and the player can't even unassign them — the
+ * population cap check on increasing workers blocks decreasing too since
+ * the existing total already exceeds it.
+ */
+export function reconcileWorkersWithPopulation(
+  settlement: SettlementSnapshot,
+  newPopulationCount: number,
+): WorkerAdjustment[] {
+  const totalAssigned = settlement.buildings.reduce((sum, b) => sum + b.workersAssigned, 0);
+  if (totalAssigned <= newPopulationCount) return [];
+
+  const scale = newPopulationCount / totalAssigned;
+  const adjustments: WorkerAdjustment[] = [];
+  for (const building of settlement.buildings) {
+    if (building.workersAssigned <= 0) continue;
+    const newCount = Math.floor(building.workersAssigned * scale);
+    if (newCount !== building.workersAssigned) {
+      adjustments.push({ buildingId: building.id, workersAssigned: newCount });
+    }
+  }
+  return adjustments;
+}

@@ -3,9 +3,21 @@ import { z } from "zod";
 import { RESOURCE_TYPES, type ResourceType } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
-import { runTick } from "../simulation/engine.js";
+import { runTickSafely } from "../scheduler.js";
 
 const CHEATS_ENABLED = process.env.ENABLE_CHEATS === "true";
+
+// runTickSafely no-ops if the background scheduler is mid-tick (avoids the
+// two racing and clobbering each other's writes) — retry briefly rather
+// than silently doing nothing when a cheat button is clicked.
+async function forceTick() {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const result = await runTickSafely();
+    if (result) return result;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error("Could not force a tick — the scheduler stayed busy");
+}
 
 export const cheatsRouter = Router();
 
@@ -84,7 +96,7 @@ cheatsRouter.post("/population", async (req: AuthedRequest, res) => {
 });
 
 cheatsRouter.post("/tick", async (_req, res) => {
-  const result = await runTick();
+  const result = await forceTick();
   res.json({ ok: true, ...result });
 });
 
@@ -112,10 +124,14 @@ cheatsRouter.post("/company-cash", async (req: AuthedRequest, res) => {
 
 const offlineSchema = z.object({ hours: z.number().positive() });
 
-// Rewinds this player's lastSeenAt/settlement lastTickAt by N hours, then
-// forces an immediate tick — so the settlement genuinely accrues that time
-// (real production/consumption over the window, not a fabricated summary)
-// and the next /game/state fetch shows a real "welcome back" modal.
+// Rewinds this player's lastSeenAt, and every settlement/company/loan/the
+// shared world clock, by N hours, then forces one tick — simulating the
+// whole world having been asleep for N hours, not just this player's own
+// settlement. That's required, not optional: the shared market/stock
+// pricing reacts to aggregate flows across everyone, so if only this
+// player's settlement were backdated, the price-step would scale as if N
+// hours passed while the supply/demand data behind it still only reflected
+// one normal tick's worth of everyone else's activity.
 cheatsRouter.post("/simulate-offline", async (req: AuthedRequest, res) => {
   const parsed = offlineSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -125,21 +141,48 @@ cheatsRouter.post("/simulate-offline", async (req: AuthedRequest, res) => {
 
   const shiftMs = parsed.data.hours * 60 * 60 * 1000;
   const player = await prisma.player.findUnique({ where: { id: req.playerId! } });
-  const settlement = await prisma.settlement.findUnique({ where: { playerId: req.playerId! } });
-  if (!player || !settlement) {
-    res.status(404).json({ error: "Not found" });
+  if (!player) {
+    res.status(404).json({ error: "Player not found" });
     return;
   }
 
-  await prisma.player.update({
-    where: { id: player.id },
-    data: { lastSeenAt: new Date(player.lastSeenAt.getTime() - shiftMs) },
-  });
-  await prisma.settlement.update({
-    where: { id: settlement.id },
-    data: { lastTickAt: new Date(settlement.lastTickAt.getTime() - shiftMs) },
-  });
+  const [settlements, companies, loans, worldState] = await Promise.all([
+    prisma.settlement.findMany({ select: { id: true, lastTickAt: true } }),
+    prisma.company.findMany({ select: { id: true, lastTickAt: true } }),
+    prisma.loan.findMany({ where: { defaultedAt: null }, select: { id: true, lastAccrualAt: true } }),
+    prisma.worldState.findUnique({ where: { id: 1 } }),
+  ]);
 
-  await runTick();
+  await Promise.all([
+    prisma.player.update({
+      where: { id: player.id },
+      data: { lastSeenAt: new Date(player.lastSeenAt.getTime() - shiftMs) },
+    }),
+    ...settlements.map((s) =>
+      prisma.settlement.update({
+        where: { id: s.id },
+        data: { lastTickAt: new Date(s.lastTickAt.getTime() - shiftMs) },
+      }),
+    ),
+    ...companies.map((c) =>
+      prisma.company.update({
+        where: { id: c.id },
+        data: { lastTickAt: new Date(c.lastTickAt.getTime() - shiftMs) },
+      }),
+    ),
+    ...loans.map((l) =>
+      prisma.loan.update({
+        where: { id: l.id },
+        data: { lastAccrualAt: new Date(l.lastAccrualAt.getTime() - shiftMs) },
+      }),
+    ),
+    prisma.worldState.upsert({
+      where: { id: 1 },
+      update: { lastTickAt: new Date((worldState?.lastTickAt ?? new Date()).getTime() - shiftMs) },
+      create: { id: 1, lastTickAt: new Date(Date.now() - shiftMs) },
+    }),
+  ]);
+
+  await forceTick();
   res.json({ ok: true });
 });

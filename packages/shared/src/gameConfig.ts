@@ -243,6 +243,15 @@ export const MARKET_TUNING = {
 
 export const MAX_CATCHUP_HOURS = 720; // 30 days, safety cap on a single tick's elapsed time
 
+// The scheduler ticks once per real minute in normal operation — price-step
+// tuning (maxPriceStepPerTick, STOCK_TUNING.maxPriceStepPerTick) is
+// calibrated per call at that cadence. When a single call represents more
+// elapsed time (a cheat-forced catch-up, or the server having been down),
+// the step must scale by elapsedHours / REFERENCE_TICK_HOURS or prices
+// barely move even after a "away for 8 hours" jump — one call is still just
+// one step. Clamped by distance-to-target, so it can't overshoot.
+export const REFERENCE_TICK_HOURS = 1 / 60;
+
 export const NPC_GROWTH_TUNING = {
   minGoldToExpand: 200,
   expandChancePerTick: 0.05,

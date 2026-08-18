@@ -2,6 +2,7 @@ import {
   BASE_PRICES,
   COMPANY_INDUSTRIES,
   MAX_CATCHUP_HOURS,
+  REFERENCE_TICK_HOURS,
   WORLD_DEMAND_TUNING,
   computeTargetSharePrice,
   type BuildingTypeId,
@@ -10,7 +11,7 @@ import {
 import { prisma } from "../db.js";
 import { accrueLoanInterest, isLoanDefaulted, maybeBorrow, maybeRepayLoan } from "./banks.js";
 import { tickCompany } from "./companies.js";
-import { computeConsumption } from "./consumption.js";
+import { computeConsumption, reconcileWorkersWithPopulation } from "./consumption.js";
 import { maybeRollEvent } from "./events.js";
 import { ensureMarketSeeded, TRADEABLE_RESOURCES, tickMarket, type TradeableResource } from "./market.js";
 import { maybeExpand, settleNpcSurplus, type MutableResources } from "./npcEconomy.js";
@@ -94,6 +95,19 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
 
   const now = new Date();
 
+  // How much real time this call represents for the shared market/stock
+  // pricing — normally ~1 minute (the scheduler's cadence), but can be much
+  // larger for a cheat-forced catch-up. tickMarket/driftSharePrice scale
+  // their price steps by this so a big jump actually reaches the target.
+  const worldState = await prisma.worldState.findUnique({ where: { id: 1 } });
+  const worldElapsedHours = Math.max(
+    0,
+    Math.min(
+      MAX_CATCHUP_HOURS,
+      worldState ? (now.getTime() - worldState.lastTickAt.getTime()) / (1000 * 60 * 60) : REFERENCE_TICK_HOURS,
+    ),
+  );
+
   for (const settlement of snapshots) {
     const rawElapsedHours = (now.getTime() - settlement.lastTickAt.getTime()) / (1000 * 60 * 60);
     const elapsedHours = Math.max(0, Math.min(MAX_CATCHUP_HOURS, rawElapsedHours));
@@ -126,6 +140,14 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     if (!settlement.playerId) {
       await settleNpcSurplus(state, prices);
       await maybeExpand(settlement, state);
+    }
+
+    const workerAdjustments = reconcileWorkersWithPopulation(settlement, consumption.newPopulationCount);
+    for (const adjustment of workerAdjustments) {
+      await prisma.building.update({
+        where: { id: adjustment.buildingId },
+        data: { workersAssigned: adjustment.workersAssigned },
+      });
     }
 
     await prisma.settlement.update({
@@ -210,7 +232,7 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
 
   for (const company of publicCompanies) {
     const targetPrice = computeTargetSharePrice(company, now);
-    const newPrice = driftSharePrice(company.sharePrice, targetPrice);
+    const newPrice = driftSharePrice(company.sharePrice, targetPrice, worldElapsedHours);
 
     await prisma.company.update({ where: { id: company.id }, data: { sharePrice: newPrice } });
     await prisma.sharePriceHistoryPoint.create({ data: { companyId: company.id, price: newPrice } });
@@ -233,7 +255,7 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     await maybeDividend(company);
   }
 
-  await tickMarket(flows);
+  await tickMarket(flows, worldElapsedHours);
   await maybeRollEvent(snapshots);
 
   await prisma.worldState.upsert({

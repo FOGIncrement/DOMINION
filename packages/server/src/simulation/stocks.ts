@@ -1,10 +1,19 @@
-import { DIVIDEND_TUNING, STOCK_TUNING } from "@dominion/shared";
+import { DIVIDEND_TUNING, REFERENCE_TICK_HOURS, STOCK_TUNING } from "@dominion/shared";
 import { prisma } from "../db.js";
 
-/** Bounded-step drift toward a target price — same shape as tickMarket's price-step logic. */
-export function driftSharePrice(currentPrice: number, targetPrice: number): number {
+/**
+ * Bounded-step drift toward a target price — same shape as tickMarket's
+ * price-step logic, including scaling the step by elapsed time so a big
+ * catch-up (offline, or a cheat-forced jump) actually reaches the target.
+ */
+export function driftSharePrice(
+  currentPrice: number,
+  targetPrice: number,
+  elapsedHours: number = REFERENCE_TICK_HOURS,
+): number {
+  const stepMultiplier = Math.max(1, elapsedHours / REFERENCE_TICK_HOURS);
   const base = Math.max(currentPrice, STOCK_TUNING.minSharePrice);
-  const maxStep = base * STOCK_TUNING.maxPriceStepPerTick;
+  const maxStep = base * STOCK_TUNING.maxPriceStepPerTick * stepMultiplier;
   const direction = Math.sign(targetPrice - currentPrice);
   const step = Math.min(Math.abs(targetPrice - currentPrice), maxStep);
   return Math.max(STOCK_TUNING.minSharePrice, currentPrice + direction * step);
