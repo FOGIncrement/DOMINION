@@ -3,7 +3,7 @@ import { z } from "zod";
 import { TRADE_FEE } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
-import { applyTradeImpact, TRADEABLE_RESOURCES, type TradeableResource } from "../simulation/market.js";
+import { applyTradeImpact } from "../simulation/market.js";
 
 export const marketRouter = Router();
 
@@ -22,8 +22,12 @@ marketRouter.get("/", async (_req, res) => {
 
 marketRouter.use(requireAuth);
 
+// Settlements only ever hold food/wood/stone directly — "goods" is a
+// company-level resource, traded through /api/companies/:id/trade instead.
+const SETTLEMENT_TRADEABLE_RESOURCES = ["food", "wood", "stone"] as const;
+
 const tradeSchema = z.object({
-  resourceType: z.enum(TRADEABLE_RESOURCES as [TradeableResource, ...TradeableResource[]]),
+  resourceType: z.enum(SETTLEMENT_TRADEABLE_RESOURCES),
   side: z.enum(["buy", "sell"]),
   quantity: z.number().positive(),
 });
