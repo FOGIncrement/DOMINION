@@ -86,6 +86,33 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ side, shares }),
     }),
+
+  banks: () => request<{ banks: PublicBank[] }>("/banks"),
+  myBanks: () => request<{ banks: MyBank[] }>("/banks/mine"),
+  foundBank: (name: string) => request<{ ok: true; bankId: string }>("/banks", { method: "POST", body: JSON.stringify({ name }) }),
+  requestLoan: (bankId: string, companyId: string, amount: number) =>
+    request<{ ok: true; loanId: string }>(`/banks/${bankId}/loans`, {
+      method: "POST",
+      body: JSON.stringify({ companyId, amount }),
+    }),
+  myLoans: () => request<{ loans: MyLoan[] }>("/loans/mine"),
+  repayLoan: (loanId: string, amount: number) =>
+    request<{ ok: true; remainingBalance: number }>(`/loans/${loanId}/repay`, {
+      method: "POST",
+      body: JSON.stringify({ amount }),
+    }),
+
+  cheatsStatus: () => request<{ enabled: boolean }>("/cheats/status"),
+  cheatAddResources: (deltas: Partial<Record<"food" | "wood" | "stone" | "gold", number>>) =>
+    request<{ ok: true }>("/cheats/resources", { method: "POST", body: JSON.stringify(deltas) }),
+  cheatAddPopulation: (amount: number) =>
+    request<{ ok: true }>("/cheats/population", { method: "POST", body: JSON.stringify({ amount }) }),
+  cheatForceTick: () =>
+    request<{ ok: true; settlementsProcessed: number; companiesProcessed: number }>("/cheats/tick", { method: "POST" }),
+  cheatAddCompanyCash: (companyId: string, amount: number) =>
+    request<{ ok: true }>("/cheats/company-cash", { method: "POST", body: JSON.stringify({ companyId, amount }) }),
+  cheatSimulateOffline: (hours: number) =>
+    request<{ ok: true }>("/cheats/simulate-offline", { method: "POST", body: JSON.stringify({ hours }) }),
 };
 
 export interface OfflineSummary {
@@ -214,4 +241,41 @@ export interface PortfolioHolding {
   shares: number;
   sharePrice: number;
   value: number;
+}
+
+export interface PublicBank {
+  id: string;
+  name: string;
+  cash: number;
+  interestRatePerHour: number;
+  isPlayerOwned: boolean;
+  foundedAt: string;
+}
+
+export interface MyBank {
+  id: string;
+  name: string;
+  cash: number;
+  interestRatePerHour: number;
+  foundedAt: string;
+  loansIssued: {
+    id: string;
+    companyName: string;
+    principal: number;
+    outstandingBalance: number;
+    interestRatePerHour: number;
+  }[];
+}
+
+export interface MyLoan {
+  id: string;
+  bankName: string;
+  companyId: string;
+  companyName: string;
+  principal: number;
+  outstandingBalance: number;
+  interestRatePerHour: number;
+  defaultedAt: string | null;
+  risk: "low" | "medium" | "high" | "defaulted";
+  createdAt: string;
 }

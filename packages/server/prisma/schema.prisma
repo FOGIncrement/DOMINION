@@ -22,6 +22,7 @@ model Player {
   settlement Settlement?
   companies  Company[]
   shareholdings Shareholding[]
+  banks      Bank[]
 }
 
 model Settlement {
@@ -129,8 +130,40 @@ model Company {
   trades        MarketTrade[]
   shareholdings Shareholding[]
   priceHistory  SharePriceHistoryPoint[]
+  loans         Loan[]
 
   @@index([ownerId])
+}
+
+model Bank {
+  id                String   @id @default(cuid())
+  ownerId           String?
+  owner             Player?  @relation(fields: [ownerId], references: [id])
+  name              String
+  cash              Float
+  interestRatePerHour Float
+  foundedAt         DateTime @default(now())
+
+  loans Loan[]
+
+  @@index([ownerId])
+}
+
+model Loan {
+  id                  String    @id @default(cuid())
+  bankId              String
+  bank                Bank      @relation(fields: [bankId], references: [id])
+  companyId           String
+  company             Company   @relation(fields: [companyId], references: [id])
+  principal           Float
+  outstandingBalance  Float
+  interestRatePerHour Float
+  createdAt           DateTime  @default(now())
+  lastAccrualAt       DateTime  @default(now())
+  defaultedAt         DateTime?
+
+  @@index([bankId])
+  @@index([companyId])
 }
 
 model NpcInvestor {

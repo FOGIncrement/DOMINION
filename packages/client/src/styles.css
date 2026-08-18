@@ -633,3 +633,70 @@ a {
   font-size: 13px;
   padding: 20px 0;
 }
+
+/* --- Cheat menu (dev/testing only) --- */
+
+.cheat-menu {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 40;
+}
+
+.cheat-menu__toggle {
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px dashed var(--warning);
+  background: var(--surface-1);
+  color: var(--warning);
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.cheat-menu__panel {
+  position: absolute;
+  right: 0;
+  bottom: 48px;
+  width: 320px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--surface-1);
+  border: 1px dashed var(--warning);
+  border-radius: 10px;
+  padding: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.cheat-menu__title {
+  font-weight: 700;
+  color: var(--warning);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+}
+
+.cheat-menu__section {
+  border-top: 1px solid var(--gridline);
+  padding-top: 10px;
+  margin-top: 10px;
+}
+
+.cheat-menu__section:first-of-type {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.cheat-menu__label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.cheat-menu .trade-row select,
+.cheat-menu .trade-row input {
+  padding: 5px 6px;
+}

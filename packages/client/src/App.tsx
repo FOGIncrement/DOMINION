@@ -1,10 +1,12 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import CheatMenu from "./components/CheatMenu.js";
 import NavBar from "./components/NavBar.js";
 import OfflineSummaryModal from "./components/OfflineSummaryModal.js";
 import TopBar from "./components/TopBar.js";
 import { useMe } from "./api/hooks.js";
 import Login from "./pages/Login.js";
 import Dashboard from "./pages/Dashboard.js";
+import Banking from "./pages/Banking.js";
 import Companies from "./pages/Companies.js";
 import Market from "./pages/Market.js";
 import StockMarket from "./pages/StockMarket.js";
@@ -35,11 +37,13 @@ export default function App() {
         <Route path="/companies" element={<Companies />} />
         <Route path="/market" element={<Market />} />
         <Route path="/stocks" element={<StockMarket />} />
+        <Route path="/banking" element={<Banking />} />
         <Route path="/world" element={<World />} />
         <Route path="/news" element={<News />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <OfflineSummaryModal />
+      <CheatMenu />
     </div>
   );
 }

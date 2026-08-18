@@ -51,3 +51,24 @@ export function useStockDetail(companyId: string | null) {
 export function usePortfolio() {
   return useQuery({ queryKey: ["portfolio"], queryFn: api.portfolio, refetchInterval: POLL_MS });
 }
+
+export function useBanks() {
+  return useQuery({ queryKey: ["banks"], queryFn: api.banks, refetchInterval: POLL_MS });
+}
+
+export function useMyBanks() {
+  return useQuery({ queryKey: ["myBanks"], queryFn: api.myBanks, refetchInterval: POLL_MS });
+}
+
+export function useMyLoans() {
+  return useQuery({ queryKey: ["myLoans"], queryFn: api.myLoans, refetchInterval: POLL_MS });
+}
+
+export function useCheatsEnabled() {
+  return useQuery({
+    queryKey: ["cheatsEnabled"],
+    queryFn: api.cheatsStatus,
+    staleTime: Infinity,
+    retry: false,
+  });
+}

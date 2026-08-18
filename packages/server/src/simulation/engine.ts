@@ -8,6 +8,7 @@ import {
   type CompanyIndustryId,
 } from "@dominion/shared";
 import { prisma } from "../db.js";
+import { accrueLoanInterest, isLoanDefaulted, maybeBorrow, maybeRepayLoan } from "./banks.js";
 import { tickCompany } from "./companies.js";
 import { computeConsumption } from "./consumption.js";
 import { maybeRollEvent } from "./events.js";
@@ -166,6 +167,8 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     if (!company.ownerId) {
       revenue = await settleNpcCompanyTrading(company, state, prices);
       await maybeHire(company, state);
+      await maybeRepayLoan(company.id, state);
+      await maybeBorrow(company.id, state);
     }
 
     await prisma.company.update({
@@ -178,6 +181,24 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
         totalExpenses: { increment: result.wagesPaid },
         totalRevenue: { increment: revenue },
       },
+    });
+  }
+
+  // Loans: accrue compounding interest and check for default. Loans move
+  // cash directly between a company and a bank — they don't touch the
+  // commodity `flows` accumulator above.
+  const activeLoans = await prisma.loan.findMany({ where: { defaultedAt: null } });
+  for (const loan of activeLoans) {
+    const rawElapsedHours = (now.getTime() - loan.lastAccrualAt.getTime()) / (1000 * 60 * 60);
+    const elapsedHours = Math.max(0, Math.min(MAX_CATCHUP_HOURS, rawElapsedHours));
+    if (elapsedHours <= 0) continue;
+
+    const newBalance = accrueLoanInterest(loan, elapsedHours);
+    const defaulted = isLoanDefaulted({ ...loan, outstandingBalance: newBalance });
+
+    await prisma.loan.update({
+      where: { id: loan.id },
+      data: { outstandingBalance: newBalance, lastAccrualAt: now, defaultedAt: defaulted ? now : undefined },
     });
   }
 

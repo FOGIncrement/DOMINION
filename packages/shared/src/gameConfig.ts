@@ -282,6 +282,24 @@ export const NPC_INVESTOR_TUNING = {
   minCashToAct: 20,
 };
 
+// Loans are a revolving balance, not a fixed-term mortgage: interest
+// compounds on outstandingBalance every tick until voluntarily repaid.
+// Left unpaid for long enough, a loan defaults rather than amortizing to a
+// maturity date — see the Stage 4 plan for why.
+export const BANK_TUNING = {
+  foundingCost: 200, // gold, becomes the bank's starting lending reserve
+  defaultMultiplier: 2.5, // defaults once outstandingBalance exceeds principal * this
+  maxLoanToCashRatio: 5, // a company can borrow up to this multiple of its own current cash
+};
+
+export const NPC_BANKING_TUNING = {
+  borrowChancePerTick: 0.04,
+  repayChancePerTick: 0.06,
+  minCashToConsiderBorrow: 30, // below this, a struggling company might seek a loan
+  borrowAmountFraction: 0.5, // borrows up to this fraction of what the credit check allows
+  repayFraction: 0.4, // repays this fraction of outstanding balance when repaying
+};
+
 export const RESOURCE_LABELS: Record<ResourceType, string> = {
   food: "Food",
   wood: "Wood",

@@ -3,8 +3,11 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
 import { authRouter } from "./routes/auth.js";
+import { banksRouter } from "./routes/banks.js";
+import { cheatsRouter } from "./routes/cheats.js";
 import { companiesRouter } from "./routes/companies.js";
 import { gameRouter } from "./routes/game.js";
+import { loansRouter } from "./routes/loans.js";
 import { marketRouter } from "./routes/market.js";
 import { newsRouter } from "./routes/news.js";
 import { stocksRouter } from "./routes/stocks.js";
@@ -25,9 +28,12 @@ app.use("/api/game", gameRouter);
 app.use("/api/companies", companiesRouter);
 app.use("/api/market", marketRouter);
 app.use("/api/stocks", stocksRouter);
+app.use("/api/banks", banksRouter);
+app.use("/api/loans", loansRouter);
 app.use("/api/world", worldRouter);
 app.use("/api/news", newsRouter);
 app.use("/api/tech", techRouter);
+app.use("/api/cheats", cheatsRouter);
 
 app.listen(port, () => {
   console.log(`[server] listening on http://localhost:${port}`);

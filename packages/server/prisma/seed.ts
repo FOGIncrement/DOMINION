@@ -50,6 +50,12 @@ const NPC_INVESTORS: { name: string; archetype: InvestorArchetype; cash: number 
   { name: "Wren Speculative Holdings", archetype: "speculator", cash: 300 },
 ];
 
+const NPC_BANKS: { name: string; cash: number; interestRatePerHour: number }[] = [
+  { name: "Westland Trust Bank", cash: 1500, interestRatePerHour: 0.0018 },
+  { name: "Ironbridge Credit Union", cash: 900, interestRatePerHour: 0.0025 },
+  { name: "Highmark Lending House", cash: 600, interestRatePerHour: 0.0032 },
+];
+
 async function main() {
   const existingCount = await prisma.settlement.count({ where: { playerId: null } });
   if (existingCount > 0) {
@@ -101,6 +107,16 @@ async function main() {
     for (const investor of NPC_INVESTORS) {
       await prisma.npcInvestor.create({ data: investor });
       console.log(`[seed] created NPC investor ${investor.name} (${investor.archetype})`);
+    }
+  }
+
+  const existingBankCount = await prisma.bank.count({ where: { ownerId: null } });
+  if (existingBankCount > 0) {
+    console.log(`[seed] ${existingBankCount} NPC banks already exist, skipping bank seed.`);
+  } else {
+    for (const bank of NPC_BANKS) {
+      await prisma.bank.create({ data: bank });
+      console.log(`[seed] created NPC bank ${bank.name}`);
     }
   }
 
