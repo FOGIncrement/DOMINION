@@ -183,23 +183,33 @@ companiesRouter.post("/:id/trade", async (req: AuthedRequest, res) => {
     res.status(404).json({ error: "Market not initialized yet" });
     return;
   }
-  const proceeds = quantity * market.price;
+  const grossProceeds = quantity * market.price;
 
-  await prisma.$transaction([
+  const government = await prisma.government.findUnique({ where: { playerId: req.playerId! } });
+  const tax = government ? grossProceeds * government.corporateTaxRate : 0;
+  const proceeds = grossProceeds - tax;
+
+  const updates = [
     prisma.company.update({
       where: { id: company.id },
       data: {
         cash: company.cash + proceeds,
         goodsStock: company.goodsStock - quantity,
-        totalRevenue: { increment: proceeds },
+        totalRevenue: { increment: grossProceeds },
+        totalExpenses: { increment: tax },
       },
     }),
     prisma.marketTrade.create({
       data: { companyId: company.id, resourceType: "goods", side, quantity, price: market.price },
     }),
-  ]);
+  ];
+  if (government && tax > 0) {
+    updates.push(prisma.government.update({ where: { id: government.id }, data: { treasury: { increment: tax } } }));
+  }
+
+  await prisma.$transaction(updates);
   const newPrice = await applyTradeImpact("goods", "sell", quantity);
-  res.json({ ok: true, proceeds, newPrice });
+  res.json({ ok: true, proceeds, tax, newPrice });
 });
 
 const withdrawSchema = z.object({ amount: z.number().positive() });

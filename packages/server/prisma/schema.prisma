@@ -23,6 +23,17 @@ model Player {
   companies  Company[]
   shareholdings Shareholding[]
   banks      Bank[]
+  government Government?
+}
+
+model Government {
+  id               String   @id @default(cuid())
+  playerId         String   @unique
+  player           Player   @relation(fields: [playerId], references: [id])
+  treasury         Float    @default(0)
+  incomeTaxRate    Float    @default(0)
+  corporateTaxRate Float    @default(0)
+  createdAt        DateTime @default(now())
 }
 
 model Settlement {

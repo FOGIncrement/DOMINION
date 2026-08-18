@@ -59,9 +59,13 @@ marketRouter.post("/trade", async (req: AuthedRequest, res) => {
       res.status(400).json({ error: `Not enough ${resourceType} to sell` });
       return;
     }
-    const proceeds = quantity * market.price * (1 - fee);
+    const grossProceeds = quantity * market.price * (1 - fee);
 
-    await prisma.$transaction([
+    const government = await prisma.government.findUnique({ where: { playerId: req.playerId! } });
+    const tax = government ? grossProceeds * government.incomeTaxRate : 0;
+    const proceeds = grossProceeds - tax;
+
+    const updates = [
       prisma.settlement.update({
         where: { id: settlement.id },
         data: {
@@ -72,9 +76,14 @@ marketRouter.post("/trade", async (req: AuthedRequest, res) => {
       prisma.marketTrade.create({
         data: { settlementId: settlement.id, resourceType, side, quantity, price: market.price },
       }),
-    ]);
+    ];
+    if (government && tax > 0) {
+      updates.push(prisma.government.update({ where: { id: government.id }, data: { treasury: { increment: tax } } }));
+    }
+
+    await prisma.$transaction(updates);
     const newPrice = await applyTradeImpact(resourceType, "sell", quantity);
-    res.json({ ok: true, proceeds, newPrice });
+    res.json({ ok: true, proceeds, tax, newPrice });
     return;
   }
 

@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 
-const LOCKED = ["Government", "Diplomacy"];
+const LOCKED = ["Diplomacy"];
 
 export default function NavBar() {
   return (
@@ -16,6 +16,9 @@ export default function NavBar() {
       </NavLink>
       <NavLink to="/banking" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
         Banking
+      </NavLink>
+      <NavLink to="/government" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+        Government
       </NavLink>
       <NavLink to="/market" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
         Market

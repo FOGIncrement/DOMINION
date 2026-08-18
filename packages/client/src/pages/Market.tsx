@@ -38,13 +38,15 @@ export default function Market() {
     mutationFn: () => api.trade(resourceType, side, quantity),
     onSuccess: (res) => {
       setError(null);
+      const taxNote = res.tax && res.tax > 0 ? ` (${res.tax.toFixed(0)}g income tax)` : "";
       setResult(
         side === "sell"
-          ? `Sold ${quantity} ${resourceType} for ${res.proceeds?.toFixed(0) ?? "?"} gold. New price: ${res.newPrice.toFixed(2)}.`
+          ? `Sold ${quantity} ${resourceType} for ${res.proceeds?.toFixed(0) ?? "?"} gold${taxNote}. New price: ${res.newPrice.toFixed(2)}.`
           : `Bought ${quantity} ${resourceType} for ${res.cost?.toFixed(0) ?? "?"} gold. New price: ${res.newPrice.toFixed(2)}.`,
       );
       queryClient.invalidateQueries({ queryKey: ["gameState"] });
       queryClient.invalidateQueries({ queryKey: ["market"] });
+      queryClient.invalidateQueries({ queryKey: ["government"] });
     },
     onError: (err) => {
       setResult(null);

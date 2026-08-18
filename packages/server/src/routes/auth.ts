@@ -37,6 +37,7 @@ authRouter.post("/register", async (req, res) => {
   const passwordHash = await hashPassword(password);
   const player = await prisma.player.create({ data: { email, passwordHash } });
   await createPlayerSettlement(player.id, settlementName?.trim() || "New Settlement");
+  await prisma.government.create({ data: { playerId: player.id } });
 
   const token = signSession({ playerId: player.id });
   setSessionCookie(res, token);

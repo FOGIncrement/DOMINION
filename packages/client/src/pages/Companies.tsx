@@ -17,6 +17,7 @@ function CompanyCard({ company }: { company: MyCompany }) {
     queryClient.invalidateQueries({ queryKey: ["myCompanies"] });
     queryClient.invalidateQueries({ queryKey: ["gameState"] });
     queryClient.invalidateQueries({ queryKey: ["allCompanies"] });
+    queryClient.invalidateQueries({ queryKey: ["government"] });
   };
 
   const setWorkers = useMutation({
@@ -39,7 +40,8 @@ function CompanyCard({ company }: { company: MyCompany }) {
     mutationFn: () => api.tradeCompany(company.id, "sell", sellQty),
     onSuccess: (res) => {
       setError(null);
-      setMessage(`Sold ${sellQty} goods for ${res.proceeds?.toFixed(0)} gold.`);
+      const taxNote = res.tax && res.tax > 0 ? ` (${res.tax.toFixed(0)}g corporate tax)` : "";
+      setMessage(`Sold ${sellQty} goods for ${res.proceeds?.toFixed(0)} gold${taxNote}.`);
       invalidate();
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "Sell failed"),

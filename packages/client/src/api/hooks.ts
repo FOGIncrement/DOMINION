@@ -72,3 +72,7 @@ export function useCheatsEnabled() {
     retry: false,
   });
 }
+
+export function useGovernment() {
+  return useQuery({ queryKey: ["government"], queryFn: api.government, refetchInterval: POLL_MS });
+}

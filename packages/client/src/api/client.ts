@@ -43,7 +43,7 @@ export const api = {
 
   market: () => request<MarketResponse>("/market"),
   trade: (resourceType: string, side: "buy" | "sell", quantity: number) =>
-    request<{ ok: true; newPrice: number; proceeds?: number; cost?: number }>("/market/trade", {
+    request<{ ok: true; newPrice: number; proceeds?: number; cost?: number; tax?: number }>("/market/trade", {
       method: "POST",
       body: JSON.stringify({ resourceType, side, quantity }),
     }),
@@ -64,7 +64,7 @@ export const api = {
       body: JSON.stringify({ workersAssigned }),
     }),
   tradeCompany: (companyId: string, side: "buy" | "sell", quantity: number) =>
-    request<{ ok: true; newPrice: number; proceeds?: number; cost?: number }>(`/companies/${companyId}/trade`, {
+    request<{ ok: true; newPrice: number; proceeds?: number; cost?: number; tax?: number }>(`/companies/${companyId}/trade`, {
       method: "POST",
       body: JSON.stringify({ side, quantity }),
     }),
@@ -113,6 +113,12 @@ export const api = {
     request<{ ok: true }>("/cheats/company-cash", { method: "POST", body: JSON.stringify({ companyId, amount }) }),
   cheatSimulateOffline: (hours: number) =>
     request<{ ok: true }>("/cheats/simulate-offline", { method: "POST", body: JSON.stringify({ hours }) }),
+
+  government: () => request<GovernmentInfo>("/government/mine"),
+  setTaxRates: (rates: { incomeTaxRate?: number; corporateTaxRate?: number }) =>
+    request<{ ok: true }>("/government/rates", { method: "POST", body: JSON.stringify(rates) }),
+  subsidize: (companyId: string, amount: number) =>
+    request<{ ok: true }>("/government/subsidize", { method: "POST", body: JSON.stringify({ companyId, amount }) }),
 };
 
 export interface OfflineSummary {
@@ -278,4 +284,11 @@ export interface MyLoan {
   defaultedAt: string | null;
   risk: "low" | "medium" | "high" | "defaulted";
   createdAt: string;
+}
+
+export interface GovernmentInfo {
+  treasury: number;
+  incomeTaxRate: number;
+  corporateTaxRate: number;
+  maxRate: number;
 }
