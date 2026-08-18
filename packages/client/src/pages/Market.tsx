@@ -5,13 +5,22 @@ import { api, ApiError } from "../api/client.js";
 import { useGameState, useMarket } from "../api/hooks.js";
 import Sparkline from "../components/Sparkline.js";
 
-type TradeableResource = "food" | "wood" | "stone";
-const RESOURCES: TradeableResource[] = ["food", "wood", "stone"];
+type MarketDisplayResource = "food" | "wood" | "stone" | "goods";
+type SettlementTradeResource = "food" | "wood" | "stone";
 
-const ACCENT: Record<TradeableResource, string> = {
+const DISPLAY_RESOURCES: MarketDisplayResource[] = ["food", "wood", "stone", "goods"];
+const TRADE_RESOURCES: SettlementTradeResource[] = ["food", "wood", "stone"];
+
+const ACCENT: Record<MarketDisplayResource, string> = {
   food: "var(--series-food)",
   wood: "var(--series-wood)",
   stone: "var(--series-stone)",
+  goods: "var(--series-goods)",
+};
+
+const LABELS: Record<MarketDisplayResource, string> = {
+  ...RESOURCE_LABELS,
+  goods: "Goods",
 };
 
 export default function Market() {
@@ -19,7 +28,7 @@ export default function Market() {
   const { data: gameState } = useGameState();
   const queryClient = useQueryClient();
 
-  const [resourceType, setResourceType] = useState<TradeableResource>("wood");
+  const [resourceType, setResourceType] = useState<SettlementTradeResource>("wood");
   const [side, setSide] = useState<"buy" | "sell">("sell");
   const [quantity, setQuantity] = useState(10);
   const [result, setResult] = useState<string | null>(null);
@@ -55,7 +64,7 @@ export default function Market() {
     <div className="page page--full">
       <div>
         <div className="stat-tile-row">
-          {RESOURCES.map((type) => {
+          {DISPLAY_RESOURCES.map((type) => {
             const resource = market.resources.find((r) => r.resourceType === type);
             const points = market.history.filter((h) => h.resourceType === type).slice(-30);
             const prices = points.map((p) => p.price);
@@ -68,7 +77,7 @@ export default function Market() {
               <div className="stat-tile" key={type}>
                 <div className="stat-tile__label">
                   <span className="resource-pill__dot" style={{ background: ACCENT[type] }} />
-                  {RESOURCE_LABELS[type]}
+                  {LABELS[type]}
                 </div>
                 <div className="stat-tile__value">{last.toFixed(2)}g</div>
                 {first !== undefined && (
@@ -77,6 +86,7 @@ export default function Market() {
                     {delta.toFixed(2)} recently
                   </div>
                 )}
+                {type === "goods" && <div className="stat-tile__delta">Traded via your companies</div>}
                 <div className="stat-tile__spark">
                   <Sparkline values={prices.length > 1 ? prices : [last, last]} accentColor={ACCENT[type]} />
                 </div>
@@ -90,8 +100,8 @@ export default function Market() {
           {error && <div className="auth-error">{error}</div>}
           {result && <div className="suggestion">{result}</div>}
           <div className="trade-row">
-            <select value={resourceType} onChange={(e) => setResourceType(e.target.value as TradeableResource)}>
-              {RESOURCES.map((r) => (
+            <select value={resourceType} onChange={(e) => setResourceType(e.target.value as SettlementTradeResource)}>
+              {TRADE_RESOURCES.map((r) => (
                 <option key={r} value={r}>
                   {RESOURCE_LABELS[r]}
                 </option>

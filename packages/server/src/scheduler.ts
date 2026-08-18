@@ -9,7 +9,7 @@ async function tick() {
   running = true;
   try {
     const result = await runTick();
-    console.log(`[tick] processed ${result.settlementsProcessed} settlements`);
+    console.log(`[tick] processed ${result.settlementsProcessed} settlements, ${result.companiesProcessed} companies`);
   } catch (err) {
     console.error("[tick] failed", err);
   } finally {

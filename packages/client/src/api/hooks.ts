@@ -26,3 +26,11 @@ export function useNews() {
 export function useTechs() {
   return useQuery({ queryKey: ["techs"], queryFn: api.techs, refetchInterval: POLL_MS });
 }
+
+export function useMyCompanies() {
+  return useQuery({ queryKey: ["myCompanies"], queryFn: api.myCompanies, refetchInterval: POLL_MS });
+}
+
+export function useAllCompanies() {
+  return useQuery({ queryKey: ["allCompanies"], queryFn: api.allCompanies, refetchInterval: POLL_MS });
+}

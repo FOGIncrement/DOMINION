@@ -1,7 +1,10 @@
 import type {
   BuildingTypeDef,
   BuildingTypeId,
+  CompanyIndustryDef,
+  CompanyIndustryId,
   EventTemplateDef,
+  MarketResourceType,
   NpcArchetypeDef,
   NpcArchetype,
   ResourceType,
@@ -63,6 +66,42 @@ export const BUILDING_TYPES: Record<BuildingTypeId, BuildingTypeDef> = {
     cost: { wood: 40, stone: 20 },
     maxWorkers: 2,
     requiredTech: "currency",
+  },
+};
+
+export const COMPANY_INDUSTRIES: Record<CompanyIndustryId, CompanyIndustryDef> = {
+  bakery: {
+    id: "bakery",
+    name: "Bakery",
+    description: "Buys food, sells baked goods at a markup.",
+    inputResource: "food",
+    inputPerWorkerPerHour: 2.5,
+    goodsPerWorkerPerHour: 1,
+    wagePerWorkerPerHour: 1.5,
+    maxWorkers: 4,
+    foundingCost: 150,
+  },
+  sawmill: {
+    id: "sawmill",
+    name: "Sawmill",
+    description: "Buys wood, sells finished lumber goods at a markup.",
+    inputResource: "wood",
+    inputPerWorkerPerHour: 1.5,
+    goodsPerWorkerPerHour: 1,
+    wagePerWorkerPerHour: 1.5,
+    maxWorkers: 4,
+    foundingCost: 150,
+  },
+  stoneworks: {
+    id: "stoneworks",
+    name: "Stoneworks",
+    description: "Buys stone, sells dressed masonry goods at a markup.",
+    inputResource: "stone",
+    inputPerWorkerPerHour: 1.2,
+    goodsPerWorkerPerHour: 1,
+    wagePerWorkerPerHour: 1.5,
+    maxWorkers: 4,
+    foundingCost: 150,
   },
 };
 
@@ -179,15 +218,19 @@ export const POPULATION_TUNING = {
 // Wood/stone have no direct population upkeep in this MVP model (no building
 // decay yet), so a small per-capita "world economic activity" demand keeps
 // their markets from collapsing to the price floor for lack of any buyer.
+// Goods (company output) get the same treatment: population is the organic
+// consumer market for manufactured goods.
 export const WORLD_DEMAND_TUNING = {
   woodDemandPerCapitaPerHour: 0.02,
   stoneDemandPerCapitaPerHour: 0.015,
+  goodsDemandPerCapitaPerHour: 0.05,
 };
 
-export const BASE_PRICES: Record<"food" | "wood" | "stone", number> = {
+export const BASE_PRICES: Record<MarketResourceType, number> = {
   food: 2,
   wood: 3,
   stone: 4,
+  goods: 9,
 };
 
 export const MARKET_TUNING = {
@@ -203,6 +246,13 @@ export const MAX_CATCHUP_HOURS = 720; // 30 days, safety cap on a single tick's 
 export const NPC_GROWTH_TUNING = {
   minGoldToExpand: 200,
   expandChancePerTick: 0.05,
+};
+
+export const NPC_COMPANY_TUNING = {
+  inputBuffer: 20, // NPC companies buy input up to this stock level
+  goodsSellBuffer: 15, // and sell goods stock held above this level
+  minCashToHire: 100,
+  hireChancePerTick: 0.05,
 };
 
 export const RESOURCE_LABELS: Record<ResourceType, string> = {

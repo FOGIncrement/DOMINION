@@ -17,6 +17,7 @@
   --series-wood: #d95926;
   --series-stone: #3987e5;
   --series-gold: #c98500;
+  --series-goods: #9085e9;
 
   --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -271,6 +272,32 @@ a {
   margin-top: 8px;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+/* --- Companies --- */
+
+.company-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.company-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.company-card__stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.company-card__stats .delta-cell__value {
+  font-size: 14px;
 }
 
 /* --- Build menu --- */

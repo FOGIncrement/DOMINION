@@ -50,6 +50,29 @@ export const api = {
 
   worldSettlements: () => request<{ settlements: NpcSettlementInfo[] }>("/world/settlements"),
   news: () => request<{ events: NewsEvent[] }>("/news"),
+
+  myCompanies: () => request<{ companies: MyCompany[] }>("/companies/mine"),
+  allCompanies: () => request<{ companies: PublicCompany[] }>("/companies"),
+  foundCompany: (name: string, industry: string) =>
+    request<{ ok: true; companyId: string }>("/companies", {
+      method: "POST",
+      body: JSON.stringify({ name, industry }),
+    }),
+  setCompanyWorkers: (companyId: string, workersAssigned: number) =>
+    request<{ ok: true; workersAssigned: number }>(`/companies/${companyId}/workers`, {
+      method: "POST",
+      body: JSON.stringify({ workersAssigned }),
+    }),
+  tradeCompany: (companyId: string, side: "buy" | "sell", quantity: number) =>
+    request<{ ok: true; newPrice: number; proceeds?: number; cost?: number }>(`/companies/${companyId}/trade`, {
+      method: "POST",
+      body: JSON.stringify({ side, quantity }),
+    }),
+  withdrawCompanyCash: (companyId: string, amount: number) =>
+    request<{ ok: true }>(`/companies/${companyId}/withdraw`, {
+      method: "POST",
+      body: JSON.stringify({ amount }),
+    }),
 };
 
 export interface OfflineSummary {
@@ -111,4 +134,30 @@ export interface NewsEvent {
   description: string;
   settlementName: string | null;
   occurredAt: string;
+}
+
+export interface MyCompany {
+  id: string;
+  name: string;
+  industry: string;
+  cash: number;
+  inputStock: number;
+  goodsStock: number;
+  workersAssigned: number;
+  maxWorkers: number;
+  totalRevenue: number;
+  totalExpenses: number;
+  foundedAt: string;
+  rates: { inputPerHour: number; goodsPerHour: number; wagePerHour: number };
+}
+
+export interface PublicCompany {
+  id: string;
+  name: string;
+  industry: string;
+  industryName: string;
+  isPlayerOwned: boolean;
+  workersAssigned: number;
+  cash: number;
+  foundedAt: string;
 }

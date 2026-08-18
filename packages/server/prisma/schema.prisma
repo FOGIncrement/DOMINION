@@ -20,6 +20,7 @@ model Player {
   lastSeenSnapshot String? // JSON-serialized {food,wood,stone,gold,population} baseline for offline-progression diffing
 
   settlement Settlement?
+  companies  Company[]
 }
 
 model Settlement {
@@ -92,14 +93,36 @@ model PriceHistoryPoint {
 }
 
 model MarketTrade {
-  id           String     @id @default(cuid())
-  settlementId String
-  settlement   Settlement @relation(fields: [settlementId], references: [id])
+  id           String      @id @default(cuid())
+  settlementId String?
+  settlement   Settlement? @relation(fields: [settlementId], references: [id])
+  companyId    String?
+  company      Company?    @relation(fields: [companyId], references: [id])
   resourceType String
   side         String // "buy" | "sell"
   quantity     Float
   price        Float
-  createdAt    DateTime   @default(now())
+  createdAt    DateTime    @default(now())
+}
+
+model Company {
+  id              String   @id @default(cuid())
+  ownerId         String?
+  owner           Player?  @relation(fields: [ownerId], references: [id])
+  name            String
+  industry        String // "bakery" | "sawmill" | "stoneworks"
+  cash            Float
+  inputStock      Float    @default(0)
+  goodsStock      Float    @default(0)
+  workersAssigned Int      @default(0)
+  totalRevenue    Float    @default(0)
+  totalExpenses   Float    @default(0)
+  lastTickAt      DateTime @default(now())
+  foundedAt       DateTime @default(now())
+
+  trades MarketTrade[]
+
+  @@index([ownerId])
 }
 
 model Event {

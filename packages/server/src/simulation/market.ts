@@ -1,8 +1,8 @@
 import { prisma } from "../db.js";
-import { BASE_PRICES, MARKET_TUNING } from "@dominion/shared";
+import { BASE_PRICES, MARKET_RESOURCE_TYPES, MARKET_TUNING, type MarketResourceType } from "@dominion/shared";
 
-export type TradeableResource = "food" | "wood" | "stone";
-export const TRADEABLE_RESOURCES: TradeableResource[] = ["food", "wood", "stone"];
+export type TradeableResource = MarketResourceType;
+export const TRADEABLE_RESOURCES: TradeableResource[] = [...MARKET_RESOURCE_TYPES];
 
 export interface ResourceFlow {
   supply: number;

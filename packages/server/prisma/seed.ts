@@ -2,7 +2,7 @@ import "dotenv/config";
 import { prisma } from "../src/db.js";
 import { createNpcSettlement } from "../src/settlementFactory.js";
 import { ensureMarketSeeded } from "../src/simulation/market.js";
-import type { NpcArchetype } from "@dominion/shared";
+import type { CompanyIndustryId, NpcArchetype } from "@dominion/shared";
 
 const NPC_SETTLEMENTS: { name: string; archetype: NpcArchetype; population: number }[] = [
   { name: "Oakridge", archetype: "agrarian", population: 60 },
@@ -23,6 +23,22 @@ const NPC_SETTLEMENTS: { name: string; archetype: NpcArchetype; population: numb
   { name: "Wrenfield", archetype: "agrarian", population: 27 },
 ];
 
+const NPC_COMPANIES: {
+  name: string;
+  industry: CompanyIndustryId;
+  cash: number;
+  inputStock: number;
+  workersAssigned: number;
+}[] = [
+  { name: "Millstone Bakery", industry: "bakery", cash: 420, inputStock: 20, workersAssigned: 3 },
+  { name: "Golden Crust Baking Co.", industry: "bakery", cash: 180, inputStock: 10, workersAssigned: 1 },
+  { name: "Hearth & Home Bakery", industry: "bakery", cash: 260, inputStock: 15, workersAssigned: 2 },
+  { name: "Cedar & Co. Sawmill", industry: "sawmill", cash: 500, inputStock: 20, workersAssigned: 3 },
+  { name: "Riverbend Timber", industry: "sawmill", cash: 210, inputStock: 10, workersAssigned: 2 },
+  { name: "Ironvein Stoneworks", industry: "stoneworks", cash: 460, inputStock: 20, workersAssigned: 3 },
+  { name: "Graystone Masonry", industry: "stoneworks", cash: 190, inputStock: 10, workersAssigned: 1 },
+];
+
 async function main() {
   const existingCount = await prisma.settlement.count({ where: { playerId: null } });
   if (existingCount > 0) {
@@ -31,6 +47,24 @@ async function main() {
     for (const npc of NPC_SETTLEMENTS) {
       await createNpcSettlement(npc.name, npc.archetype, npc.population);
       console.log(`[seed] created NPC settlement ${npc.name} (${npc.archetype})`);
+    }
+  }
+
+  const existingCompanyCount = await prisma.company.count({ where: { ownerId: null } });
+  if (existingCompanyCount > 0) {
+    console.log(`[seed] ${existingCompanyCount} NPC companies already exist, skipping company seed.`);
+  } else {
+    for (const npc of NPC_COMPANIES) {
+      await prisma.company.create({
+        data: {
+          name: npc.name,
+          industry: npc.industry,
+          cash: npc.cash,
+          inputStock: npc.inputStock,
+          workersAssigned: npc.workersAssigned,
+        },
+      });
+      console.log(`[seed] created NPC company ${npc.name} (${npc.industry})`);
     }
   }
 

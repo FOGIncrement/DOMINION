@@ -1,12 +1,15 @@
 import { NavLink } from "react-router-dom";
 
-const LOCKED = ["Companies", "Stock Market", "Banking", "Government", "Diplomacy"];
+const LOCKED = ["Stock Market", "Banking", "Government", "Diplomacy"];
 
 export default function NavBar() {
   return (
     <nav className="nav-bar">
       <NavLink to="/" end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
         Civilization
+      </NavLink>
+      <NavLink to="/companies" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+        Companies
       </NavLink>
       <NavLink to="/market" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
         Market

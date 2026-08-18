@@ -1,11 +1,20 @@
-import { MAX_CATCHUP_HOURS, WORLD_DEMAND_TUNING, type BuildingTypeId } from "@dominion/shared";
+import {
+  BASE_PRICES,
+  COMPANY_INDUSTRIES,
+  MAX_CATCHUP_HOURS,
+  WORLD_DEMAND_TUNING,
+  type BuildingTypeId,
+  type CompanyIndustryId,
+} from "@dominion/shared";
 import { prisma } from "../db.js";
+import { tickCompany } from "./companies.js";
 import { computeConsumption } from "./consumption.js";
 import { maybeRollEvent } from "./events.js";
-import { ensureMarketSeeded, tickMarket, type TradeableResource } from "./market.js";
+import { ensureMarketSeeded, TRADEABLE_RESOURCES, tickMarket, type TradeableResource } from "./market.js";
 import { maybeExpand, settleNpcSurplus, type MutableResources } from "./npcEconomy.js";
+import { maybeHire, settleNpcCompanyTrading, type MutableCompanyState } from "./npcCompanyEconomy.js";
 import { computeProduction } from "./production.js";
-import type { SettlementSnapshot } from "./types.js";
+import type { CompanySnapshot, SettlementSnapshot } from "./types.js";
 
 async function loadSnapshots(): Promise<SettlementSnapshot[]> {
   const settlements = await prisma.settlement.findMany({
@@ -40,29 +49,44 @@ async function loadSnapshots(): Promise<SettlementSnapshot[]> {
     }));
 }
 
+async function loadCompanySnapshots(): Promise<CompanySnapshot[]> {
+  const companies = await prisma.company.findMany();
+  return companies.map((c) => ({
+    id: c.id,
+    name: c.name,
+    ownerId: c.ownerId,
+    industry: c.industry as CompanyIndustryId,
+    cash: c.cash,
+    inputStock: c.inputStock,
+    goodsStock: c.goodsStock,
+    workersAssigned: c.workersAssigned,
+    lastTickAt: c.lastTickAt,
+  }));
+}
+
 /**
- * One simulation step. Runs unconditionally for every settlement (player and
- * NPC alike), driven by wall-clock time elapsed since each settlement's last
- * tick. That single rate-times-elapsed-hours formula is what powers both the
- * routine minute-by-minute loop and "the server was down / player was away
- * for hours" catch-up — there's no separate offline code path.
+ * One simulation step. Runs unconditionally for every settlement and company
+ * (player and NPC alike), driven by wall-clock time elapsed since each
+ * entity's last tick. That single rate-times-elapsed-hours formula is what
+ * powers both the routine minute-by-minute loop and "the server was down /
+ * player was away for hours" catch-up — there's no separate offline code
+ * path. Settlements and companies share one `flows` accumulator so their
+ * economies interact through the same market prices, closed out by a single
+ * tickMarket call at the end.
  */
-export async function runTick(): Promise<{ settlementsProcessed: number }> {
+export async function runTick(): Promise<{ settlementsProcessed: number; companiesProcessed: number }> {
   await ensureMarketSeeded();
   const snapshots = await loadSnapshots();
+  const companies = await loadCompanySnapshots();
 
   const marketRows = await prisma.marketResource.findMany();
-  const prices: Record<TradeableResource, number> = {
-    food: marketRows.find((m) => m.resourceType === "food")?.price ?? 2,
-    wood: marketRows.find((m) => m.resourceType === "wood")?.price ?? 3,
-    stone: marketRows.find((m) => m.resourceType === "stone")?.price ?? 4,
-  };
+  const prices = Object.fromEntries(
+    TRADEABLE_RESOURCES.map((r) => [r, marketRows.find((m) => m.resourceType === r)?.price ?? BASE_PRICES[r]]),
+  ) as Record<TradeableResource, number>;
 
-  const flows: Record<TradeableResource, { supply: number; demand: number }> = {
-    food: { supply: 0, demand: 0 },
-    wood: { supply: 0, demand: 0 },
-    stone: { supply: 0, demand: 0 },
-  };
+  const flows = Object.fromEntries(
+    TRADEABLE_RESOURCES.map((r) => [r, { supply: 0, demand: 0 }]),
+  ) as Record<TradeableResource, { supply: number; demand: number }>;
 
   const now = new Date();
 
@@ -92,6 +116,8 @@ export async function runTick(): Promise<{ settlementsProcessed: number }> {
       settlement.population.count * WORLD_DEMAND_TUNING.woodDemandPerCapitaPerHour * elapsedHours;
     flows.stone.demand +=
       settlement.population.count * WORLD_DEMAND_TUNING.stoneDemandPerCapitaPerHour * elapsedHours;
+    flows.goods.demand +=
+      settlement.population.count * WORLD_DEMAND_TUNING.goodsDemandPerCapitaPerHour * elapsedHours;
 
     if (!settlement.playerId) {
       await settleNpcSurplus(state, prices);
@@ -116,6 +142,40 @@ export async function runTick(): Promise<{ settlementsProcessed: number }> {
     });
   }
 
+  for (const company of companies) {
+    const rawElapsedHours = (now.getTime() - company.lastTickAt.getTime()) / (1000 * 60 * 60);
+    const elapsedHours = Math.max(0, Math.min(MAX_CATCHUP_HOURS, rawElapsedHours));
+    if (elapsedHours <= 0) continue;
+
+    const result = tickCompany(company, elapsedHours);
+    const industry = COMPANY_INDUSTRIES[company.industry];
+
+    flows[industry.inputResource].demand += result.inputConsumed;
+    flows.goods.supply += result.goodsProduced;
+
+    const state: MutableCompanyState = {
+      cash: result.cash,
+      inputStock: result.inputStock,
+      goodsStock: result.goodsStock,
+    };
+
+    if (!company.ownerId) {
+      await settleNpcCompanyTrading(company, state, prices);
+      await maybeHire(company, state);
+    }
+
+    await prisma.company.update({
+      where: { id: company.id },
+      data: {
+        cash: state.cash,
+        inputStock: state.inputStock,
+        goodsStock: state.goodsStock,
+        lastTickAt: now,
+        totalExpenses: { increment: result.wagesPaid },
+      },
+    });
+  }
+
   await tickMarket(flows);
   await maybeRollEvent(snapshots);
 
@@ -125,5 +185,5 @@ export async function runTick(): Promise<{ settlementsProcessed: number }> {
     create: { id: 1, lastTickAt: now },
   });
 
-  return { settlementsProcessed: snapshots.length };
+  return { settlementsProcessed: snapshots.length, companiesProcessed: companies.length };
 }

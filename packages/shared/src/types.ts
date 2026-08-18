@@ -3,6 +3,11 @@ export type ResourceType = (typeof RESOURCE_TYPES)[number];
 
 export type ResourceBundle = Partial<Record<ResourceType, number>>;
 
+// Everything the world market prices and trades. A superset of settlement
+// resources (minus gold, the numeraire) plus company-produced goods.
+export const MARKET_RESOURCE_TYPES = ["food", "wood", "stone", "goods"] as const;
+export type MarketResourceType = (typeof MARKET_RESOURCE_TYPES)[number];
+
 export const BUILDING_TYPE_IDS = [
   "house",
   "farm",
@@ -25,6 +30,9 @@ export type NpcArchetype = (typeof NPC_ARCHETYPES)[number];
 
 export const MARKET_SIDES = ["buy", "sell"] as const;
 export type MarketSide = (typeof MARKET_SIDES)[number];
+
+export const COMPANY_INDUSTRY_IDS = ["bakery", "sawmill", "stoneworks"] as const;
+export type CompanyIndustryId = (typeof COMPANY_INDUSTRY_IDS)[number];
 
 export const EVENT_TYPE_IDS = [
   "bountiful_harvest",
@@ -74,4 +82,16 @@ export interface EventTemplateDef {
   weight: number;
   scope: "settlement" | "world";
   resourceEffect?: ResourceBundle;
+}
+
+export interface CompanyIndustryDef {
+  id: CompanyIndustryId;
+  name: string;
+  description: string;
+  inputResource: "food" | "wood" | "stone";
+  inputPerWorkerPerHour: number;
+  goodsPerWorkerPerHour: number;
+  wagePerWorkerPerHour: number;
+  maxWorkers: number;
+  foundingCost: number;
 }
