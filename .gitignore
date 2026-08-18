@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+.env
+*.local
+
+# Prisma / SQLite
+packages/server/prisma/dev.db
+packages/server/prisma/dev.db-journal
+packages/server/generated/
+
+# Editor
+.vscode/
+.idea/
+
+npm-debug.log*

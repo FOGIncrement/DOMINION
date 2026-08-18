@@ -1,0 +1,185 @@
+import { Router } from "express";
+import { z } from "zod";
+import {
+  BUILDING_TYPES,
+  BUILDING_TYPE_IDS,
+  RESOURCE_TYPES,
+  TECHS,
+  type BuildingTypeId,
+  type ResourceType,
+} from "@dominion/shared";
+import { prisma } from "../db.js";
+import { requireAuth, type AuthedRequest } from "../auth/index.js";
+import { housingCapacity } from "../simulation/consumption.js";
+import { computeOfflineSummaryAndAdvance } from "../offlineSummary.js";
+import type { SettlementSnapshot } from "../simulation/types.js";
+
+export const gameRouter = Router();
+gameRouter.use(requireAuth);
+
+async function loadOwnedSettlement(playerId: string) {
+  const settlement = await prisma.settlement.findUnique({
+    where: { playerId },
+    include: { population: true, buildings: true, techs: true },
+  });
+  if (!settlement || !settlement.population) return null;
+  return settlement;
+}
+
+function toSnapshot(settlement: NonNullable<Awaited<ReturnType<typeof loadOwnedSettlement>>>): SettlementSnapshot {
+  return {
+    id: settlement.id,
+    name: settlement.name,
+    playerId: settlement.playerId,
+    archetype: null,
+    food: settlement.food,
+    wood: settlement.wood,
+    stone: settlement.stone,
+    gold: settlement.gold,
+    storageCap: settlement.storageCap,
+    lastTickAt: settlement.lastTickAt,
+    population: {
+      count: settlement.population!.count,
+      growthRate: settlement.population!.growthRate,
+      happiness: settlement.population!.happiness,
+    },
+    buildings: settlement.buildings.map((b) => ({
+      id: b.id,
+      type: b.type as BuildingTypeId,
+      workersAssigned: b.workersAssigned,
+      level: b.level,
+    })),
+    techIds: settlement.techs.map((t) => t.techId),
+  };
+}
+
+gameRouter.get("/state", async (req: AuthedRequest, res) => {
+  const settlement = await loadOwnedSettlement(req.playerId!);
+  if (!settlement) {
+    res.status(404).json({ error: "No settlement found for this player" });
+    return;
+  }
+  const snapshot = toSnapshot(settlement);
+
+  const offlineSummary = await computeOfflineSummaryAndAdvance(req.playerId!, settlement.id, {
+    food: settlement.food,
+    wood: settlement.wood,
+    stone: settlement.stone,
+    gold: settlement.gold,
+    population: settlement.population!.count,
+  });
+
+  res.json({
+    settlement: {
+      id: settlement.id,
+      name: settlement.name,
+      era: settlement.era,
+      food: settlement.food,
+      wood: settlement.wood,
+      stone: settlement.stone,
+      gold: settlement.gold,
+      storageCap: settlement.storageCap,
+      foundedAt: settlement.foundedAt,
+    },
+    population: {
+      count: settlement.population!.count,
+      happiness: settlement.population!.happiness,
+      capacity: housingCapacity(snapshot),
+    },
+    buildings: settlement.buildings.map((b) => ({
+      id: b.id,
+      type: b.type,
+      level: b.level,
+      workersAssigned: b.workersAssigned,
+    })),
+    techIds: settlement.techs.map((t) => t.techId),
+    offlineSummary,
+  });
+});
+
+const buildSchema = z.object({ type: z.enum(BUILDING_TYPE_IDS) });
+
+gameRouter.post("/buildings", async (req: AuthedRequest, res) => {
+  const parsed = buildSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid building type" });
+    return;
+  }
+
+  const settlement = await loadOwnedSettlement(req.playerId!);
+  if (!settlement) {
+    res.status(404).json({ error: "No settlement found for this player" });
+    return;
+  }
+
+  const def = BUILDING_TYPES[parsed.data.type];
+  if (def.requiredTech && !settlement.techs.some((t) => t.techId === def.requiredTech)) {
+    res.status(400).json({ error: `Requires the ${TECHS[def.requiredTech].name} technology` });
+    return;
+  }
+
+  for (const resourceType of RESOURCE_TYPES) {
+    const cost = def.cost[resourceType] ?? 0;
+    if (settlement[resourceType] < cost) {
+      res.status(400).json({ error: `Not enough ${resourceType} to build ${def.name}` });
+      return;
+    }
+  }
+
+  const resourceUpdate: Partial<Record<ResourceType, number>> = {};
+  for (const resourceType of RESOURCE_TYPES) {
+    const cost = def.cost[resourceType] ?? 0;
+    if (cost > 0) resourceUpdate[resourceType] = settlement[resourceType] - cost;
+  }
+
+  await prisma.$transaction([
+    prisma.settlement.update({ where: { id: settlement.id }, data: resourceUpdate }),
+    prisma.building.create({ data: { settlementId: settlement.id, type: def.id } }),
+  ]);
+
+  res.status(201).json({ ok: true });
+});
+
+const workersSchema = z.object({
+  buildingId: z.string(),
+  workersAssigned: z.number().int().min(0),
+});
+
+gameRouter.post("/workers", async (req: AuthedRequest, res) => {
+  const parsed = workersSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid request" });
+    return;
+  }
+
+  const settlement = await loadOwnedSettlement(req.playerId!);
+  if (!settlement) {
+    res.status(404).json({ error: "No settlement found for this player" });
+    return;
+  }
+
+  const building = settlement.buildings.find((b) => b.id === parsed.data.buildingId);
+  if (!building) {
+    res.status(404).json({ error: "Building not found" });
+    return;
+  }
+
+  const def = BUILDING_TYPES[building.type as BuildingTypeId];
+  const desired = Math.min(parsed.data.workersAssigned, def.maxWorkers);
+
+  const workersElsewhere = settlement.buildings
+    .filter((b) => b.id !== building.id)
+    .reduce((sum, b) => sum + b.workersAssigned, 0);
+
+  if (workersElsewhere + desired > settlement.population!.count) {
+    res.status(400).json({ error: "Not enough available population for that many workers" });
+    return;
+  }
+
+  await prisma.building.update({
+    where: { id: building.id },
+    data: { workersAssigned: desired },
+  });
+
+  res.json({ ok: true, workersAssigned: desired });
+});

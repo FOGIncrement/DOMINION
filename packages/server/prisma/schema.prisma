@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  // MVP dev datastore: SQLite, file-based, zero local setup.
+  // Swapping to Postgres later is a provider + DATABASE_URL change only —
+  // no String-typed "enum" fields below rely on SQLite-only behavior.
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Player {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  passwordHash     String
+  createdAt        DateTime @default(now())
+  lastSeenAt       DateTime @default(now())
+  lastSeenSnapshot String? // JSON-serialized {food,wood,stone,gold,population} baseline for offline-progression diffing
+
+  settlement Settlement?
+}
+
+model Settlement {
+  id          String   @id @default(cuid())
+  playerId    String?  @unique
+  player      Player?  @relation(fields: [playerId], references: [id])
+  name        String
+  archetype   String? // null for the player settlement; "agrarian" | "mining" | "trade" for NPCs
+  era         Int      @default(1)
+  food        Float
+  wood        Float
+  stone       Float
+  gold        Float
+  storageCap  Float
+  lastTickAt  DateTime @default(now())
+  foundedAt   DateTime @default(now())
+
+  population Population?
+  buildings  Building[]
+  techs      SettlementTech[]
+  events     Event[]
+  trades     MarketTrade[]
+}
+
+model Population {
+  settlementId String     @id
+  settlement   Settlement @relation(fields: [settlementId], references: [id])
+  count        Float
+  growthRate   Float      @default(0.01)
+  happiness    Float      @default(0.7)
+}
+
+model Building {
+  id               String     @id @default(cuid())
+  settlementId     String
+  settlement       Settlement @relation(fields: [settlementId], references: [id])
+  type             String
+  level            Int        @default(1)
+  workersAssigned  Int        @default(0)
+  builtAt          DateTime   @default(now())
+
+  @@index([settlementId])
+}
+
+model SettlementTech {
+  id           String     @id @default(cuid())
+  settlementId String
+  settlement   Settlement @relation(fields: [settlementId], references: [id])
+  techId       String
+  researchedAt DateTime   @default(now())
+
+  @@unique([settlementId, techId])
+}
+
+model MarketResource {
+  resourceType String   @id
+  supply       Float
+  demand       Float
+  price        Float
+  updatedAt    DateTime @default(now())
+}
+
+model PriceHistoryPoint {
+  id           String   @id @default(cuid())
+  resourceType String
+  price        Float
+  recordedAt   DateTime @default(now())
+
+  @@index([resourceType, recordedAt])
+}
+
+model MarketTrade {
+  id           String     @id @default(cuid())
+  settlementId String
+  settlement   Settlement @relation(fields: [settlementId], references: [id])
+  resourceType String
+  side         String // "buy" | "sell"
+  quantity     Float
+  price        Float
+  createdAt    DateTime   @default(now())
+}
+
+model Event {
+  id           String      @id @default(cuid())
+  settlementId String?
+  settlement   Settlement? @relation(fields: [settlementId], references: [id])
+  type         String
+  title        String
+  description  String
+  occurredAt   DateTime    @default(now())
+
+  @@index([occurredAt])
+}
+
+model WorldState {
+  id         Int      @id @default(1)
+  lastTickAt DateTime @default(now())
+}
