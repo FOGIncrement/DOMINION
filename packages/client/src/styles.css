@@ -354,6 +354,17 @@ a {
   filter: brightness(1.1);
 }
 
+.btn--danger {
+  background: transparent;
+  border-color: var(--critical);
+  color: var(--critical);
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: var(--critical);
+  color: #fff;
+}
+
 /* --- Suggestions --- */
 
 .suggestion {

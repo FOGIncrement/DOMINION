@@ -138,6 +138,7 @@ model Company {
   sharesOutstanding Float   @default(0)
   sharePrice      Float     @default(0)
   ipoAt           DateTime?
+  closedAt        DateTime?
 
   trades        MarketTrade[]
   shareholdings Shareholding[]

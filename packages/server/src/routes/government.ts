@@ -71,7 +71,7 @@ governmentRouter.post("/subsidize", async (req: AuthedRequest, res) => {
   }
 
   const company = await prisma.company.findUnique({ where: { id: parsed.data.companyId } });
-  if (!company) {
+  if (!company || company.closedAt) {
     res.status(404).json({ error: "Company not found" });
     return;
   }

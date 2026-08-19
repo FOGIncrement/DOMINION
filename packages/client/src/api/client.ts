@@ -75,6 +75,13 @@ export const api = {
     }),
   upgradeCompany: (companyId: string) =>
     request<{ ok: true; level: number; cost: number }>(`/companies/${companyId}/upgrade`, { method: "POST" }),
+  bailoutCompany: (companyId: string, amount: number) =>
+    request<{ ok: true; amount: number; remainingDeficit: number }>(`/companies/${companyId}/bailout`, {
+      method: "POST",
+      body: JSON.stringify({ amount }),
+    }),
+  closeCompany: (companyId: string) =>
+    request<{ ok: true; recoveredCash: number }>(`/companies/${companyId}/close`, { method: "POST" }),
   ipoCompany: (companyId: string) =>
     request<{ ok: true; sharePrice: number; sharesOutstanding: number }>(`/companies/${companyId}/ipo`, {
       method: "POST",

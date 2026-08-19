@@ -18,7 +18,7 @@ import { getControllerLabel, getControllingPlayerId } from "../simulation/contro
 export const companiesRouter = Router();
 
 companiesRouter.get("/", async (_req, res) => {
-  const companies = await prisma.company.findMany({ orderBy: { foundedAt: "asc" } });
+  const companies = await prisma.company.findMany({ where: { closedAt: null }, orderBy: { foundedAt: "asc" } });
   res.json({
     companies: companies.map((c) => ({
       id: c.id,
@@ -53,7 +53,7 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
     .map((h) => h.companyId);
 
   const companies = await prisma.company.findMany({
-    where: { OR: [{ ownerId: playerId }, { id: { in: acquiredIds } }] },
+    where: { closedAt: null, OR: [{ ownerId: playerId }, { id: { in: acquiredIds } }] },
   });
 
   const withControl = await Promise.all(
@@ -134,11 +134,12 @@ companiesRouter.post("/", async (req: AuthedRequest, res) => {
 /**
  * Distinguishes "doesn't exist" (404) from "exists but you don't control
  * it" (403) — the latter matters now that companies are visibly listed
- * publicly and can change hands without the requester's involvement.
+ * publicly and can change hands without the requester's involvement. A
+ * closed company reads as "doesn't exist" too — it's gone, same as a 404.
  */
 async function loadControlledCompany(id: string, playerId: string) {
   const company = await prisma.company.findUnique({ where: { id } });
-  if (!company) return { company: null, controlled: false } as const;
+  if (!company || company.closedAt) return { company: null, controlled: false } as const;
   const controllerId = await getControllingPlayerId(company);
   return { company, controlled: controllerId === playerId } as const;
 }
@@ -309,6 +310,79 @@ companiesRouter.post("/:id/withdraw", async (req: AuthedRequest, res) => {
   ]);
 
   res.json({ ok: true });
+});
+
+const bailoutSchema = z.object({ amount: z.number().positive() });
+
+companiesRouter.post("/:id/bailout", async (req: AuthedRequest, res) => {
+  const parsed = bailoutSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid amount" });
+    return;
+  }
+
+  const { company, controlled } = await loadControlledCompany(req.params.id, req.playerId!);
+  if (!company || !controlled) {
+    respondNotControlled(res, company);
+    return;
+  }
+  if (company.cash >= 0) {
+    res.status(400).json({ error: "This company isn't in debt — nothing to bail out" });
+    return;
+  }
+
+  const settlement = await prisma.settlement.findUnique({ where: { playerId: req.playerId! } });
+  if (!settlement) {
+    res.status(404).json({ error: "No settlement found for this player" });
+    return;
+  }
+
+  const deficit = -company.cash;
+  const amount = Math.min(parsed.data.amount, deficit);
+  if (settlement.gold < amount) {
+    res.status(400).json({ error: "Not enough settlement gold for that bailout" });
+    return;
+  }
+
+  await prisma.$transaction([
+    prisma.company.update({ where: { id: company.id }, data: { cash: company.cash + amount } }),
+    prisma.settlement.update({ where: { id: settlement.id }, data: { gold: settlement.gold - amount } }),
+  ]);
+
+  res.json({ ok: true, amount, remainingDeficit: deficit - amount });
+});
+
+companiesRouter.post("/:id/close", async (req: AuthedRequest, res) => {
+  const { company, controlled } = await loadControlledCompany(req.params.id, req.playerId!);
+  if (!company || !controlled) {
+    respondNotControlled(res, company);
+    return;
+  }
+  if (company.isPublic) {
+    res.status(400).json({ error: "Can't close a public company while it has outside shareholders" });
+    return;
+  }
+
+  const settlement = await prisma.settlement.findUnique({ where: { playerId: req.playerId! } });
+  if (!settlement) {
+    res.status(404).json({ error: "No settlement found for this player" });
+    return;
+  }
+
+  const recoveredCash = Math.max(0, company.cash);
+
+  await prisma.$transaction([
+    prisma.company.update({
+      where: { id: company.id },
+      data: { closedAt: new Date(), workersAssigned: 0, cash: 0 },
+    }),
+    prisma.loan.updateMany({
+      where: { companyId: company.id, defaultedAt: null },
+      data: { defaultedAt: new Date() },
+    }),
+    prisma.settlement.update({ where: { id: settlement.id }, data: { gold: { increment: recoveredCash } } }),
+  ]);
+  res.json({ ok: true, recoveredCash });
 });
 
 companiesRouter.post("/:id/ipo", async (req: AuthedRequest, res) => {

@@ -7,9 +7,11 @@ import { useAllCompanies, useGameState, useMyCompanies } from "../api/hooks.js";
 function CompanyCard({ company }: { company: MyCompany }) {
   const industry = COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
   const queryClient = useQueryClient();
+  const { data: gameState } = useGameState();
   const [buyQty, setBuyQty] = useState(20);
   const [sellQty, setSellQty] = useState(10);
   const [withdrawAmt, setWithdrawAmt] = useState(10);
+  const [bailoutAmt, setBailoutAmt] = useState(Math.max(1, Math.ceil(-company.cash)));
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,6 +77,34 @@ function CompanyCard({ company }: { company: MyCompany }) {
       invalidate();
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "Upgrade failed"),
+  });
+
+  const bailout = useMutation({
+    mutationFn: () => api.bailoutCompany(company.id, bailoutAmt),
+    onSuccess: (res) => {
+      setError(null);
+      setMessage(
+        res.remainingDeficit > 0
+          ? `Paid down ${res.amount.toFixed(0)} gold of debt — ${res.remainingDeficit.toFixed(0)}g still owed.`
+          : `Paid off ${res.amount.toFixed(0)} gold of debt — the company is back in the black.`,
+      );
+      invalidate();
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Bailout failed"),
+  });
+
+  const close = useMutation({
+    mutationFn: () => api.closeCompany(company.id),
+    onSuccess: (res) => {
+      setError(null);
+      setMessage(
+        res.recoveredCash > 0
+          ? `Closed ${company.name}, recovering ${res.recoveredCash.toFixed(0)} gold to your settlement.`
+          : `Closed ${company.name}.`,
+      );
+      invalidate();
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Close failed"),
   });
 
   const netProfit = company.totalRevenue - company.totalExpenses;
@@ -191,6 +221,39 @@ function CompanyCard({ company }: { company: MyCompany }) {
               Withdraw to settlement
             </button>
           </div>
+
+          {company.cash < 0 && (
+            <div className="trade-row">
+              <input
+                type="number"
+                min={1}
+                value={bailoutAmt}
+                onChange={(e) => setBailoutAmt(Math.max(1, Number(e.target.value)))}
+              />
+              <button className="btn btn--accent" disabled={bailout.isPending} onClick={() => bailout.mutate()}>
+                Bail out ({(-company.cash).toFixed(0)}g owed)
+              </button>
+            </div>
+          )}
+          {gameState && company.cash < 0 && (
+            <p className="suggestion" style={{ padding: "4px 0" }}>
+              You have {Math.round(gameState.settlement.gold)} gold available.
+            </p>
+          )}
+
+          {!company.isPublic && (
+            <div className="trade-row" style={{ margin: "8px 0 0" }}>
+              <button
+                className="btn btn--danger"
+                disabled={close.isPending}
+                onClick={() => {
+                  if (window.confirm(`Close ${company.name} for good? This can't be undone.`)) close.mutate();
+                }}
+              >
+                Close business
+              </button>
+            </div>
+          )}
         </>
       ) : (
         <div className="locked-banner">

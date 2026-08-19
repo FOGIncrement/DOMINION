@@ -55,7 +55,7 @@ async function loadSnapshots(): Promise<SettlementSnapshot[]> {
 }
 
 async function loadCompanySnapshots(): Promise<CompanySnapshot[]> {
-  const companies = await prisma.company.findMany();
+  const companies = await prisma.company.findMany({ where: { closedAt: null } });
   return companies.map((c) => ({
     id: c.id,
     name: c.name,
