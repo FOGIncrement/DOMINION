@@ -124,8 +124,11 @@ export const api = {
     request<{ ok: true }>("/cheats/simulate-offline", { method: "POST", body: JSON.stringify({ hours }) }),
 
   government: () => request<GovernmentInfo>("/government/mine"),
-  setTaxRates: (rates: { incomeTaxRate?: number; corporateTaxRate?: number }) =>
-    request<{ ok: true }>("/government/rates", { method: "POST", body: JSON.stringify(rates) }),
+  setTaxRates: (rates: {
+    incomeTaxRate?: number;
+    corporateTaxRate?: number;
+    welfareRatePerUnemployedPerHour?: number;
+  }) => request<{ ok: true }>("/government/rates", { method: "POST", body: JSON.stringify(rates) }),
   subsidize: (companyId: string, amount: number) =>
     request<{ ok: true }>("/government/subsidize", { method: "POST", body: JSON.stringify({ companyId, amount }) }),
 };
@@ -306,5 +309,11 @@ export interface GovernmentInfo {
   treasury: number;
   incomeTaxRate: number;
   corporateTaxRate: number;
+  welfareRatePerUnemployedPerHour: number;
   maxRate: number;
+  maxWelfareRate: number;
+  populationCount: number;
+  employedCount: number;
+  unemployedCount: number;
+  welfareCostPerHour: number;
 }

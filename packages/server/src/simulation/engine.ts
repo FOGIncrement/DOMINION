@@ -5,6 +5,8 @@ import {
   REFERENCE_TICK_HOURS,
   WORLD_DEMAND_TUNING,
   computeTargetSharePrice,
+  computeUnemployment,
+  computeWelfareCostPerHour,
   type BuildingTypeId,
   type CompanyIndustryId,
 } from "@dominion/shared";
@@ -85,6 +87,18 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
   const snapshots = await loadSnapshots();
   const companies = await loadCompanySnapshots();
 
+  // A company's jobs belong to whoever founded it, not wherever majority
+  // control currently sits via Acquisitions — used below to compute each
+  // player settlement's employment for welfare spending.
+  const companyWorkersByOwner = new Map<string, number>();
+  for (const company of companies) {
+    if (!company.ownerId) continue;
+    companyWorkersByOwner.set(
+      company.ownerId,
+      (companyWorkersByOwner.get(company.ownerId) ?? 0) + company.workersAssigned,
+    );
+  }
+
   const marketRows = await prisma.marketResource.findMany();
   const prices = Object.fromEntries(
     TRADEABLE_RESOURCES.map((r) => [r, marketRows.find((m) => m.resourceType === r)?.price ?? BASE_PRICES[r]]),
@@ -149,6 +163,24 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
         where: { id: adjustment.buildingId },
         data: { workersAssigned: adjustment.workersAssigned },
       });
+    }
+
+    if (settlement.playerId) {
+      const buildingWorkers = settlement.buildings.reduce((sum, b) => sum + b.workersAssigned, 0);
+      const companyWorkers = companyWorkersByOwner.get(settlement.playerId) ?? 0;
+      const unemployed = computeUnemployment(consumption.newPopulationCount, buildingWorkers + companyWorkers);
+
+      if (unemployed > 0) {
+        const government = await prisma.government.findUnique({ where: { playerId: settlement.playerId } });
+        if (government) {
+          const welfareCost =
+            computeWelfareCostPerHour(unemployed, government.welfareRatePerUnemployedPerHour) * elapsedHours;
+          await prisma.government.update({
+            where: { id: government.id },
+            data: { treasury: { decrement: welfareCost } },
+          });
+        }
+      }
     }
 
     await prisma.settlement.update({

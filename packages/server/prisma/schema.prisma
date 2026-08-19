@@ -27,13 +27,14 @@ model Player {
 }
 
 model Government {
-  id               String   @id @default(cuid())
-  playerId         String   @unique
-  player           Player   @relation(fields: [playerId], references: [id])
-  treasury         Float    @default(0)
-  incomeTaxRate    Float    @default(0)
-  corporateTaxRate Float    @default(0)
-  createdAt        DateTime @default(now())
+  id                              String   @id @default(cuid())
+  playerId                        String   @unique
+  player                          Player   @relation(fields: [playerId], references: [id])
+  treasury                        Float    @default(0)
+  incomeTaxRate                   Float    @default(0)
+  corporateTaxRate                Float    @default(0)
+  welfareRatePerUnemployedPerHour Float    @default(0.5)
+  createdAt                       DateTime @default(now())
 }
 
 model Settlement {

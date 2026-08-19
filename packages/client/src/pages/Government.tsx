@@ -14,6 +14,7 @@ function TaxRatesForm() {
   const queryClient = useQueryClient();
   const [incomeRate, setIncomeRate] = useState(0);
   const [corporateRate, setCorporateRate] = useState(0);
+  const [welfareRate, setWelfareRate] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -21,15 +22,20 @@ function TaxRatesForm() {
     if (government) {
       setIncomeRate(Math.round(government.incomeTaxRate * 100));
       setCorporateRate(Math.round(government.corporateTaxRate * 100));
+      setWelfareRate(government.welfareRatePerUnemployedPerHour);
     }
-  }, [government?.incomeTaxRate, government?.corporateTaxRate]);
+  }, [government?.incomeTaxRate, government?.corporateTaxRate, government?.welfareRatePerUnemployedPerHour]);
 
   const save = useMutation({
     mutationFn: () =>
-      api.setTaxRates({ incomeTaxRate: incomeRate / 100, corporateTaxRate: corporateRate / 100 }),
+      api.setTaxRates({
+        incomeTaxRate: incomeRate / 100,
+        corporateTaxRate: corporateRate / 100,
+        welfareRatePerUnemployedPerHour: welfareRate,
+      }),
     onSuccess: () => {
       setError(null);
-      setMessage("Tax rates updated.");
+      setMessage("Rates updated.");
       invalidateGovernment(queryClient);
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "Couldn't update rates"),
@@ -38,10 +44,11 @@ function TaxRatesForm() {
   if (!government) return <div className="loading">Loading government...</div>;
 
   const maxPct = Math.round(government.maxRate * 100);
+  const maxWelfare = government.maxWelfareRate;
 
   return (
     <div className="card">
-      <h2 className="card__title">Tax Policy</h2>
+      <h2 className="card__title">Tax &amp; Welfare Policy</h2>
       {error && <div className="auth-error">{error}</div>}
       {message && !error && <div className="suggestion">{message}</div>}
 
@@ -77,9 +84,28 @@ function TaxRatesForm() {
         </div>
       </div>
 
+      <div className="field">
+        <label htmlFor="welfareRate">Welfare — gold paid per unemployed citizen, every hour</label>
+        <div className="trade-row">
+          <input
+            id="welfareRate"
+            type="number"
+            min={0}
+            max={maxWelfare}
+            step={0.1}
+            value={welfareRate}
+            onChange={(e) => setWelfareRate(Math.min(maxWelfare, Math.max(0, Number(e.target.value))))}
+            style={{ width: 80 }}
+          />
+          <span className="suggestion">g / unemployed / hr</span>
+        </div>
+      </div>
+
       <p className="suggestion" style={{ marginBottom: 12 }}>
         {incomeRate}% of every settlement sale and {corporateRate}% of every company goods sale routes straight to
-        your treasury instead of your own pocket. Rates cap at {maxPct}%.
+        your treasury. Every citizen without a job costs the treasury {welfareRate.toFixed(1)}g/hr — set it to 0
+        for no safety net, or raise it to keep unemployment from costing your people anything. Tax rates cap at
+        {" "}{maxPct}%, welfare at {maxWelfare}g/hr.
       </p>
 
       <button className="btn btn--accent" disabled={save.isPending} onClick={() => save.mutate()}>
@@ -160,6 +186,19 @@ export default function Government() {
         <div className="stat-tile">
           <div className="stat-tile__label">Corporate Tax</div>
           <div className="stat-tile__value">{government ? Math.round(government.corporateTaxRate * 100) : "—"}%</div>
+        </div>
+        <div className="stat-tile">
+          <div className="stat-tile__label">Employment</div>
+          <div className="stat-tile__value">
+            {government ? `${government.employedCount} / ${Math.round(government.populationCount)}` : "—"}
+          </div>
+          <div className="stat-tile__delta">
+            {government ? `${Math.round(government.unemployedCount)} unemployed` : ""}
+          </div>
+        </div>
+        <div className="stat-tile">
+          <div className="stat-tile__label">Welfare Spending</div>
+          <div className="stat-tile__value">{government ? government.welfareCostPerHour.toFixed(1) : "—"}g/hr</div>
         </div>
       </div>
 

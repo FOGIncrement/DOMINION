@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { computeUnemployment, computeWelfareCostPerHour } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
 import { getControllingPlayerId } from "../simulation/control.js";
@@ -8,30 +9,52 @@ export const governmentRouter = Router();
 governmentRouter.use(requireAuth);
 
 const MAX_RATE = 0.5;
+const MAX_WELFARE_RATE = 5;
 
 governmentRouter.get("/mine", async (req: AuthedRequest, res) => {
-  const government = await prisma.government.findUnique({ where: { playerId: req.playerId! } });
+  const playerId = req.playerId!;
+  const government = await prisma.government.findUnique({ where: { playerId } });
   if (!government) {
     res.status(404).json({ error: "No government found for this player" });
     return;
   }
+
+  const settlement = await prisma.settlement.findUnique({
+    where: { playerId },
+    include: { population: true, buildings: true },
+  });
+  const companies = await prisma.company.findMany({ where: { ownerId: playerId, closedAt: null } });
+
+  const buildingWorkers = settlement?.buildings.reduce((sum, b) => sum + b.workersAssigned, 0) ?? 0;
+  const companyWorkers = companies.reduce((sum, c) => sum + c.workersAssigned, 0);
+  const populationCount = settlement?.population?.count ?? 0;
+  const employedCount = buildingWorkers + companyWorkers;
+  const unemployedCount = computeUnemployment(populationCount, employedCount);
+
   res.json({
     treasury: government.treasury,
     incomeTaxRate: government.incomeTaxRate,
     corporateTaxRate: government.corporateTaxRate,
+    welfareRatePerUnemployedPerHour: government.welfareRatePerUnemployedPerHour,
     maxRate: MAX_RATE,
+    maxWelfareRate: MAX_WELFARE_RATE,
+    populationCount,
+    employedCount,
+    unemployedCount,
+    welfareCostPerHour: computeWelfareCostPerHour(unemployedCount, government.welfareRatePerUnemployedPerHour),
   });
 });
 
 const ratesSchema = z.object({
   incomeTaxRate: z.number().min(0).max(MAX_RATE).optional(),
   corporateTaxRate: z.number().min(0).max(MAX_RATE).optional(),
+  welfareRatePerUnemployedPerHour: z.number().min(0).max(MAX_WELFARE_RATE).optional(),
 });
 
 governmentRouter.post("/rates", async (req: AuthedRequest, res) => {
   const parsed = ratesSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: `Tax rates must be between 0 and ${MAX_RATE}` });
+    res.status(400).json({ error: `Tax rates must be between 0 and ${MAX_RATE}, welfare rate between 0 and ${MAX_WELFARE_RATE}` });
     return;
   }
 
@@ -46,6 +69,8 @@ governmentRouter.post("/rates", async (req: AuthedRequest, res) => {
     data: {
       incomeTaxRate: parsed.data.incomeTaxRate ?? government.incomeTaxRate,
       corporateTaxRate: parsed.data.corporateTaxRate ?? government.corporateTaxRate,
+      welfareRatePerUnemployedPerHour:
+        parsed.data.welfareRatePerUnemployedPerHour ?? government.welfareRatePerUnemployedPerHour,
     },
   });
   res.json({ ok: true });
