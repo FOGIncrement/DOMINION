@@ -209,8 +209,10 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     const result = tickCompany(company, elapsedHours);
     const industry = COMPANY_INDUSTRIES[company.industry];
 
-    flows[industry.inputResource].demand += result.inputConsumed;
-    flows.goods.supply += result.goodsProduced;
+    if (industry.inputResource) {
+      flows[industry.inputResource].demand += result.inputConsumed;
+    }
+    flows[industry.outputResource].supply += result.goodsProduced;
 
     const state: MutableCompanyState = {
       cash: result.cash,

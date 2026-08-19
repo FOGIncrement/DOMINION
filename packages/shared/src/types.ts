@@ -31,7 +31,14 @@ export type NpcArchetype = (typeof NPC_ARCHETYPES)[number];
 export const MARKET_SIDES = ["buy", "sell"] as const;
 export type MarketSide = (typeof MARKET_SIDES)[number];
 
-export const COMPANY_INDUSTRY_IDS = ["bakery", "sawmill", "stoneworks"] as const;
+export const COMPANY_INDUSTRY_IDS = [
+  "bakery",
+  "sawmill",
+  "stoneworks",
+  "farming",
+  "logging",
+  "quarrying",
+] as const;
 export type CompanyIndustryId = (typeof COMPANY_INDUSTRY_IDS)[number];
 
 export const INVESTOR_ARCHETYPES = ["conservative", "growth", "speculator"] as const;
@@ -91,8 +98,15 @@ export interface CompanyIndustryDef {
   id: CompanyIndustryId;
   name: string;
   description: string;
-  inputResource: "food" | "wood" | "stone";
+  // Absent for an extraction industry (farming/logging/quarrying) — it
+  // produces its output from labor alone, nothing to buy.
+  inputResource?: "food" | "wood" | "stone";
   inputPerWorkerPerHour: number;
+  // What gets sold, and how much of it — "goods" for a processing industry,
+  // otherwise whichever raw resource this industry extracts. The field name
+  // stays goodsPerWorkerPerHour even for extraction industries to avoid a
+  // wider rename; it always means "output rate," not literally goods.
+  outputResource: MarketResourceType;
   goodsPerWorkerPerHour: number;
   wagePerWorkerPerHour: number;
   maxWorkers: number;

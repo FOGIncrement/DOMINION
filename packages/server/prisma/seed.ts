@@ -28,7 +28,7 @@ const NPC_COMPANIES: {
   name: string;
   industry: CompanyIndustryId;
   cash: number;
-  inputStock: number;
+  inputStock?: number; // omit for an extraction industry — it has no input to seed
   workersAssigned: number;
   ipo?: boolean;
 }[] = [
@@ -88,7 +88,7 @@ async function main() {
           name: npc.name,
           industry: npc.industry,
           cash: npc.cash,
-          inputStock: npc.inputStock,
+          inputStock: npc.inputStock ?? 0,
           workersAssigned: npc.workersAssigned,
           isPublic: !!npc.ipo,
           sharesOutstanding,

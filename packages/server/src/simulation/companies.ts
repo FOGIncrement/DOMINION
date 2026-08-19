@@ -21,9 +21,13 @@ export function tickCompany(company: CompanySnapshot, elapsedHours: number): Com
   const industry = COMPANY_INDUSTRIES[company.industry];
   const rates = computeCompanyHourlyRates(industry, company.workersAssigned, company.level);
 
+  // An extraction industry (no inputResource at all) is never stock-gated —
+  // it produces straight from labor. Only a processing industry that's
+  // temporarily out of input stock falls back to the "no input available"
+  // case below.
   const desiredInput = rates.inputPerHour * elapsedHours;
-  const actualInput = Math.min(desiredInput, company.inputStock);
-  const fulfillment = desiredInput > 0 ? actualInput / desiredInput : 0;
+  const actualInput = industry.inputResource ? Math.min(desiredInput, company.inputStock) : 0;
+  const fulfillment = !industry.inputResource ? 1 : desiredInput > 0 ? actualInput / desiredInput : 0;
 
   const goodsProduced = rates.goodsPerHour * elapsedHours * fulfillment;
   const wagesPaid = rates.wagePerHour * elapsedHours;

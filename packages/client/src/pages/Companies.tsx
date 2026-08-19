@@ -1,8 +1,13 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { COMPANY_INDUSTRIES, RESOURCE_LABELS, STOCK_TUNING, type CompanyIndustryId, type ResourceType } from "@dominion/shared";
+import { COMPANY_INDUSTRIES, RESOURCE_LABELS, STOCK_TUNING, type CompanyIndustryId, type MarketResourceType, type ResourceType } from "@dominion/shared";
 import { api, ApiError, type MyCompany } from "../api/client.js";
 import { useAllCompanies, useGameState, useMyCompanies } from "../api/hooks.js";
+
+// RESOURCE_LABELS covers settlement-holdable resources only — "goods" is a
+// market resource with no settlement equivalent, so it needs its own entry
+// here (mirrors the same extension Market.tsx already does).
+const OUTPUT_LABELS: Record<MarketResourceType, string> = { ...RESOURCE_LABELS, goods: "Goods" };
 
 function CompanyCard({ company }: { company: MyCompany }) {
   const industry = COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
@@ -32,7 +37,7 @@ function CompanyCard({ company }: { company: MyCompany }) {
     mutationFn: () => api.tradeCompany(company.id, "buy", buyQty),
     onSuccess: (res) => {
       setError(null);
-      setMessage(`Bought ${buyQty} ${industry.inputResource} for ${res.cost?.toFixed(0)} gold.`);
+      setMessage(`Bought ${buyQty} ${industry.inputResource ? OUTPUT_LABELS[industry.inputResource] : ""} for ${res.cost?.toFixed(0)} gold.`);
       invalidate();
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "Buy failed"),
@@ -43,7 +48,7 @@ function CompanyCard({ company }: { company: MyCompany }) {
     onSuccess: (res) => {
       setError(null);
       const taxNote = res.tax && res.tax > 0 ? ` (${res.tax.toFixed(0)}g corporate tax)` : "";
-      setMessage(`Sold ${sellQty} goods for ${res.proceeds?.toFixed(0)} gold${taxNote}.`);
+      setMessage(`Sold ${sellQty} ${OUTPUT_LABELS[industry.outputResource]} for ${res.proceeds?.toFixed(0)} gold${taxNote}.`);
       invalidate();
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "Sell failed"),
@@ -139,12 +144,14 @@ function CompanyCard({ company }: { company: MyCompany }) {
           <div className="delta-cell__label">Cash</div>
           <div className="delta-cell__value">{company.cash.toFixed(0)}g</div>
         </div>
+        {industry.inputResource && (
+          <div>
+            <div className="delta-cell__label">{RESOURCE_LABELS[industry.inputResource as ResourceType]} stock</div>
+            <div className="delta-cell__value">{company.inputStock.toFixed(1)}</div>
+          </div>
+        )}
         <div>
-          <div className="delta-cell__label">{RESOURCE_LABELS[industry.inputResource as ResourceType]} stock</div>
-          <div className="delta-cell__value">{company.inputStock.toFixed(1)}</div>
-        </div>
-        <div>
-          <div className="delta-cell__label">Goods stock</div>
+          <div className="delta-cell__label">{OUTPUT_LABELS[industry.outputResource]} stock</div>
           <div className="delta-cell__value">{company.goodsStock.toFixed(1)}</div>
         </div>
         <div>
@@ -156,9 +163,10 @@ function CompanyCard({ company }: { company: MyCompany }) {
       </div>
 
       <div className="building-card__rate">
-        Producing {company.rates.goodsPerHour.toFixed(1)} goods/hr from{" "}
-        {company.rates.inputPerHour.toFixed(1)} {industry.inputResource}/hr, wages {company.rates.wagePerHour.toFixed(1)}
-        g/hr
+        Producing {company.rates.goodsPerHour.toFixed(1)} {OUTPUT_LABELS[industry.outputResource].toLowerCase()}/hr
+        {industry.inputResource &&
+          ` from ${company.rates.inputPerHour.toFixed(1)} ${industry.inputResource}/hr`}, wages{" "}
+        {company.rates.wagePerHour.toFixed(1)}g/hr
       </div>
 
       {controlledByMe ? (
@@ -198,16 +206,18 @@ function CompanyCard({ company }: { company: MyCompany }) {
             </div>
           )}
 
-          <div className="trade-row">
-            <input type="number" min={1} value={buyQty} onChange={(e) => setBuyQty(Math.max(1, Number(e.target.value)))} />
-            <button className="btn" disabled={buy.isPending} onClick={() => buy.mutate()}>
-              Buy {industry.inputResource}
-            </button>
-          </div>
+          {industry.inputResource && (
+            <div className="trade-row">
+              <input type="number" min={1} value={buyQty} onChange={(e) => setBuyQty(Math.max(1, Number(e.target.value)))} />
+              <button className="btn" disabled={buy.isPending} onClick={() => buy.mutate()}>
+                Buy {industry.inputResource}
+              </button>
+            </div>
+          )}
           <div className="trade-row">
             <input type="number" min={1} value={sellQty} onChange={(e) => setSellQty(Math.max(1, Number(e.target.value)))} />
             <button className="btn" disabled={sell.isPending} onClick={() => sell.mutate()}>
-              Sell goods
+              Sell {OUTPUT_LABELS[industry.outputResource].toLowerCase()}
             </button>
           </div>
           <div className="trade-row">

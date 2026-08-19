@@ -27,10 +27,10 @@ export async function settleNpcCompanyTrading(
   prices: Record<TradeableResource, number>,
 ): Promise<number> {
   const industry = COMPANY_INDUSTRIES[company.industry];
-  const inputPrice = prices[industry.inputResource];
   let revenue = 0;
 
-  if (state.inputStock < NPC_COMPANY_TUNING.inputBuffer && state.cash > 0) {
+  if (industry.inputResource && state.inputStock < NPC_COMPANY_TUNING.inputBuffer && state.cash > 0) {
+    const inputPrice = prices[industry.inputResource];
     const need = NPC_COMPANY_TUNING.inputBuffer - state.inputStock;
     const affordable = state.cash / inputPrice;
     const toBuy = Math.max(0, Math.min(need, affordable));
@@ -44,9 +44,9 @@ export async function settleNpcCompanyTrading(
   if (state.goodsStock > NPC_COMPANY_TUNING.goodsSellBuffer) {
     const excess = state.goodsStock - NPC_COMPANY_TUNING.goodsSellBuffer;
     state.goodsStock -= excess;
-    revenue = excess * prices.goods;
+    revenue = excess * prices[industry.outputResource];
     state.cash += revenue;
-    await applyTradeImpact("goods", "sell", excess);
+    await applyTradeImpact(industry.outputResource, "sell", excess);
   }
 
   return revenue;

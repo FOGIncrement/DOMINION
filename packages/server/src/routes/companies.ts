@@ -216,6 +216,13 @@ companiesRouter.post("/:id/trade", async (req: AuthedRequest, res) => {
   const { side, quantity } = parsed.data;
 
   if (side === "buy") {
+    if (!industry.inputResource) {
+      res.status(400).json({
+        error: `${industry.name} companies don't buy any input — they produce ${industry.outputResource} directly`,
+      });
+      return;
+    }
+
     const market = await prisma.marketResource.findUnique({ where: { resourceType: industry.inputResource } });
     if (!market) {
       res.status(404).json({ error: "Market not initialized yet" });
@@ -242,10 +249,10 @@ companiesRouter.post("/:id/trade", async (req: AuthedRequest, res) => {
   }
 
   if (company.goodsStock < quantity) {
-    res.status(400).json({ error: "Not enough goods in stock to sell" });
+    res.status(400).json({ error: `Not enough ${industry.outputResource} in stock to sell` });
     return;
   }
-  const market = await prisma.marketResource.findUnique({ where: { resourceType: "goods" } });
+  const market = await prisma.marketResource.findUnique({ where: { resourceType: industry.outputResource } });
   if (!market) {
     res.status(404).json({ error: "Market not initialized yet" });
     return;
@@ -267,7 +274,7 @@ companiesRouter.post("/:id/trade", async (req: AuthedRequest, res) => {
       },
     }),
     prisma.marketTrade.create({
-      data: { companyId: company.id, resourceType: "goods", side, quantity, price: market.price },
+      data: { companyId: company.id, resourceType: industry.outputResource, side, quantity, price: market.price },
     }),
   ];
   if (government && tax > 0) {
@@ -275,7 +282,7 @@ companiesRouter.post("/:id/trade", async (req: AuthedRequest, res) => {
   }
 
   await prisma.$transaction(updates);
-  const newPrice = await applyTradeImpact("goods", "sell", quantity);
+  const newPrice = await applyTradeImpact(industry.outputResource, "sell", quantity);
   res.json({ ok: true, proceeds, tax, newPrice });
 });
 
