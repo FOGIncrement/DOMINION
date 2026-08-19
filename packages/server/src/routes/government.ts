@@ -11,13 +11,19 @@ governmentRouter.use(requireAuth);
 const MAX_RATE = 0.5;
 const MAX_WELFARE_RATE = 5;
 
+/**
+ * Government rows are normally created at registration (routes/auth.ts), but
+ * any account created before that code existed has no row at all and would
+ * otherwise 404 forever with no way to recover — upsert makes every route
+ * here self-healing instead of relying on a one-time migration script.
+ */
+function getOrCreateGovernment(playerId: string) {
+  return prisma.government.upsert({ where: { playerId }, update: {}, create: { playerId } });
+}
+
 governmentRouter.get("/mine", async (req: AuthedRequest, res) => {
   const playerId = req.playerId!;
-  const government = await prisma.government.findUnique({ where: { playerId } });
-  if (!government) {
-    res.status(404).json({ error: "No government found for this player" });
-    return;
-  }
+  const government = await getOrCreateGovernment(playerId);
 
   const settlement = await prisma.settlement.findUnique({
     where: { playerId },
@@ -58,11 +64,7 @@ governmentRouter.post("/rates", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const government = await prisma.government.findUnique({ where: { playerId: req.playerId! } });
-  if (!government) {
-    res.status(404).json({ error: "No government found for this player" });
-    return;
-  }
+  const government = await getOrCreateGovernment(req.playerId!);
 
   await prisma.government.update({
     where: { id: government.id },
@@ -85,11 +87,7 @@ governmentRouter.post("/subsidize", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const government = await prisma.government.findUnique({ where: { playerId: req.playerId! } });
-  if (!government) {
-    res.status(404).json({ error: "No government found for this player" });
-    return;
-  }
+  const government = await getOrCreateGovernment(req.playerId!);
   if (government.treasury < parsed.data.amount) {
     res.status(400).json({ error: "Not enough treasury funds" });
     return;
