@@ -208,6 +208,19 @@ a {
   margin-top: 16px;
 }
 
+.card-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 16px 0 8px;
+}
+
+.card-section-label:first-child {
+  margin-top: 0;
+}
+
 /* --- Buildings grid --- */
 
 .building-grid {
@@ -446,6 +459,45 @@ a {
 
 .trade-row input {
   width: 90px;
+}
+
+/* --- Filter / sort controls --- */
+
+.filter-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.filter-row select,
+.filter-row input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.filter-row input[type="text"] {
+  width: 200px;
+}
+
+.sortable-header {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.sortable-header:hover {
+  color: var(--text-primary);
+}
+
+.sortable-header__arrow {
+  margin-left: 4px;
+  color: var(--text-primary);
 }
 
 /* --- Tables / lists --- */

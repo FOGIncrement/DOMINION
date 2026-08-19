@@ -12,6 +12,18 @@ import { api, ApiError, type GameStateResponse, type TechInfo } from "../api/cli
 import { useGameState, useTechs } from "../api/hooks.js";
 import { useState } from "react";
 
+// Purely a client-side grouping for the build menu — no equivalent field on
+// BuildingTypeDef itself, so this stays a local lookup rather than a shared
+// package change.
+const BUILDING_CATEGORIES: Record<BuildingTypeId, string> = {
+  house: "Housing",
+  farm: "Production",
+  lumberCamp: "Production",
+  quarry: "Production",
+  marketplace: "Infrastructure",
+};
+const BUILDING_CATEGORY_ORDER = ["Housing", "Production", "Infrastructure"];
+
 function formatCost(cost: Partial<Record<ResourceType, number>>): string {
   return RESOURCE_TYPES.filter((r) => cost[r]).map((r) => `${cost[r]} ${r}`).join(", ") || "free";
 }
@@ -146,32 +158,43 @@ export default function Dashboard() {
 
         <div className="card">
           <h2 className="card__title">Build</h2>
-          <div className="build-menu">
-            {Object.values(BUILDING_TYPES).map((def) => {
-              const unlocked = !def.requiredTech || data.techIds.includes(def.requiredTech);
-              const affordable = canAfford(data.settlement, def.cost);
-              return (
-                <div className="build-option" key={def.id}>
-                  <div className="building-card__head">
-                    <span className="building-card__name">{def.name}</span>
-                  </div>
-                  <p className="building-card__desc">{def.description}</p>
-                  <span className="build-option__cost">{formatCost(def.cost)}</span>
-                  {unlocked ? (
-                    <button
-                      className="btn"
-                      disabled={!affordable || build.isPending}
-                      onClick={() => build.mutate(def.id)}
-                    >
-                      Build
-                    </button>
-                  ) : (
-                    <span className="build-option__cost">Requires {TECHS[def.requiredTech!].name}</span>
-                  )}
+          {BUILDING_CATEGORY_ORDER.map((category) => {
+            const defsInCategory = Object.values(BUILDING_TYPES).filter(
+              (def) => BUILDING_CATEGORIES[def.id] === category,
+            );
+            if (defsInCategory.length === 0) return null;
+            return (
+              <div key={category}>
+                <div className="card-section-label">{category}</div>
+                <div className="build-menu">
+                  {defsInCategory.map((def) => {
+                    const unlocked = !def.requiredTech || data.techIds.includes(def.requiredTech);
+                    const affordable = canAfford(data.settlement, def.cost);
+                    return (
+                      <div className="build-option" key={def.id}>
+                        <div className="building-card__head">
+                          <span className="building-card__name">{def.name}</span>
+                        </div>
+                        <p className="building-card__desc">{def.description}</p>
+                        <span className="build-option__cost">{formatCost(def.cost)}</span>
+                        {unlocked ? (
+                          <button
+                            className="btn"
+                            disabled={!affordable || build.isPending}
+                            onClick={() => build.mutate(def.id)}
+                          >
+                            Build
+                          </button>
+                        ) : (
+                          <span className="build-option__cost">Requires {TECHS[def.requiredTech!].name}</span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            );
+          })}
         </div>
 
         <div className="card">

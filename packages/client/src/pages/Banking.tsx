@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { BANK_TUNING } from "@dominion/shared";
-import { api, ApiError } from "../api/client.js";
+import { api, ApiError, type PublicBank } from "../api/client.js";
 import { useBanks, useGameState, useMyBanks, useMyCompanies, useMyLoans } from "../api/hooks.js";
 
 const RISK_COLOR: Record<string, string> = {
@@ -10,6 +10,27 @@ const RISK_COLOR: Record<string, string> = {
   high: "var(--critical)",
   defaulted: "var(--critical)",
 };
+
+type BankSortKey = "cash" | "interestRatePerHour";
+
+function SortableHeader({
+  label,
+  active,
+  direction,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  direction: "asc" | "desc";
+  onClick: () => void;
+}) {
+  return (
+    <th className="sortable-header" onClick={onClick}>
+      {label}
+      {active && <span className="sortable-header__arrow">{direction === "asc" ? "▲" : "▼"}</span>}
+    </th>
+  );
+}
 
 function invalidateBanking(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ["banks"] });
@@ -124,6 +145,7 @@ function MyLoansList() {
   const queryClient = useQueryClient();
   const { data: loans } = useMyLoans();
   const [repayAmounts, setRepayAmounts] = useState<Record<string, number>>({});
+  const [riskFilter, setRiskFilter] = useState<"all" | "low" | "medium" | "high" | "defaulted">("all");
   const [error, setError] = useState<string | null>(null);
 
   const repay = useMutation({
@@ -144,10 +166,24 @@ function MyLoansList() {
     );
   }
 
+  const visibleLoans = riskFilter === "all" ? loans.loans : loans.loans.filter((l) => l.risk === riskFilter);
+
   return (
     <div className="card">
       <h2 className="card__title">My Loans</h2>
       {error && <div className="auth-error">{error}</div>}
+      <div className="filter-row">
+        <select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value as typeof riskFilter)}>
+          <option value="all">All risk levels</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="defaulted">Defaulted</option>
+        </select>
+      </div>
+      {visibleLoans.length === 0 ? (
+        <div className="empty-state">No loans match that filter.</div>
+      ) : (
       <table className="settlement-table">
         <thead>
           <tr>
@@ -161,7 +197,7 @@ function MyLoansList() {
           </tr>
         </thead>
         <tbody>
-          {loans.loans.map((l) => (
+          {visibleLoans.map((l) => (
             <tr key={l.id}>
               <td>{l.companyName}</td>
               <td>{l.bankName}</td>
@@ -199,6 +235,7 @@ function MyLoansList() {
           ))}
         </tbody>
       </table>
+      )}
     </div>
   );
 }
@@ -206,6 +243,28 @@ function MyLoansList() {
 export default function Banking() {
   const { data: myBanks } = useMyBanks();
   const { data: banks } = useBanks();
+  const [ownerFilter, setOwnerFilter] = useState<"all" | "player" | "npc">("all");
+  const [sort, setSort] = useState<{ key: BankSortKey; direction: "asc" | "desc" }>({
+    key: "cash",
+    direction: "desc",
+  });
+
+  const visibleBanks = useMemo(() => {
+    const all = banks?.banks ?? [];
+    const filtered = all.filter((b) => {
+      if (ownerFilter === "player" && !b.isPlayerOwned) return false;
+      if (ownerFilter === "npc" && b.isPlayerOwned) return false;
+      return true;
+    });
+    const dir = sort.direction === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => (a[sort.key] - b[sort.key]) * dir);
+  }, [banks, ownerFilter, sort]);
+
+  const toggleSort = (key: BankSortKey) => {
+    setSort((prev) =>
+      prev.key === key ? { key, direction: prev.direction === "asc" ? "desc" : "asc" } : { key, direction: "desc" },
+    );
+  };
 
   return (
     <div className="page page--full">
@@ -262,28 +321,51 @@ export default function Banking() {
         {!banks ? (
           <div className="loading">Loading...</div>
         ) : (
-          <table className="settlement-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Owner</th>
-                <th>Reserve Cash</th>
-                <th>Rate/hr</th>
-                <th>Founded</th>
-              </tr>
-            </thead>
-            <tbody>
-              {banks.banks.map((b) => (
-                <tr key={b.id}>
-                  <td>{b.name}</td>
-                  <td>{b.isPlayerOwned ? "Player" : "NPC"}</td>
-                  <td>{b.cash.toLocaleString()}g</td>
-                  <td>{(b.interestRatePerHour * 100).toFixed(2)}%</td>
-                  <td>{new Date(b.foundedAt).toLocaleDateString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <div className="filter-row">
+              <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value as typeof ownerFilter)}>
+                <option value="all">All owners</option>
+                <option value="player">Player-owned</option>
+                <option value="npc">NPC-owned</option>
+              </select>
+            </div>
+            {visibleBanks.length === 0 ? (
+              <div className="empty-state">No banks match that filter.</div>
+            ) : (
+              <table className="settlement-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Owner</th>
+                    <SortableHeader
+                      label="Reserve Cash"
+                      active={sort.key === "cash"}
+                      direction={sort.direction}
+                      onClick={() => toggleSort("cash")}
+                    />
+                    <SortableHeader
+                      label="Rate/hr"
+                      active={sort.key === "interestRatePerHour"}
+                      direction={sort.direction}
+                      onClick={() => toggleSort("interestRatePerHour")}
+                    />
+                    <th>Founded</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleBanks.map((b: PublicBank) => (
+                    <tr key={b.id}>
+                      <td>{b.name}</td>
+                      <td>{b.isPlayerOwned ? "Player" : "NPC"}</td>
+                      <td>{b.cash.toLocaleString()}g</td>
+                      <td>{(b.interestRatePerHour * 100).toFixed(2)}%</td>
+                      <td>{new Date(b.foundedAt).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </>
         )}
       </div>
     </div>

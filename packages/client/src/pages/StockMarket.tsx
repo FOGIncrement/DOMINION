@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { api, ApiError } from "../api/client.js";
+import { useMemo, useState } from "react";
+import { COMPANY_INDUSTRIES } from "@dominion/shared";
+import { api, ApiError, type StockSummary } from "../api/client.js";
 import { useGameState, usePortfolio, useStockDetail, useStocks } from "../api/hooks.js";
 import Sparkline from "../components/Sparkline.js";
 
@@ -10,6 +11,27 @@ function formatSigned(value: number, digits = 1): string {
   const rounded = Number(value.toFixed(digits));
   if (rounded === 0) return `±0`;
   return rounded > 0 ? `+${rounded}` : `${rounded}`;
+}
+
+type StockSortKey = "sharePrice" | "marketCap" | "profitRatePerHour";
+
+function SortableHeader({
+  label,
+  active,
+  direction,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  direction: "asc" | "desc";
+  onClick: () => void;
+}) {
+  return (
+    <th className="sortable-header" onClick={onClick}>
+      {label}
+      {active && <span className="sortable-header__arrow">{direction === "asc" ? "▲" : "▼"}</span>}
+    </th>
+  );
 }
 
 function StockDetailPanel({ companyId }: { companyId: string }) {
@@ -143,8 +165,34 @@ export default function StockMarket() {
   const { data: stocks, isLoading } = useStocks();
   const { data: portfolio } = usePortfolio();
   const [selected, setSelected] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [industryFilter, setIndustryFilter] = useState("all");
+  const [ownerFilter, setOwnerFilter] = useState<"all" | "player" | "npc">("all");
+  const [sort, setSort] = useState<{ key: StockSortKey; direction: "asc" | "desc" }>({
+    key: "marketCap",
+    direction: "desc",
+  });
 
   const portfolioValue = portfolio?.holdings.reduce((sum, h) => sum + h.value, 0) ?? 0;
+
+  const visibleStocks = useMemo(() => {
+    const all = stocks?.stocks ?? [];
+    const filtered = all.filter((s) => {
+      if (search && !s.name.toLowerCase().includes(search.toLowerCase())) return false;
+      if (industryFilter !== "all" && s.industry !== industryFilter) return false;
+      if (ownerFilter === "player" && !s.isPlayerOwned) return false;
+      if (ownerFilter === "npc" && s.isPlayerOwned) return false;
+      return true;
+    });
+    const dir = sort.direction === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => (a[sort.key] - b[sort.key]) * dir);
+  }, [stocks, search, industryFilter, ownerFilter, sort]);
+
+  const toggleSort = (key: StockSortKey) => {
+    setSort((prev) =>
+      prev.key === key ? { key, direction: prev.direction === "asc" ? "desc" : "asc" } : { key, direction: "desc" },
+    );
+  };
 
   return (
     <div className="page page--full">
@@ -155,38 +203,80 @@ export default function StockMarket() {
         ) : stocks.stocks.length === 0 ? (
           <div className="empty-state">No companies have gone public yet.</div>
         ) : (
-          <table className="settlement-table">
-            <thead>
-              <tr>
-                <th>Company</th>
-                <th>Industry</th>
-                <th>Price</th>
-                <th>Market Cap</th>
-                <th>Profit/hr</th>
-                <th>Owner</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stocks.stocks.map((s) => (
-                <tr
-                  key={s.id}
-                  onClick={() => setSelected(s.id)}
-                  style={{ cursor: "pointer", background: selected === s.id ? "var(--surface-2)" : undefined }}
-                >
-                  <td>{s.name}</td>
-                  <td>
-                    <span className="archetype-tag">{s.industry}</span>
-                  </td>
-                  <td>{s.sharePrice.toFixed(2)}g</td>
-                  <td>{s.marketCap.toFixed(0)}g</td>
-                  <td className={s.profitRatePerHour >= 0 ? "stat-tile__delta--up" : "stat-tile__delta--down"}>
-                    {formatSigned(s.profitRatePerHour, 2)}
-                  </td>
-                  <td>{s.isPlayerOwned ? "Player" : "NPC"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <div className="filter-row">
+              <input
+                type="text"
+                placeholder="Search companies..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <select value={industryFilter} onChange={(e) => setIndustryFilter(e.target.value)}>
+                <option value="all">All industries</option>
+                {Object.values(COMPANY_INDUSTRIES).map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
+                ))}
+              </select>
+              <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value as typeof ownerFilter)}>
+                <option value="all">All owners</option>
+                <option value="player">Player-owned</option>
+                <option value="npc">NPC-owned</option>
+              </select>
+            </div>
+            {visibleStocks.length === 0 ? (
+              <div className="empty-state">No companies match those filters.</div>
+            ) : (
+              <table className="settlement-table">
+                <thead>
+                  <tr>
+                    <th>Company</th>
+                    <th>Industry</th>
+                    <SortableHeader
+                      label="Price"
+                      active={sort.key === "sharePrice"}
+                      direction={sort.direction}
+                      onClick={() => toggleSort("sharePrice")}
+                    />
+                    <SortableHeader
+                      label="Market Cap"
+                      active={sort.key === "marketCap"}
+                      direction={sort.direction}
+                      onClick={() => toggleSort("marketCap")}
+                    />
+                    <SortableHeader
+                      label="Profit/hr"
+                      active={sort.key === "profitRatePerHour"}
+                      direction={sort.direction}
+                      onClick={() => toggleSort("profitRatePerHour")}
+                    />
+                    <th>Owner</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleStocks.map((s: StockSummary) => (
+                    <tr
+                      key={s.id}
+                      onClick={() => setSelected(s.id)}
+                      style={{ cursor: "pointer", background: selected === s.id ? "var(--surface-2)" : undefined }}
+                    >
+                      <td>{s.name}</td>
+                      <td>
+                        <span className="archetype-tag">{s.industry}</span>
+                      </td>
+                      <td>{s.sharePrice.toFixed(2)}g</td>
+                      <td>{s.marketCap.toFixed(0)}g</td>
+                      <td className={s.profitRatePerHour >= 0 ? "stat-tile__delta--up" : "stat-tile__delta--down"}>
+                        {formatSigned(s.profitRatePerHour, 2)}
+                      </td>
+                      <td>{s.isPlayerOwned ? "Player" : "NPC"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </>
         )}
       </div>
 
