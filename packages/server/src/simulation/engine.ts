@@ -13,6 +13,7 @@ import {
 import { prisma } from "../db.js";
 import { accrueLoanInterest, isLoanDefaulted, maybeBorrow, maybeRepayLoan } from "./banks.js";
 import { tickCompany } from "./companies.js";
+import { autoCloseCompany, shouldAutoClose, shouldForceLayoff } from "./companyFailure.js";
 import { computeConsumption, reconcileWorkersWithPopulation } from "./consumption.js";
 import { maybeRollEvent } from "./events.js";
 import { ensureMarketSeeded, TRADEABLE_RESOURCES, tickMarket, type TradeableResource } from "./market.js";
@@ -68,6 +69,7 @@ async function loadCompanySnapshots(): Promise<CompanySnapshot[]> {
     goodsStock: c.goodsStock,
     workersAssigned: c.workersAssigned,
     level: c.level,
+    isPublic: c.isPublic,
     lastTickAt: c.lastTickAt,
   }));
 }
@@ -229,12 +231,22 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
       await maybeBorrow(company.id, state);
     }
 
+    if (shouldAutoClose(industry, state.cash, company.isPublic)) {
+      await autoCloseCompany(company.id);
+      continue;
+    }
+
+    const workersAssigned = shouldForceLayoff(state.cash, company.workersAssigned)
+      ? company.workersAssigned - 1
+      : company.workersAssigned;
+
     await prisma.company.update({
       where: { id: company.id },
       data: {
         cash: state.cash,
         inputStock: state.inputStock,
         goodsStock: state.goodsStock,
+        workersAssigned,
         lastTickAt: now,
         totalExpenses: { increment: result.wagesPaid },
         totalRevenue: { increment: revenue },

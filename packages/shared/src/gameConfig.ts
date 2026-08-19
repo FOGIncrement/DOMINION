@@ -297,6 +297,12 @@ export const NPC_GROWTH_TUNING = {
   expandChancePerTick: 0.05,
 };
 
+// Auto-close is a multiple of a baseline (foundingCost), same idiom as
+// BANK_TUNING.defaultMultiplier being a multiple of loan principal.
+export const COMPANY_FAILURE_TUNING = {
+  autoCloseDebtMultiplier: 3,
+};
+
 export const NPC_COMPANY_TUNING = {
   inputBuffer: 20, // NPC companies buy input up to this stock level
   goodsSellBuffer: 15, // and sell goods stock held above this level
