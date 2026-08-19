@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { BANK_TUNING } from "@dominion/shared";
+import { BANK_TUNING, computeLoanRate, computeMaxLoanAmount } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
 import { getControllingPlayerId } from "../simulation/control.js";
@@ -113,13 +113,17 @@ banksRouter.post("/:bankId/loans", async (req: AuthedRequest, res) => {
     res.status(400).json({ error: "This bank doesn't have enough reserve cash for that loan" });
     return;
   }
-  const maxLoan = company.cash * BANK_TUNING.maxLoanToCashRatio;
+  const maxLoan = computeMaxLoanAmount(company.cash);
   if (amount > maxLoan) {
     res.status(400).json({
       error: `Credit check failed — this company can borrow at most ${maxLoan.toFixed(0)} gold (${BANK_TUNING.maxLoanToCashRatio}x its cash)`,
     });
     return;
   }
+
+  // Risk-based pricing, not a flat rate: a loan close to the company's
+  // credit limit costs more per hour than one well within it.
+  const interestRatePerHour = computeLoanRate(bank.interestRatePerHour, amount, company.cash);
 
   const [, loan] = await prisma.$transaction([
     prisma.bank.update({ where: { id: bank.id }, data: { cash: bank.cash - amount } }),
@@ -129,11 +133,11 @@ banksRouter.post("/:bankId/loans", async (req: AuthedRequest, res) => {
         companyId: company.id,
         principal: amount,
         outstandingBalance: amount,
-        interestRatePerHour: bank.interestRatePerHour,
+        interestRatePerHour,
       },
     }),
     prisma.company.update({ where: { id: company.id }, data: { cash: company.cash + amount } }),
   ]);
 
-  res.status(201).json({ ok: true, loanId: loan.id });
+  res.status(201).json({ ok: true, loanId: loan.id, interestRatePerHour });
 });

@@ -359,6 +359,7 @@ export const BANK_TUNING = {
   foundingCost: 200, // gold, becomes the bank's starting lending reserve
   defaultMultiplier: 2.5, // defaults once outstandingBalance exceeds principal * this
   maxLoanToCashRatio: 5, // a company can borrow up to this multiple of its own current cash
+  maxRiskPremium: 1.5, // rate multiplier added at 100% credit utilization (so borrowing right up to the limit costs 2.5x the bank's base rate)
 };
 
 export const NPC_BANKING_TUNING = {

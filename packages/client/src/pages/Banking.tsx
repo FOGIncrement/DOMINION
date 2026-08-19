@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { BANK_TUNING } from "@dominion/shared";
+import { BANK_TUNING, computeLoanRate, computeMaxLoanAmount } from "@dominion/shared";
 import { api, ApiError, type PublicBank } from "../api/client.js";
 import { useBanks, useGameState, useMyBanks, useMyCompanies, useMyLoans } from "../api/hooks.js";
 
@@ -96,6 +96,16 @@ function RequestLoanForm() {
   const companies = myCompanies?.companies ?? [];
   const bankOptions = banks?.banks ?? [];
 
+  const selectedCompany = companies.find((c) => c.id === companyId);
+  const selectedBank = bankOptions.find((b) => b.id === bankId);
+  const quote =
+    selectedCompany && selectedBank
+      ? {
+          maxLoan: computeMaxLoanAmount(selectedCompany.cash),
+          rate: computeLoanRate(selectedBank.interestRatePerHour, amount, selectedCompany.cash),
+        }
+      : null;
+
   return (
     <div className="card">
       <h2 className="card__title">Request a Loan</h2>
@@ -118,7 +128,7 @@ function RequestLoanForm() {
               <option value="">Bank...</option>
               {bankOptions.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.name} ({(b.interestRatePerHour * 100).toFixed(2)}%/hr, {b.cash}g available)
+                  {b.name} ({(b.interestRatePerHour * 100).toFixed(2)}%/hr base, {b.cash}g available)
                 </option>
               ))}
             </select>
@@ -131,6 +141,13 @@ function RequestLoanForm() {
               Borrow
             </button>
           </div>
+          {quote && (
+            <p className="suggestion" style={{ marginTop: 8 }}>
+              Quoted rate for this amount: <b>{(quote.rate * 100).toFixed(2)}%/hr</b> — the closer a loan gets to this
+              company's {quote.maxLoan.toFixed(0)}g credit limit, the higher the rate climbs above the bank's base
+              rate. {amount > quote.maxLoan && "This amount exceeds the credit limit and will be rejected."}
+            </p>
+          )}
           <p className="suggestion" style={{ marginTop: 8 }}>
             Credit check caps a loan at {BANK_TUNING.maxLoanToCashRatio}x the company's current cash. Interest compounds
             hourly on the outstanding balance until repaid — leave it too long and it defaults.

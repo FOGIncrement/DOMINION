@@ -1,4 +1,4 @@
-import { BANK_TUNING, NPC_BANKING_TUNING } from "@dominion/shared";
+import { BANK_TUNING, NPC_BANKING_TUNING, computeLoanRate } from "@dominion/shared";
 import { prisma } from "../db.js";
 
 export interface LoanLike {
@@ -29,7 +29,8 @@ export async function maybeBorrow(companyId: string, state: MutableCash): Promis
   const bank = banks.find((b) => b.cash > 20);
   if (!bank) return;
 
-  const maxLoan = Math.max(10, state.cash * BANK_TUNING.maxLoanToCashRatio);
+  const preLoanCash = state.cash;
+  const maxLoan = Math.max(10, preLoanCash * BANK_TUNING.maxLoanToCashRatio);
   const amount = Math.min(bank.cash, maxLoan) * NPC_BANKING_TUNING.borrowAmountFraction;
   if (amount < 5) return;
 
@@ -41,7 +42,7 @@ export async function maybeBorrow(companyId: string, state: MutableCash): Promis
       companyId,
       principal: amount,
       outstandingBalance: amount,
-      interestRatePerHour: bank.interestRatePerHour,
+      interestRatePerHour: computeLoanRate(bank.interestRatePerHour, amount, preLoanCash),
     },
   });
 }
