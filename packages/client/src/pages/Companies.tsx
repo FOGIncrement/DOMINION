@@ -280,13 +280,16 @@ function FoundCompanyForm() {
   const { data: gameState } = useGameState();
   const [name, setName] = useState("");
   const [industry, setIndustry] = useState<CompanyIndustryId>("bakery");
+  const [seedMoney, setSeedMoney] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const found = useMutation({
-    mutationFn: () => api.foundCompany(name || `${COMPANY_INDUSTRIES[industry].name} Co.`, industry),
+    mutationFn: () =>
+      api.foundCompany(name || `${COMPANY_INDUSTRIES[industry].name} Co.`, industry, seedMoney),
     onSuccess: () => {
       setError(null);
       setName("");
+      setSeedMoney(0);
       queryClient.invalidateQueries({ queryKey: ["myCompanies"] });
       queryClient.invalidateQueries({ queryKey: ["gameState"] });
       queryClient.invalidateQueries({ queryKey: ["allCompanies"] });
@@ -295,7 +298,8 @@ function FoundCompanyForm() {
   });
 
   const def = COMPANY_INDUSTRIES[industry];
-  const canAfford = (gameState?.settlement.gold ?? 0) >= def.foundingCost;
+  const totalCost = def.foundingCost + seedMoney;
+  const canAfford = (gameState?.settlement.gold ?? 0) >= totalCost;
 
   return (
     <div className="card">
@@ -316,12 +320,24 @@ function FoundCompanyForm() {
             </option>
           ))}
         </select>
+        <label className="suggestion" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          Seed money
+          <input
+            type="number"
+            min={0}
+            step={10}
+            value={seedMoney}
+            onChange={(e) => setSeedMoney(Math.max(0, Number(e.target.value) || 0))}
+            style={{ width: 90 }}
+          />
+        </label>
         <button className="btn btn--accent" disabled={!canAfford || found.isPending} onClick={() => found.mutate()}>
-          Found ({def.foundingCost}g)
+          Found ({totalCost}g)
         </button>
       </div>
       <p className="suggestion" style={{ marginTop: 8 }}>
-        {def.description} {!canAfford && "Not enough gold yet."}
+        {def.description} Seed money is extra starting cash beyond the {def.foundingCost}g founding
+        cost — a cushion against payroll going negative. {!canAfford && "Not enough gold yet."}
       </p>
     </div>
   );

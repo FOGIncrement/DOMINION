@@ -53,10 +53,10 @@ export const api = {
 
   myCompanies: () => request<{ companies: MyCompany[] }>("/companies/mine"),
   allCompanies: () => request<{ companies: PublicCompany[] }>("/companies"),
-  foundCompany: (name: string, industry: string) =>
+  foundCompany: (name: string, industry: string, seedMoney: number = 0) =>
     request<{ ok: true; companyId: string }>("/companies", {
       method: "POST",
-      body: JSON.stringify({ name, industry }),
+      body: JSON.stringify({ name, industry, seedMoney }),
     }),
   setCompanyWorkers: (companyId: string, workersAssigned: number) =>
     request<{ ok: true; workersAssigned: number }>(`/companies/${companyId}/workers`, {

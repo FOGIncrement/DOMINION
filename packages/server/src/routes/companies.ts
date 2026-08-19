@@ -92,6 +92,11 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
 const foundSchema = z.object({
   name: z.string().min(2).max(60),
   industry: z.enum(COMPANY_INDUSTRY_IDS),
+  // Extra capital beyond the flat founding cost — a cushion against the
+  // wage-driven forced-layoff/auto-close consequences (see
+  // simulation/companyFailure.ts) at the price of tying up more settlement
+  // gold up front. No upper cap beyond what the player can afford.
+  seedMoney: z.number().min(0).max(1_000_000).default(0),
 });
 
 companiesRouter.post("/", async (req: AuthedRequest, res) => {
@@ -108,22 +113,23 @@ companiesRouter.post("/", async (req: AuthedRequest, res) => {
   }
 
   const industry = COMPANY_INDUSTRIES[parsed.data.industry];
-  if (settlement.gold < industry.foundingCost) {
-    res.status(400).json({ error: `Need ${industry.foundingCost} gold to found a ${industry.name}` });
+  const totalCost = industry.foundingCost + parsed.data.seedMoney;
+  if (settlement.gold < totalCost) {
+    res.status(400).json({ error: `Need ${totalCost} gold to found a ${industry.name} with that much seed money` });
     return;
   }
 
   const [, company] = await prisma.$transaction([
     prisma.settlement.update({
       where: { id: settlement.id },
-      data: { gold: settlement.gold - industry.foundingCost },
+      data: { gold: settlement.gold - totalCost },
     }),
     prisma.company.create({
       data: {
         ownerId: req.playerId!,
         name: parsed.data.name,
         industry: parsed.data.industry,
-        cash: industry.foundingCost,
+        cash: totalCost,
       },
     }),
   ]);
