@@ -1,4 +1,9 @@
-import { COMPANY_INDUSTRIES, NPC_COMPANY_TUNING } from "@dominion/shared";
+import {
+  COMPANY_INDUSTRIES,
+  NPC_COMPANY_TUNING,
+  computeCompanyMaxWorkers,
+  computeCompanyUpgradeCost,
+} from "@dominion/shared";
 import { prisma } from "../db.js";
 import { applyTradeImpact, type TradeableResource } from "./market.js";
 import type { CompanySnapshot } from "./types.js";
@@ -50,12 +55,33 @@ export async function settleNpcCompanyTrading(
 /** Small chance for a cash-rich NPC company to hire another worker, mirroring maybeExpand for settlements. */
 export async function maybeHire(company: CompanySnapshot, state: MutableCompanyState): Promise<void> {
   const industry = COMPANY_INDUSTRIES[company.industry];
-  if (company.workersAssigned >= industry.maxWorkers) return;
+  if (company.workersAssigned >= computeCompanyMaxWorkers(industry, company.level)) return;
   if (state.cash < NPC_COMPANY_TUNING.minCashToHire) return;
   if (Math.random() > NPC_COMPANY_TUNING.hireChancePerTick) return;
 
   await prisma.company.update({
     where: { id: company.id },
     data: { workersAssigned: company.workersAssigned + 1 },
+  });
+}
+
+/**
+ * Small chance for a cash-rich NPC company to reinvest in itself, mirroring
+ * maybeHire. Without this, only player companies could ever grow past their
+ * starting shape, which would let a player trivially out-scale all NPC
+ * competition — NPCs need the same reinvestment lever.
+ */
+export async function maybeUpgradeCompany(company: CompanySnapshot, state: MutableCompanyState): Promise<void> {
+  const industry = COMPANY_INDUSTRIES[company.industry];
+  const cost = computeCompanyUpgradeCost(industry, company.level);
+  if (cost === null) return; // already at maxLevel
+  if (state.cash < NPC_COMPANY_TUNING.minCashToUpgrade) return;
+  if (state.cash < cost) return;
+  if (Math.random() > NPC_COMPANY_TUNING.upgradeChancePerTick) return;
+
+  state.cash -= cost;
+  await prisma.company.update({
+    where: { id: company.id },
+    data: { level: company.level + 1 },
   });
 }

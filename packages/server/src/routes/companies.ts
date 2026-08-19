@@ -5,6 +5,8 @@ import {
   COMPANY_INDUSTRY_IDS,
   STOCK_TUNING,
   computeCompanyHourlyRates,
+  computeCompanyMaxWorkers,
+  computeCompanyUpgradeCost,
   computeTargetSharePrice,
   type CompanyIndustryId,
 } from "@dominion/shared";
@@ -25,6 +27,7 @@ companiesRouter.get("/", async (_req, res) => {
       industryName: COMPANY_INDUSTRIES[c.industry as CompanyIndustryId]?.name ?? c.industry,
       isPlayerOwned: c.ownerId !== null,
       workersAssigned: c.workersAssigned,
+      level: c.level,
       cash: Math.round(c.cash),
       foundedAt: c.foundedAt,
       isPublic: c.isPublic,
@@ -66,11 +69,13 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
         inputStock: c.inputStock,
         goodsStock: c.goodsStock,
         workersAssigned: c.workersAssigned,
-        maxWorkers: industry.maxWorkers,
+        maxWorkers: computeCompanyMaxWorkers(industry, c.level),
+        level: c.level,
+        upgradeCost: computeCompanyUpgradeCost(industry, c.level),
         totalRevenue: c.totalRevenue,
         totalExpenses: c.totalExpenses,
         foundedAt: c.foundedAt,
-        rates: computeCompanyHourlyRates(industry, c.workersAssigned),
+        rates: computeCompanyHourlyRates(industry, c.workersAssigned, c.level),
         isPublic: c.isPublic,
         sharePrice: c.sharePrice,
         sharesOutstanding: c.sharesOutstanding,
@@ -162,10 +167,33 @@ companiesRouter.post("/:id/workers", async (req: AuthedRequest, res) => {
   }
 
   const industry = COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
-  const workersAssigned = Math.min(parsed.data.workersAssigned, industry.maxWorkers);
+  const workersAssigned = Math.min(parsed.data.workersAssigned, computeCompanyMaxWorkers(industry, company.level));
 
   await prisma.company.update({ where: { id: company.id }, data: { workersAssigned } });
   res.json({ ok: true, workersAssigned });
+});
+
+companiesRouter.post("/:id/upgrade", async (req: AuthedRequest, res) => {
+  const { company, controlled } = await loadControlledCompany(req.params.id, req.playerId!);
+  if (!company || !controlled) {
+    respondNotControlled(res, company);
+    return;
+  }
+
+  const industry = COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
+  const cost = computeCompanyUpgradeCost(industry, company.level);
+  if (cost === null) {
+    res.status(400).json({ error: "Already at max level" });
+    return;
+  }
+  if (company.cash < cost) {
+    res.status(400).json({ error: `Need ${cost.toFixed(0)} gold in company cash to upgrade` });
+    return;
+  }
+
+  const level = company.level + 1;
+  await prisma.company.update({ where: { id: company.id }, data: { cash: company.cash - cost, level } });
+  res.json({ ok: true, level, cost });
 });
 
 const tradeSchema = z.object({ side: z.enum(["buy", "sell"]), quantity: z.number().positive() });

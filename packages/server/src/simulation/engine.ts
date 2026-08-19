@@ -15,7 +15,7 @@ import { computeConsumption, reconcileWorkersWithPopulation } from "./consumptio
 import { maybeRollEvent } from "./events.js";
 import { ensureMarketSeeded, TRADEABLE_RESOURCES, tickMarket, type TradeableResource } from "./market.js";
 import { maybeExpand, settleNpcSurplus, type MutableResources } from "./npcEconomy.js";
-import { maybeHire, settleNpcCompanyTrading, type MutableCompanyState } from "./npcCompanyEconomy.js";
+import { maybeHire, maybeUpgradeCompany, settleNpcCompanyTrading, type MutableCompanyState } from "./npcCompanyEconomy.js";
 import { runNpcInvestorTick, type PublicCompanyForInvesting } from "./npcInvestors.js";
 import { computeProduction } from "./production.js";
 import { driftSharePrice, maybeDividend } from "./stocks.js";
@@ -65,6 +65,7 @@ async function loadCompanySnapshots(): Promise<CompanySnapshot[]> {
     inputStock: c.inputStock,
     goodsStock: c.goodsStock,
     workersAssigned: c.workersAssigned,
+    level: c.level,
     lastTickAt: c.lastTickAt,
   }));
 }
@@ -189,6 +190,7 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     if (!company.ownerId) {
       revenue = await settleNpcCompanyTrading(company, state, prices);
       await maybeHire(company, state);
+      await maybeUpgradeCompany(company, state);
       await maybeRepayLoan(company.id, state);
       await maybeBorrow(company.id, state);
     }

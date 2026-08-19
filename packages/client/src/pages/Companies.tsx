@@ -67,6 +67,16 @@ function CompanyCard({ company }: { company: MyCompany }) {
     onError: (err) => setError(err instanceof ApiError ? err.message : "IPO failed"),
   });
 
+  const upgrade = useMutation({
+    mutationFn: () => api.upgradeCompany(company.id),
+    onSuccess: (res) => {
+      setError(null);
+      setMessage(`Upgraded to level ${res.level} for ${res.cost.toFixed(0)} gold.`);
+      invalidate();
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Upgrade failed"),
+  });
+
   const netProfit = company.totalRevenue - company.totalExpenses;
   const canIpo = netProfit >= STOCK_TUNING.minProfitToIPO;
   const { controlledByMe } = company;
@@ -76,6 +86,7 @@ function CompanyCard({ company }: { company: MyCompany }) {
       <div className="building-card__head">
         <span className="building-card__name">{company.name}</span>
         <span className="archetype-tag">{industry.name}</span>
+        <span className="archetype-tag">Lv. {company.level}</span>
         <span className={`controller-tag ${controlledByMe ? "controller-tag--me" : "controller-tag--other"}`}>
           {controlledByMe ? "Controlled by you" : `Controlled by ${company.controllerLabel}`}
         </span>
@@ -137,6 +148,16 @@ function CompanyCard({ company }: { company: MyCompany }) {
               onClick={() => setWorkers.mutate(company.workersAssigned + 1)}
             >
               +
+            </button>
+          </div>
+
+          <div className="trade-row" style={{ margin: "4px 0" }}>
+            <button
+              className="btn"
+              disabled={company.upgradeCost === null || upgrade.isPending}
+              onClick={() => upgrade.mutate()}
+            >
+              {company.upgradeCost === null ? "Max level" : `Upgrade for ${company.upgradeCost.toFixed(0)}g`}
             </button>
           </div>
 
@@ -266,6 +287,7 @@ export default function Companies() {
               <tr>
                 <th>Name</th>
                 <th>Industry</th>
+                <th>Level</th>
                 <th>Owner</th>
                 <th>Employees</th>
                 <th>Cash</th>
@@ -280,6 +302,7 @@ export default function Companies() {
                   <td>
                     <span className="archetype-tag">{c.industryName}</span>
                   </td>
+                  <td>{c.level}</td>
                   <td>{c.isPlayerOwned ? "Player" : "NPC"}</td>
                   <td>{c.workersAssigned}</td>
                   <td>{c.cash.toLocaleString()}</td>

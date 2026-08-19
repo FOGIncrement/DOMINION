@@ -128,6 +128,7 @@ model Company {
   inputStock      Float     @default(0)
   goodsStock      Float     @default(0)
   workersAssigned Int       @default(0)
+  level           Int       @default(1)
   totalRevenue    Float     @default(0)
   totalExpenses   Float     @default(0)
   lastTickAt      DateTime  @default(now())

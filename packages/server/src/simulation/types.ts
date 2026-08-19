@@ -32,5 +32,6 @@ export interface CompanySnapshot {
   inputStock: number;
   goodsStock: number;
   workersAssigned: number;
+  level: number;
   lastTickAt: Date;
 }

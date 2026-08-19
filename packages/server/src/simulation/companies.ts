@@ -19,7 +19,7 @@ export interface CompanyTickResult {
  */
 export function tickCompany(company: CompanySnapshot, elapsedHours: number): CompanyTickResult {
   const industry = COMPANY_INDUSTRIES[company.industry];
-  const rates = computeCompanyHourlyRates(industry, company.workersAssigned);
+  const rates = computeCompanyHourlyRates(industry, company.workersAssigned, company.level);
 
   const desiredInput = rates.inputPerHour * elapsedHours;
   const actualInput = Math.min(desiredInput, company.inputStock);

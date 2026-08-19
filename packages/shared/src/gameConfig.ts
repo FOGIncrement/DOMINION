@@ -262,6 +262,20 @@ export const NPC_COMPANY_TUNING = {
   goodsSellBuffer: 15, // and sell goods stock held above this level
   minCashToHire: 100,
   hireChancePerTick: 0.05,
+  minCashToUpgrade: 400,
+  upgradeChancePerTick: 0.02,
+};
+
+// One level stat raises both a company's worker cap and its per-worker
+// output efficiency together — not separate tracks. Capped at maxLevel so
+// this is a bounded, finite progression. Wages scale with headcount only:
+// a bigger workforce costs more to pay, a more efficient facility doesn't
+// pay each worker more.
+export const COMPANY_UPGRADE_TUNING = {
+  maxLevel: 5,
+  extraWorkersPerLevel: 2,
+  outputBonusPerLevel: 0.2,
+  costMultiplierPerLevel: 1.8, // upgrade cost = industry.foundingCost * multiplier^currentLevel
 };
 
 // Share price is a simple, deliberately-not-random valuation: a "P/E"-like

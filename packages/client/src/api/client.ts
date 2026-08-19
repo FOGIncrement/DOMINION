@@ -73,6 +73,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ amount }),
     }),
+  upgradeCompany: (companyId: string) =>
+    request<{ ok: true; level: number; cost: number }>(`/companies/${companyId}/upgrade`, { method: "POST" }),
   ipoCompany: (companyId: string) =>
     request<{ ok: true; sharePrice: number; sharesOutstanding: number }>(`/companies/${companyId}/ipo`, {
       method: "POST",
@@ -191,6 +193,8 @@ export interface MyCompany {
   goodsStock: number;
   workersAssigned: number;
   maxWorkers: number;
+  level: number;
+  upgradeCost: number | null;
   totalRevenue: number;
   totalExpenses: number;
   foundedAt: string;
@@ -210,6 +214,7 @@ export interface PublicCompany {
   industryName: string;
   isPlayerOwned: boolean;
   workersAssigned: number;
+  level: number;
   cash: number;
   foundedAt: string;
   isPublic: boolean;
