@@ -104,6 +104,25 @@ contractsRouter.post("/", async (req: AuthedRequest, res) => {
   }
 
   const counterparty = seller.ownerId === req.playerId ? buyer : seller;
+
+  // An NPC has nobody to negotiate on its behalf, so it reviews the deal
+  // itself instead of auto-accepting whatever's proposed. The bar is
+  // deliberately low — can it cover even the first hour from cash on hand —
+  // not a full affordability model; it exists to catch "priced miles above
+  // what this company could ever pay" (e.g. 25x market rate), not to
+  // second-guess every borderline deal. Settlement's own scarcity cap (see
+  // settleContract) still applies afterward if the NPC's cash situation
+  // changes once the contract is running.
+  if (counterparty.ownerId === null && counterparty.id === buyerCompanyId) {
+    const firstHourCost = quantityPerHour * pricePerUnit;
+    if (firstHourCost > counterparty.cash) {
+      res.status(400).json({
+        error: `${counterparty.name} rejected the offer — ${quantityPerHour} ${sellerIndustry.outputResource}/hr at ${pricePerUnit}g would cost ${firstHourCost.toFixed(1)}g/hr, but they only have ${Math.max(0, counterparty.cash).toFixed(1)}g on hand. Try a lower price or quantity.`,
+      });
+      return;
+    }
+  }
+
   const needsOffer = counterparty.ownerId !== null && counterparty.ownerId !== req.playerId;
   const now = new Date();
 

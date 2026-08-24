@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { COMPANY_INDUSTRIES, CONTRACT_TERM_HOURS_OPTIONS, RESOURCE_LABELS, STOCK_TUNING, type CompanyIndustryId, type MarketResourceType, type ResourceType } from "@dominion/shared";
 import { api, ApiError, type MyCompany, type MyContract } from "../api/client.js";
-import { useAllCompanies, useGameState, useMyCompanies, useMyContracts } from "../api/hooks.js";
+import { useAllCompanies, useGameState, useMarket, useMyCompanies, useMyContracts } from "../api/hooks.js";
 
 // RESOURCE_LABELS covers settlement-holdable resources only — "goods" is a
 // market resource with no settlement equivalent, so it needs its own entry
@@ -349,6 +349,7 @@ function SupplyContractForm() {
   const queryClient = useQueryClient();
   const { data: myCompanies } = useMyCompanies();
   const { data: allCompanies } = useAllCompanies();
+  const { data: market } = useMarket();
   const [myCompanyId, setMyCompanyId] = useState("");
   const [counterpartyId, setCounterpartyId] = useState("");
   const [quantityPerHour, setQuantityPerHour] = useState(5);
@@ -367,6 +368,10 @@ function SupplyContractForm() {
   // processing industry (has inputResource) can only ever be a buyer of that
   // input — every current industry falls cleanly into exactly one role.
   const mineIsSeller = mineIndustry ? !mineIndustry.inputResource : false;
+  const contractResource = mineIndustry ? (mineIsSeller ? mineIndustry.outputResource : mineIndustry.inputResource) : null;
+  const marketRate = contractResource
+    ? (market?.resources.find((r) => r.resourceType === contractResource)?.price ?? null)
+    : null;
 
   const eligibleCounterparties = world.filter((c) => {
     if (c.id === myCompanyId) return false;
@@ -437,7 +442,7 @@ function SupplyContractForm() {
           onChange={(e) => setPricePerUnit(Math.max(0, Number(e.target.value)))}
           style={{ width: 70 }}
         />
-        <span className="suggestion">g each</span>
+        <span className="suggestion">g each{marketRate !== null ? ` (market: ${marketRate.toFixed(2)}g)` : ""}</span>
         <select value={termHours} onChange={(e) => setTermHours(Number(e.target.value))}>
           {CONTRACT_TERM_HOURS_OPTIONS.map((h) => (
             <option key={h} value={h}>
@@ -462,9 +467,11 @@ function SupplyContractForm() {
       )}
       <p className="suggestion" style={{ marginTop: 8 }}>
         A locked price and hourly quantity settled automatically every tick, instead of trading blind on the spot
-        market. Proposing to your own other company or an NPC activates immediately; proposing to another player's
-        company sends a pending offer they need to accept first. Settlement is capped by the seller's stock and the
-        buyer's cash, so an under-supplied or under-funded contract just delivers less that tick.
+        market. Proposing to your own other company activates immediately; proposing to another player's company
+        sends a pending offer they need to accept first. Proposing to an NPC activates immediately too, but only if
+        that NPC can actually afford it — priced too far above market and they'll reject it outright rather than
+        accept a deal they can't pay for. Settlement is still capped by the seller's stock and the buyer's cash after
+        that, so an under-supplied contract just delivers less that tick.
       </p>
     </div>
   );
