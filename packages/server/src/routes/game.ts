@@ -5,6 +5,7 @@ import {
   BUILDING_TYPE_IDS,
   RESOURCE_TYPES,
   TECHS,
+  computeBuildingUpgradeCost,
   type BuildingTypeId,
   type ResourceType,
 } from "@dominion/shared";
@@ -91,6 +92,7 @@ gameRouter.get("/state", async (req: AuthedRequest, res) => {
       type: b.type,
       level: b.level,
       workersAssigned: b.workersAssigned,
+      upgradeCost: computeBuildingUpgradeCost(BUILDING_TYPES[b.type as BuildingTypeId], b.level),
     })),
     techIds: settlement.techs.map((t) => t.techId),
     offlineSummary,
@@ -188,4 +190,47 @@ gameRouter.post("/workers", async (req: AuthedRequest, res) => {
   });
 
   res.json({ ok: true, workersAssigned: desired });
+});
+
+gameRouter.post("/buildings/:id/upgrade", async (req: AuthedRequest, res) => {
+  const settlement = await loadOwnedSettlement(req.playerId!);
+  if (!settlement) {
+    res.status(404).json({ error: "No settlement found for this player" });
+    return;
+  }
+
+  const building = settlement.buildings.find((b) => b.id === req.params.id);
+  if (!building) {
+    res.status(404).json({ error: "Building not found" });
+    return;
+  }
+
+  const def = BUILDING_TYPES[building.type as BuildingTypeId];
+  const cost = computeBuildingUpgradeCost(def, building.level);
+  if (cost === null) {
+    res.status(400).json({ error: "Already at max level" });
+    return;
+  }
+
+  for (const resourceType of RESOURCE_TYPES) {
+    const need = cost[resourceType] ?? 0;
+    if (settlement[resourceType] < need) {
+      res.status(400).json({ error: `Not enough ${resourceType} to upgrade ${def.name} (need ${need.toFixed(0)})` });
+      return;
+    }
+  }
+
+  const resourceUpdate: Partial<Record<ResourceType, number>> = {};
+  for (const resourceType of RESOURCE_TYPES) {
+    const need = cost[resourceType] ?? 0;
+    if (need > 0) resourceUpdate[resourceType] = settlement[resourceType] - need;
+  }
+
+  const level = building.level + 1;
+  await prisma.$transaction([
+    prisma.settlement.update({ where: { id: settlement.id }, data: resourceUpdate }),
+    prisma.building.update({ where: { id: building.id }, data: { level } }),
+  ]);
+
+  res.json({ ok: true, level });
 });

@@ -39,6 +39,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ buildingId, workersAssigned }),
     }),
+  upgradeBuilding: (buildingId: string) =>
+    request<{ ok: true; level: number }>(`/game/buildings/${buildingId}/upgrade`, { method: "POST" }),
 
   techs: () => request<{ techs: TechInfo[] }>("/tech"),
   research: (techId: string) => request<{ ok: true }>("/tech/research", { method: "POST", body: JSON.stringify({ techId }) }),
@@ -181,7 +183,13 @@ export interface GameStateResponse {
     foundedAt: string;
   };
   population: { count: number; happiness: number; capacity: number };
-  buildings: { id: string; type: string; level: number; workersAssigned: number }[];
+  buildings: {
+    id: string;
+    type: string;
+    level: number;
+    workersAssigned: number;
+    upgradeCost: Partial<Record<"food" | "wood" | "stone" | "gold", number>> | null;
+  }[];
   techIds: string[];
   offlineSummary: OfflineSummary | null;
 }

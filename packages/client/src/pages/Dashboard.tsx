@@ -72,6 +72,12 @@ export default function Dashboard() {
     onError: (err) => setActionError(err instanceof ApiError ? err.message : "Couldn't update workers"),
   });
 
+  const upgradeBuilding = useMutation({
+    mutationFn: (buildingId: string) => api.upgradeBuilding(buildingId),
+    onSuccess: invalidate,
+    onError: (err) => setActionError(err instanceof ApiError ? err.message : "Couldn't upgrade"),
+  });
+
   const build = useMutation({
     mutationFn: (type: BuildingTypeId) => api.build(type),
     onSuccess: invalidate,
@@ -149,6 +155,18 @@ export default function Dashboard() {
                           )[def.producesResource].toFixed(1)} ${def.producesResource}/hr`
                         : "No workers assigned — producing nothing"}
                     </div>
+                  )}
+                  {b.upgradeCost ? (
+                    <button
+                      className="btn"
+                      style={{ marginTop: 8 }}
+                      disabled={!canAfford(data.settlement, b.upgradeCost) || upgradeBuilding.isPending}
+                      onClick={() => upgradeBuilding.mutate(b.id)}
+                    >
+                      Upgrade to Lv {b.level + 1} ({formatCost(b.upgradeCost)})
+                    </button>
+                  ) : (
+                    <div className="building-card__rate">Max level</div>
                   )}
                 </div>
               );
