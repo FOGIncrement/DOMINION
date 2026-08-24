@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { BANK_TUNING, computeLoanRate, computeMaxLoanAmount } from "@dominion/shared";
+import { BANK_TUNING, LOAN_TERM_OPTIONS, computeLoanRate, computeMaxLoanAmount } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
 import { getControllingPlayerId } from "../simulation/control.js";
@@ -78,17 +78,30 @@ banksRouter.get("/mine", async (req: AuthedRequest, res) => {
         principal: l.principal,
         outstandingBalance: l.outstandingBalance,
         interestRatePerHour: l.interestRatePerHour,
+        termHours: l.termHours,
+        maturityAt: l.maturityAt,
       })),
     })),
   });
 });
 
-const requestLoanSchema = z.object({ companyId: z.string(), amount: z.number().positive() });
+const requestLoanSchema = z.object({
+  companyId: z.string(),
+  amount: z.number().positive(),
+  termHours: z.number().int().positive().nullable().optional(),
+});
 
 banksRouter.post("/:bankId/loans", async (req: AuthedRequest, res) => {
   const parsed = requestLoanSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid loan request" });
+    return;
+  }
+  const termOption = parsed.data.termHours
+    ? LOAN_TERM_OPTIONS.find((t) => t.hours === parsed.data.termHours)
+    : undefined;
+  if (parsed.data.termHours && !termOption) {
+    res.status(400).json({ error: "Not a valid loan term" });
     return;
   }
 
@@ -122,8 +135,16 @@ banksRouter.post("/:bankId/loans", async (req: AuthedRequest, res) => {
   }
 
   // Risk-based pricing, not a flat rate: a loan close to the company's
-  // credit limit costs more per hour than one well within it.
-  const interestRatePerHour = computeLoanRate(bank.interestRatePerHour, amount, company.cash);
+  // credit limit costs more per hour than one well within it. Committing to
+  // a term buys a further discount, at the cost of a hard deadline (see
+  // engine.ts) instead of revolving credit's soft, ratio-based default.
+  const interestRatePerHour = computeLoanRate(
+    bank.interestRatePerHour,
+    amount,
+    company.cash,
+    termOption?.rateDiscount,
+  );
+  const maturityAt = termOption ? new Date(Date.now() + termOption.hours * 60 * 60 * 1000) : null;
 
   const [, loan] = await prisma.$transaction([
     prisma.bank.update({ where: { id: bank.id }, data: { cash: bank.cash - amount } }),
@@ -134,6 +155,8 @@ banksRouter.post("/:bankId/loans", async (req: AuthedRequest, res) => {
         principal: amount,
         outstandingBalance: amount,
         interestRatePerHour,
+        termHours: termOption?.hours,
+        maturityAt,
       },
     }),
     prisma.company.update({ where: { id: company.id }, data: { cash: company.cash + amount } }),

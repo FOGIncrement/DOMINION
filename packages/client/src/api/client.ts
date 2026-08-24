@@ -99,10 +99,10 @@ export const api = {
   banks: () => request<{ banks: PublicBank[] }>("/banks"),
   myBanks: () => request<{ banks: MyBank[] }>("/banks/mine"),
   foundBank: (name: string) => request<{ ok: true; bankId: string }>("/banks", { method: "POST", body: JSON.stringify({ name }) }),
-  requestLoan: (bankId: string, companyId: string, amount: number) =>
-    request<{ ok: true; loanId: string }>(`/banks/${bankId}/loans`, {
+  requestLoan: (bankId: string, companyId: string, amount: number, termHours: number | null = null) =>
+    request<{ ok: true; loanId: string; interestRatePerHour: number }>(`/banks/${bankId}/loans`, {
       method: "POST",
-      body: JSON.stringify({ companyId, amount }),
+      body: JSON.stringify({ companyId, amount, termHours }),
     }),
   myLoans: () => request<{ loans: MyLoan[] }>("/loans/mine"),
   repayLoan: (loanId: string, amount: number) =>
@@ -289,6 +289,8 @@ export interface MyBank {
     principal: number;
     outstandingBalance: number;
     interestRatePerHour: number;
+    termHours: number | null;
+    maturityAt: string | null;
   }[];
 }
 
@@ -300,6 +302,8 @@ export interface MyLoan {
   principal: number;
   outstandingBalance: number;
   interestRatePerHour: number;
+  termHours: number | null;
+  maturityAt: string | null;
   defaultedAt: string | null;
   risk: "low" | "medium" | "high" | "defaulted";
   createdAt: string;

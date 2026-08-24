@@ -264,7 +264,11 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     if (elapsedHours <= 0) continue;
 
     const newBalance = accrueLoanInterest(loan, elapsedHours);
-    const defaulted = isLoanDefaulted({ ...loan, outstandingBalance: newBalance });
+    // A term loan's deadline is a hard cutoff, independent of the revolving
+    // ratio-based check — the discount it got at creation (see banks.ts) was
+    // priced on the certainty of repayment by this date, not on balance growth.
+    const pastMaturity = loan.maturityAt !== null && now >= loan.maturityAt && newBalance > 0;
+    const defaulted = pastMaturity || isLoanDefaulted({ ...loan, outstandingBalance: newBalance });
 
     await prisma.loan.update({
       where: { id: loan.id },

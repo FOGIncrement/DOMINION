@@ -172,6 +172,8 @@ model Loan {
   principal           Float
   outstandingBalance  Float
   interestRatePerHour Float
+  termHours           Int?
+  maturityAt          DateTime?
   createdAt           DateTime  @default(now())
   lastAccrualAt       DateTime  @default(now())
   defaultedAt         DateTime?

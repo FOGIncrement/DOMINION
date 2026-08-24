@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { BANK_TUNING, computeLoanRate, computeMaxLoanAmount } from "@dominion/shared";
+import { BANK_TUNING, LOAN_TERM_OPTIONS, computeLoanRate, computeMaxLoanAmount } from "@dominion/shared";
 import { api, ApiError, type PublicBank } from "../api/client.js";
 import { useBanks, useGameState, useMyBanks, useMyCompanies, useMyLoans } from "../api/hooks.js";
 
@@ -80,11 +80,12 @@ function RequestLoanForm() {
   const [bankId, setBankId] = useState("");
   const [companyId, setCompanyId] = useState("");
   const [amount, setAmount] = useState(100);
+  const [termHours, setTermHours] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const requestLoan = useMutation({
-    mutationFn: () => api.requestLoan(bankId, companyId, amount),
+    mutationFn: () => api.requestLoan(bankId, companyId, amount, termHours),
     onSuccess: () => {
       setError(null);
       setMessage(`Loan of ${amount}g issued.`);
@@ -98,11 +99,12 @@ function RequestLoanForm() {
 
   const selectedCompany = companies.find((c) => c.id === companyId);
   const selectedBank = bankOptions.find((b) => b.id === bankId);
+  const termOption = LOAN_TERM_OPTIONS.find((t) => t.hours === termHours);
   const quote =
     selectedCompany && selectedBank
       ? {
           maxLoan: computeMaxLoanAmount(selectedCompany.cash),
-          rate: computeLoanRate(selectedBank.interestRatePerHour, amount, selectedCompany.cash),
+          rate: computeLoanRate(selectedBank.interestRatePerHour, amount, selectedCompany.cash, termOption?.rateDiscount),
         }
       : null;
 
@@ -132,6 +134,14 @@ function RequestLoanForm() {
                 </option>
               ))}
             </select>
+            <select value={termHours ?? ""} onChange={(e) => setTermHours(e.target.value ? Number(e.target.value) : null)}>
+              <option value="">Revolving (no term)</option>
+              {LOAN_TERM_OPTIONS.map((t) => (
+                <option key={t.hours} value={t.hours}>
+                  {t.label} (−{(t.rateDiscount * 100).toFixed(0)}% rate)
+                </option>
+              ))}
+            </select>
             <input type="number" min={1} value={amount} onChange={(e) => setAmount(Math.max(1, Number(e.target.value)))} />
             <button
               className="btn btn--accent"
@@ -146,11 +156,12 @@ function RequestLoanForm() {
               Quoted rate for this amount: <b>{(quote.rate * 100).toFixed(2)}%/hr</b> — the closer a loan gets to this
               company's {quote.maxLoan.toFixed(0)}g credit limit, the higher the rate climbs above the bank's base
               rate. {amount > quote.maxLoan && "This amount exceeds the credit limit and will be rejected."}
+              {termOption && " Committing to a term buys a lower rate, but the loan defaults immediately if any balance remains at maturity — repaying early any time is always fine."}
             </p>
           )}
           <p className="suggestion" style={{ marginTop: 8 }}>
             Credit check caps a loan at {BANK_TUNING.maxLoanToCashRatio}x the company's current cash. Interest compounds
-            hourly on the outstanding balance until repaid — leave it too long and it defaults.
+            hourly on the outstanding balance until repaid — leave a revolving loan too long and it defaults.
           </p>
         </>
       )}
@@ -209,6 +220,7 @@ function MyLoansList() {
             <th>Principal</th>
             <th>Balance</th>
             <th>Rate/hr</th>
+            <th>Term</th>
             <th>Risk</th>
             <th>Repay</th>
           </tr>
@@ -221,6 +233,7 @@ function MyLoansList() {
               <td>{l.principal.toFixed(0)}g</td>
               <td>{l.outstandingBalance.toFixed(1)}g</td>
               <td>{(l.interestRatePerHour * 100).toFixed(2)}%</td>
+              <td>{l.maturityAt ? `Matures ${new Date(l.maturityAt).toLocaleDateString()}` : "Revolving"}</td>
               <td>
                 <span className="archetype-tag" style={{ color: RISK_COLOR[l.risk], borderColor: RISK_COLOR[l.risk] }}>
                   {l.risk}

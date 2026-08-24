@@ -7,7 +7,22 @@ import { requireAuth, type AuthedRequest } from "../auth/index.js";
 export const loansRouter = Router();
 loansRouter.use(requireAuth);
 
-function defaultRisk(outstandingBalance: number, principal: number): "low" | "medium" | "high" {
+// A term loan's real risk signal is proximity to its deadline, not balance
+// growth — it defaults the instant maturity passes regardless of how close
+// the balance is to the revolving default threshold.
+function defaultRisk(
+  outstandingBalance: number,
+  principal: number,
+  maturityAt: Date | null,
+  termHours: number | null,
+): "low" | "medium" | "high" {
+  if (outstandingBalance <= 0) return "low";
+  if (maturityAt && termHours) {
+    const remainingFraction = (maturityAt.getTime() - Date.now()) / (termHours * 60 * 60 * 1000);
+    if (remainingFraction < 0.1) return "high";
+    if (remainingFraction < 0.3) return "medium";
+    return "low";
+  }
   const ratio = outstandingBalance / principal;
   if (ratio > BANK_TUNING.defaultMultiplier * 0.8) return "high";
   if (ratio > BANK_TUNING.defaultMultiplier * 0.5) return "medium";
@@ -33,8 +48,10 @@ loansRouter.get("/mine", async (req: AuthedRequest, res) => {
       principal: l.principal,
       outstandingBalance: l.outstandingBalance,
       interestRatePerHour: l.interestRatePerHour,
+      termHours: l.termHours,
+      maturityAt: l.maturityAt,
       defaultedAt: l.defaultedAt,
-      risk: l.defaultedAt ? "defaulted" : defaultRisk(l.outstandingBalance, l.principal),
+      risk: l.defaultedAt ? "defaulted" : defaultRisk(l.outstandingBalance, l.principal, l.maturityAt, l.termHours),
       createdAt: l.createdAt,
     })),
   });
