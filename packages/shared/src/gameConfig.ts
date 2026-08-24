@@ -303,6 +303,11 @@ export const COMPANY_FAILURE_TUNING = {
   autoCloseDebtMultiplier: 3,
 };
 
+// A fixed menu of term lengths, same idiom as LOAN_TERM_OPTIONS — no
+// discount curve here since a contract's price is whatever the two
+// (same-player-controlled) companies agree to, not risk-priced by the game.
+export const CONTRACT_TERM_HOURS_OPTIONS = [24, 72, 168];
+
 export const NPC_COMPANY_TUNING = {
   inputBuffer: 20, // NPC companies buy input up to this stock level
   goodsSellBuffer: 15, // and sell goods stock held above this level

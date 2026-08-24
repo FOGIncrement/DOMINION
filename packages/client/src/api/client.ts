@@ -1,3 +1,5 @@
+import type { MarketResourceType } from "@dominion/shared";
+
 const BASE = "/api";
 
 export class ApiError extends Error {}
@@ -86,6 +88,20 @@ export const api = {
     request<{ ok: true; sharePrice: number; sharesOutstanding: number }>(`/companies/${companyId}/ipo`, {
       method: "POST",
     }),
+
+  myContracts: () => request<{ contracts: MyContract[] }>("/contracts/mine"),
+  createContract: (
+    sellerCompanyId: string,
+    buyerCompanyId: string,
+    quantityPerHour: number,
+    pricePerUnit: number,
+    termHours: number,
+  ) =>
+    request<{ ok: true; contractId: string }>("/contracts", {
+      method: "POST",
+      body: JSON.stringify({ sellerCompanyId, buyerCompanyId, quantityPerHour, pricePerUnit, termHours }),
+    }),
+  cancelContract: (contractId: string) => request<{ ok: true }>(`/contracts/${contractId}/cancel`, { method: "POST" }),
 
   stocks: () => request<{ stocks: StockSummary[] }>("/stocks"),
   stockDetail: (companyId: string) => request<StockDetail>(`/stocks/${companyId}`),
@@ -309,6 +325,20 @@ export interface MyBank {
     amount: number;
     interestRatePerHour: number;
   }[];
+}
+
+export interface MyContract {
+  id: string;
+  sellerCompanyId: string;
+  sellerCompanyName: string;
+  buyerCompanyId: string;
+  buyerCompanyName: string;
+  resourceType: MarketResourceType;
+  quantityPerHour: number;
+  pricePerUnit: number;
+  createdAt: string;
+  expiresAt: string;
+  cancelledAt: string | null;
 }
 
 export interface MyDeposit {

@@ -14,6 +14,7 @@ import { prisma } from "../db.js";
 import { accrueDepositInterest, accrueLoanInterest, isLoanDefaulted, maybeBorrow, maybeRepayLoan } from "./banks.js";
 import { tickCompany } from "./companies.js";
 import { autoCloseCompany, shouldAutoClose, shouldForceLayoff } from "./companyFailure.js";
+import { settleContract } from "./contracts.js";
 import { computeConsumption, reconcileWorkersWithPopulation } from "./consumption.js";
 import { maybeRollEvent } from "./events.js";
 import { ensureMarketSeeded, TRADEABLE_RESOURCES, tickMarket, type TradeableResource } from "./market.js";
@@ -286,6 +287,50 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
 
     const newAmount = accrueDepositInterest(deposit, elapsedHours);
     await prisma.deposit.update({ where: { id: deposit.id }, data: { amount: newAmount, lastAccrualAt: now } });
+  }
+
+  // Contracts: settle standing supply agreements between companies, capped
+  // by scarcity (seller's goodsStock, buyer's cash) — see settleContract.
+  // Goods and gold move directly between the two companies, outside the
+  // market's flows accumulator, same as how a manual trade moves cash but a
+  // contract additionally moves the resource without touching market price.
+  const activeContracts = await prisma.contract.findMany({
+    where: { cancelledAt: null, expiresAt: { gt: now } },
+    include: { seller: true, buyer: true },
+  });
+  for (const contract of activeContracts) {
+    const rawElapsedHours = (now.getTime() - contract.lastSettledAt.getTime()) / (1000 * 60 * 60);
+    const elapsedHours = Math.max(0, Math.min(MAX_CATCHUP_HOURS, rawElapsedHours));
+    if (elapsedHours <= 0) continue;
+
+    const { transferred, grossCost } = settleContract(
+      contract,
+      elapsedHours,
+      contract.seller.goodsStock,
+      contract.buyer.cash,
+    );
+    if (transferred <= 0) {
+      await prisma.contract.update({ where: { id: contract.id }, data: { lastSettledAt: now } });
+      continue;
+    }
+
+    const sellerGovernment = contract.seller.ownerId
+      ? await prisma.government.findUnique({ where: { playerId: contract.seller.ownerId } })
+      : null;
+    const tax = sellerGovernment ? grossCost * sellerGovernment.corporateTaxRate : 0;
+    const netProceeds = grossCost - tax;
+
+    await prisma.$transaction([
+      prisma.company.update({
+        where: { id: contract.sellerCompanyId },
+        data: { goodsStock: { decrement: transferred }, cash: { increment: netProceeds }, totalRevenue: { increment: netProceeds } },
+      }),
+      prisma.company.update({
+        where: { id: contract.buyerCompanyId },
+        data: { inputStock: { increment: transferred }, cash: { decrement: grossCost } },
+      }),
+      prisma.contract.update({ where: { id: contract.id }, data: { lastSettledAt: now } }),
+    ]);
   }
 
   // Public companies: revalue shares off this tick's fundamentals, then let

@@ -1,8 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { COMPANY_INDUSTRIES, RESOURCE_LABELS, STOCK_TUNING, type CompanyIndustryId, type MarketResourceType, type ResourceType } from "@dominion/shared";
-import { api, ApiError, type MyCompany } from "../api/client.js";
-import { useAllCompanies, useGameState, useMyCompanies } from "../api/hooks.js";
+import { COMPANY_INDUSTRIES, CONTRACT_TERM_HOURS_OPTIONS, RESOURCE_LABELS, STOCK_TUNING, type CompanyIndustryId, type MarketResourceType, type ResourceType } from "@dominion/shared";
+import { api, ApiError, type MyCompany, type MyContract } from "../api/client.js";
+import { useAllCompanies, useGameState, useMyCompanies, useMyContracts } from "../api/hooks.js";
 
 // RESOURCE_LABELS covers settlement-holdable resources only — "goods" is a
 // market resource with no settlement equivalent, so it needs its own entry
@@ -343,6 +343,185 @@ function FoundCompanyForm() {
   );
 }
 
+const TERM_LABELS: Record<number, string> = { 24: "1 day", 72: "3 days", 168: "7 days" };
+
+function SupplyContractForm() {
+  const queryClient = useQueryClient();
+  const { data: myCompanies } = useMyCompanies();
+  const [sellerId, setSellerId] = useState("");
+  const [buyerId, setBuyerId] = useState("");
+  const [quantityPerHour, setQuantityPerHour] = useState(5);
+  const [pricePerUnit, setPricePerUnit] = useState(1);
+  const [termHours, setTermHours] = useState(CONTRACT_TERM_HOURS_OPTIONS[0]);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const create = useMutation({
+    mutationFn: () => api.createContract(sellerId, buyerId, quantityPerHour, pricePerUnit, termHours),
+    onSuccess: () => {
+      setError(null);
+      setMessage("Contract created.");
+      queryClient.invalidateQueries({ queryKey: ["myContracts"] });
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Couldn't create contract"),
+  });
+
+  const companies = myCompanies?.companies ?? [];
+  const seller = companies.find((c) => c.id === sellerId);
+  const sellerIndustry = seller ? COMPANY_INDUSTRIES[seller.industry as CompanyIndustryId] : null;
+  // Only companies whose input matches the seller's output can actually use
+  // what the contract delivers — mirrors the server's own compatibility check.
+  const eligibleBuyers = companies.filter((c) => {
+    if (c.id === sellerId) return false;
+    const industry = COMPANY_INDUSTRIES[c.industry as CompanyIndustryId];
+    return sellerIndustry && industry.inputResource === sellerIndustry.outputResource;
+  });
+
+  if (companies.length < 2) {
+    return (
+      <div className="card">
+        <h2 className="card__title">Supply Contracts</h2>
+        <div className="empty-state">Found at least two companies to set up a supply contract between them.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Supply Contracts</h2>
+      {error && <div className="auth-error">{error}</div>}
+      {message && !error && <div className="suggestion">{message}</div>}
+      <div className="trade-row" style={{ flexWrap: "wrap" }}>
+        <select value={sellerId} onChange={(e) => { setSellerId(e.target.value); setBuyerId(""); }}>
+          <option value="">Seller company...</option>
+          {companies.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} ({OUTPUT_LABELS[COMPANY_INDUSTRIES[c.industry as CompanyIndustryId].outputResource]})
+            </option>
+          ))}
+        </select>
+        <select value={buyerId} onChange={(e) => setBuyerId(e.target.value)} disabled={!sellerId}>
+          <option value="">Buyer company...</option>
+          {eligibleBuyers.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <input
+          type="number"
+          min={1}
+          value={quantityPerHour}
+          onChange={(e) => setQuantityPerHour(Math.max(1, Number(e.target.value)))}
+          style={{ width: 80 }}
+        />
+        <span className="suggestion">/hr @</span>
+        <input
+          type="number"
+          min={0}
+          step={0.1}
+          value={pricePerUnit}
+          onChange={(e) => setPricePerUnit(Math.max(0, Number(e.target.value)))}
+          style={{ width: 70 }}
+        />
+        <span className="suggestion">g each</span>
+        <select value={termHours} onChange={(e) => setTermHours(Number(e.target.value))}>
+          {CONTRACT_TERM_HOURS_OPTIONS.map((h) => (
+            <option key={h} value={h}>
+              {TERM_LABELS[h] ?? `${h}h`}
+            </option>
+          ))}
+        </select>
+        <button
+          className="btn btn--accent"
+          disabled={!sellerId || !buyerId || create.isPending}
+          onClick={() => create.mutate()}
+        >
+          Create Contract
+        </button>
+      </div>
+      {sellerId && eligibleBuyers.length === 0 && (
+        <p className="suggestion" style={{ marginTop: 8 }}>
+          None of your other companies use {sellerIndustry ? OUTPUT_LABELS[sellerIndustry.outputResource] : "this"} as
+          an input — found a compatible company first.
+        </p>
+      )}
+      <p className="suggestion" style={{ marginTop: 8 }}>
+        A locked price and hourly quantity settled automatically every tick, instead of trading blind on the spot
+        market — vertical integration between two of your own companies. Settlement is capped by the seller's stock
+        and the buyer's cash, so an under-supplied or under-funded contract just delivers less that tick.
+      </p>
+    </div>
+  );
+}
+
+function MyContractsList() {
+  const queryClient = useQueryClient();
+  const { data: contracts } = useMyContracts();
+  const [error, setError] = useState<string | null>(null);
+
+  const cancel = useMutation({
+    mutationFn: (id: string) => api.cancelContract(id),
+    onSuccess: () => {
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ["myContracts"] });
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Couldn't cancel contract"),
+  });
+
+  if (!contracts || contracts.contracts.length === 0) return null;
+
+  const statusOf = (c: MyContract) => {
+    if (c.cancelledAt) return "Cancelled";
+    if (new Date(c.expiresAt) <= new Date()) return "Expired";
+    return "Active";
+  };
+
+  return (
+    <div className="card">
+      <h2 className="card__title">My Contracts</h2>
+      {error && <div className="auth-error">{error}</div>}
+      <table className="settlement-table">
+        <thead>
+          <tr>
+            <th>Seller</th>
+            <th>Buyer</th>
+            <th>Resource</th>
+            <th>Qty/hr</th>
+            <th>Price/unit</th>
+            <th>Expires</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {contracts.contracts.map((c) => {
+            const status = statusOf(c);
+            return (
+              <tr key={c.id}>
+                <td>{c.sellerCompanyName}</td>
+                <td>{c.buyerCompanyName}</td>
+                <td>{OUTPUT_LABELS[c.resourceType]}</td>
+                <td>{c.quantityPerHour}</td>
+                <td>{c.pricePerUnit.toFixed(2)}g</td>
+                <td>{new Date(c.expiresAt).toLocaleDateString()}</td>
+                <td>{status}</td>
+                <td>
+                  {status === "Active" && (
+                    <button className="btn" disabled={cancel.isPending} onClick={() => cancel.mutate(c.id)}>
+                      Cancel
+                    </button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function Companies() {
   const { data: mine, isLoading } = useMyCompanies();
   const { data: all } = useAllCompanies();
@@ -365,6 +544,8 @@ export default function Companies() {
       </div>
 
       <FoundCompanyForm />
+      <SupplyContractForm />
+      <MyContractsList />
 
       <div className="card">
         <h2 className="card__title">Companies of the World</h2>

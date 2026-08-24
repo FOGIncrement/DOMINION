@@ -125,13 +125,18 @@ cheatsRouter.post("/company-cash", async (req: AuthedRequest, res) => {
 const offlineSchema = z.object({ hours: z.number().positive() });
 
 // Rewinds this player's lastSeenAt, and every settlement/company/loan/
-// deposit/the shared world clock, by N hours, then forces one tick — simulating the
-// whole world having been asleep for N hours, not just this player's own
-// settlement. That's required, not optional: the shared market/stock
-// pricing reacts to aggregate flows across everyone, so if only this
-// player's settlement were backdated, the price-step would scale as if N
-// hours passed while the supply/demand data behind it still only reflected
-// one normal tick's worth of everyone else's activity.
+// deposit/contract/the shared world clock, by N hours, then forces one tick
+// — simulating the whole world having been asleep for N hours, not just
+// this player's own settlement. That's required, not optional: the shared
+// market/stock pricing reacts to aggregate flows across everyone, so if only
+// this player's settlement were backdated, the price-step would scale as if
+// N hours passed while the supply/demand data behind it still only
+// reflected one normal tick's worth of everyone else's activity.
+//
+// NOTE: any new tick-accrued entity (its own "lastXAt" timestamp checked
+// against `now` in engine.ts) needs a matching backdate here, or this cheat
+// will silently under-simulate it — bit twice already (deposits, then
+// contracts) before this comment existed.
 cheatsRouter.post("/simulate-offline", async (req: AuthedRequest, res) => {
   const parsed = offlineSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -146,11 +151,12 @@ cheatsRouter.post("/simulate-offline", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const [settlements, companies, loans, deposits, worldState] = await Promise.all([
+  const [settlements, companies, loans, deposits, contracts, worldState] = await Promise.all([
     prisma.settlement.findMany({ select: { id: true, lastTickAt: true } }),
     prisma.company.findMany({ select: { id: true, lastTickAt: true } }),
     prisma.loan.findMany({ where: { defaultedAt: null }, select: { id: true, lastAccrualAt: true } }),
     prisma.deposit.findMany({ select: { id: true, lastAccrualAt: true } }),
+    prisma.contract.findMany({ where: { cancelledAt: null }, select: { id: true, lastSettledAt: true } }),
     prisma.worldState.findUnique({ where: { id: 1 } }),
   ]);
 
@@ -181,6 +187,12 @@ cheatsRouter.post("/simulate-offline", async (req: AuthedRequest, res) => {
       prisma.deposit.update({
         where: { id: d.id },
         data: { lastAccrualAt: new Date(d.lastAccrualAt.getTime() - shiftMs) },
+      }),
+    ),
+    ...contracts.map((c) =>
+      prisma.contract.update({
+        where: { id: c.id },
+        data: { lastSettledAt: new Date(c.lastSettledAt.getTime() - shiftMs) },
       }),
     ),
     prisma.worldState.upsert({

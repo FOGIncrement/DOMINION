@@ -35,6 +35,10 @@ export function useAllCompanies() {
   return useQuery({ queryKey: ["allCompanies"], queryFn: api.allCompanies, refetchInterval: POLL_MS });
 }
 
+export function useMyContracts() {
+  return useQuery({ queryKey: ["myContracts"], queryFn: api.myContracts, refetchInterval: POLL_MS });
+}
+
 export function useStocks() {
   return useQuery({ queryKey: ["stocks"], queryFn: api.stocks, refetchInterval: POLL_MS });
 }

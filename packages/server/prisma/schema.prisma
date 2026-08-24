@@ -142,12 +142,39 @@ model Company {
   ipoAt           DateTime?
   closedAt        DateTime?
 
-  trades        MarketTrade[]
-  shareholdings Shareholding[]
-  priceHistory  SharePriceHistoryPoint[]
-  loans         Loan[]
+  trades            MarketTrade[]
+  shareholdings     Shareholding[]
+  priceHistory      SharePriceHistoryPoint[]
+  loans             Loan[]
+  contractsAsSeller Contract[] @relation("ContractSeller")
+  contractsAsBuyer  Contract[] @relation("ContractBuyer")
 
   @@index([ownerId])
+}
+
+// A standing supply agreement between two companies — a locked price and
+// hourly quantity, settled every tick, instead of either side trading blind
+// on the spot market. v1 scope: both companies must be controlled by the
+// same player (see routes/contracts.ts) — vertical integration within one
+// player's own portfolio, not a multi-party negotiation/offer system. That's
+// a deliberate, documented cut, not an oversight: contracting with another
+// player's or an NPC's company needs an accept/reject flow this doesn't have.
+model Contract {
+  id              String    @id @default(cuid())
+  sellerCompanyId String
+  seller          Company   @relation("ContractSeller", fields: [sellerCompanyId], references: [id])
+  buyerCompanyId  String
+  buyer           Company   @relation("ContractBuyer", fields: [buyerCompanyId], references: [id])
+  resourceType    String
+  quantityPerHour Float
+  pricePerUnit    Float
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime
+  lastSettledAt   DateTime  @default(now())
+  cancelledAt     DateTime?
+
+  @@index([sellerCompanyId])
+  @@index([buyerCompanyId])
 }
 
 model Bank {
