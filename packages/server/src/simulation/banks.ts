@@ -16,6 +16,23 @@ export function isLoanDefaulted(loan: LoanLike): boolean {
   return loan.outstandingBalance > loan.principal * BANK_TUNING.defaultMultiplier;
 }
 
+export interface DepositLike {
+  amount: number;
+  interestRatePerHour: number;
+}
+
+/**
+ * Same rate×elapsedHours idiom as loan interest, but a pure ledger figure —
+ * it doesn't touch bank.cash. Deposited gold already moved into bank.cash at
+ * deposit time; the bank's ability to actually honor a bigger balance later
+ * is checked at withdrawal time (Math.min against bank.cash), not accrual
+ * time, the same way loan repayment — not interest accrual — is what
+ * actually moves cash on that side.
+ */
+export function accrueDepositInterest(deposit: DepositLike, elapsedHours: number): number {
+  return deposit.amount * (1 + deposit.interestRatePerHour * elapsedHours);
+}
+
 interface MutableCash {
   cash: number;
 }

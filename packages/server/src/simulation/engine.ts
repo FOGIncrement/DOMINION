@@ -11,7 +11,7 @@ import {
   type CompanyIndustryId,
 } from "@dominion/shared";
 import { prisma } from "../db.js";
-import { accrueLoanInterest, isLoanDefaulted, maybeBorrow, maybeRepayLoan } from "./banks.js";
+import { accrueDepositInterest, accrueLoanInterest, isLoanDefaulted, maybeBorrow, maybeRepayLoan } from "./banks.js";
 import { tickCompany } from "./companies.js";
 import { autoCloseCompany, shouldAutoClose, shouldForceLayoff } from "./companyFailure.js";
 import { computeConsumption, reconcileWorkersWithPopulation } from "./consumption.js";
@@ -274,6 +274,18 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
       where: { id: loan.id },
       data: { outstandingBalance: newBalance, lastAccrualAt: now, defaultedAt: defaulted ? now : undefined },
     });
+  }
+
+  // Deposits: accrue compounding interest, same idiom as loans. A pure
+  // ledger figure — doesn't touch bank.cash (see accrueDepositInterest).
+  const activeDeposits = await prisma.deposit.findMany();
+  for (const deposit of activeDeposits) {
+    const rawElapsedHours = (now.getTime() - deposit.lastAccrualAt.getTime()) / (1000 * 60 * 60);
+    const elapsedHours = Math.max(0, Math.min(MAX_CATCHUP_HOURS, rawElapsedHours));
+    if (elapsedHours <= 0) continue;
+
+    const newAmount = accrueDepositInterest(deposit, elapsedHours);
+    await prisma.deposit.update({ where: { id: deposit.id }, data: { amount: newAmount, lastAccrualAt: now } });
   }
 
   // Public companies: revalue shares off this tick's fundamentals, then let

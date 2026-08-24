@@ -370,6 +370,13 @@ export const NPC_BANKING_TUNING = {
   repayFraction: 0.4, // repays this fraction of outstanding balance when repaying
 };
 
+// The opposite side of a loan. Deposited gold becomes real bank.cash — it
+// funds the bank's lending capacity, so a bank that's lent heavily against
+// its deposits can genuinely run short of cash for a withdrawal.
+export const DEPOSIT_TUNING = {
+  rateFraction: 0.4, // depositors earn this fraction of the bank's lending rate — the spread is the bank's margin
+};
+
 export const RESOURCE_LABELS: Record<ResourceType, string> = {
   food: "Food",
   wood: "Wood",

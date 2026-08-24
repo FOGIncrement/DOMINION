@@ -64,6 +64,10 @@ export function useMyLoans() {
   return useQuery({ queryKey: ["myLoans"], queryFn: api.myLoans, refetchInterval: POLL_MS });
 }
 
+export function useMyDeposits() {
+  return useQuery({ queryKey: ["myDeposits"], queryFn: api.myDeposits, refetchInterval: POLL_MS });
+}
+
 export function useCheatsEnabled() {
   return useQuery({
     queryKey: ["cheatsEnabled"],

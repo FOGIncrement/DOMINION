@@ -110,6 +110,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ amount }),
     }),
+  requestDeposit: (bankId: string, amount: number) =>
+    request<{ ok: true; depositId: string; interestRatePerHour: number }>(`/banks/${bankId}/deposits`, {
+      method: "POST",
+      body: JSON.stringify({ amount }),
+    }),
+  myDeposits: () => request<{ deposits: MyDeposit[] }>("/deposits/mine"),
+  withdrawDeposit: (depositId: string, amount: number) =>
+    request<{ ok: true; withdrawn: number; remainingBalance: number }>(`/deposits/${depositId}/withdraw`, {
+      method: "POST",
+      body: JSON.stringify({ amount }),
+    }),
 
   cheatsStatus: () => request<{ enabled: boolean }>("/cheats/status"),
   cheatAddResources: (deltas: Partial<Record<"food" | "wood" | "stone" | "gold", number>>) =>
@@ -292,6 +303,22 @@ export interface MyBank {
     termHours: number | null;
     maturityAt: string | null;
   }[];
+  depositsHeld: {
+    id: string;
+    depositorName: string;
+    amount: number;
+    interestRatePerHour: number;
+  }[];
+}
+
+export interface MyDeposit {
+  id: string;
+  bankId: string;
+  bankName: string;
+  bankCash: number;
+  amount: number;
+  interestRatePerHour: number;
+  createdAt: string;
 }
 
 export interface MyLoan {

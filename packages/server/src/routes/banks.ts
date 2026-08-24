@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { BANK_TUNING, LOAN_TERM_OPTIONS, computeLoanRate, computeMaxLoanAmount } from "@dominion/shared";
+import { BANK_TUNING, DEPOSIT_TUNING, LOAN_TERM_OPTIONS, computeLoanRate, computeMaxLoanAmount } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
 import { getControllingPlayerId } from "../simulation/control.js";
@@ -63,7 +63,10 @@ banksRouter.post("/", async (req: AuthedRequest, res) => {
 banksRouter.get("/mine", async (req: AuthedRequest, res) => {
   const banks = await prisma.bank.findMany({
     where: { ownerId: req.playerId! },
-    include: { loans: { where: { defaultedAt: null }, include: { company: true } } },
+    include: {
+      loans: { where: { defaultedAt: null }, include: { company: true } },
+      deposits: { include: { player: { include: { settlement: true } } } },
+    },
   });
   res.json({
     banks: banks.map((b) => ({
@@ -80,6 +83,12 @@ banksRouter.get("/mine", async (req: AuthedRequest, res) => {
         interestRatePerHour: l.interestRatePerHour,
         termHours: l.termHours,
         maturityAt: l.maturityAt,
+      })),
+      depositsHeld: b.deposits.map((d) => ({
+        id: d.id,
+        depositorName: d.player.settlement?.name ?? "A player",
+        amount: d.amount,
+        interestRatePerHour: d.interestRatePerHour,
       })),
     })),
   });
@@ -163,4 +172,47 @@ banksRouter.post("/:bankId/loans", async (req: AuthedRequest, res) => {
   ]);
 
   res.status(201).json({ ok: true, loanId: loan.id, interestRatePerHour });
+});
+
+const depositSchema = z.object({ amount: z.number().positive() });
+
+banksRouter.post("/:bankId/deposits", async (req: AuthedRequest, res) => {
+  const parsed = depositSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid deposit amount" });
+    return;
+  }
+
+  const bank = await prisma.bank.findUnique({ where: { id: req.params.bankId } });
+  if (!bank) {
+    res.status(404).json({ error: "Bank not found" });
+    return;
+  }
+
+  const settlement = await prisma.settlement.findUnique({ where: { playerId: req.playerId! } });
+  if (!settlement) {
+    res.status(404).json({ error: "No settlement found for this player" });
+    return;
+  }
+  const { amount } = parsed.data;
+  if (settlement.gold < amount) {
+    res.status(400).json({ error: "Not enough settlement gold for that deposit" });
+    return;
+  }
+
+  // Deposited gold becomes real bank.cash — it funds the bank's lending
+  // capacity, unlike a loan's outstandingBalance which is a pure ledger
+  // figure. Rate is a fixed fraction of the bank's current lending rate,
+  // locked in at deposit time (matches how a loan's rate is locked in too).
+  const interestRatePerHour = bank.interestRatePerHour * DEPOSIT_TUNING.rateFraction;
+
+  const [, deposit] = await prisma.$transaction([
+    prisma.settlement.update({ where: { id: settlement.id }, data: { gold: settlement.gold - amount } }),
+    prisma.deposit.create({
+      data: { bankId: bank.id, playerId: req.playerId!, amount, interestRatePerHour },
+    }),
+    prisma.bank.update({ where: { id: bank.id }, data: { cash: { increment: amount } } }),
+  ]);
+
+  res.status(201).json({ ok: true, depositId: deposit.id, interestRatePerHour });
 });

@@ -124,8 +124,8 @@ cheatsRouter.post("/company-cash", async (req: AuthedRequest, res) => {
 
 const offlineSchema = z.object({ hours: z.number().positive() });
 
-// Rewinds this player's lastSeenAt, and every settlement/company/loan/the
-// shared world clock, by N hours, then forces one tick — simulating the
+// Rewinds this player's lastSeenAt, and every settlement/company/loan/
+// deposit/the shared world clock, by N hours, then forces one tick — simulating the
 // whole world having been asleep for N hours, not just this player's own
 // settlement. That's required, not optional: the shared market/stock
 // pricing reacts to aggregate flows across everyone, so if only this
@@ -146,10 +146,11 @@ cheatsRouter.post("/simulate-offline", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const [settlements, companies, loans, worldState] = await Promise.all([
+  const [settlements, companies, loans, deposits, worldState] = await Promise.all([
     prisma.settlement.findMany({ select: { id: true, lastTickAt: true } }),
     prisma.company.findMany({ select: { id: true, lastTickAt: true } }),
     prisma.loan.findMany({ where: { defaultedAt: null }, select: { id: true, lastAccrualAt: true } }),
+    prisma.deposit.findMany({ select: { id: true, lastAccrualAt: true } }),
     prisma.worldState.findUnique({ where: { id: 1 } }),
   ]);
 
@@ -174,6 +175,12 @@ cheatsRouter.post("/simulate-offline", async (req: AuthedRequest, res) => {
       prisma.loan.update({
         where: { id: l.id },
         data: { lastAccrualAt: new Date(l.lastAccrualAt.getTime() - shiftMs) },
+      }),
+    ),
+    ...deposits.map((d) =>
+      prisma.deposit.update({
+        where: { id: d.id },
+        data: { lastAccrualAt: new Date(d.lastAccrualAt.getTime() - shiftMs) },
       }),
     ),
     prisma.worldState.upsert({

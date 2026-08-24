@@ -1,8 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { BANK_TUNING, LOAN_TERM_OPTIONS, computeLoanRate, computeMaxLoanAmount } from "@dominion/shared";
+import { BANK_TUNING, DEPOSIT_TUNING, LOAN_TERM_OPTIONS, computeLoanRate, computeMaxLoanAmount } from "@dominion/shared";
 import { api, ApiError, type PublicBank } from "../api/client.js";
-import { useBanks, useGameState, useMyBanks, useMyCompanies, useMyLoans } from "../api/hooks.js";
+import { useBanks, useGameState, useMyBanks, useMyCompanies, useMyDeposits, useMyLoans } from "../api/hooks.js";
 
 const RISK_COLOR: Record<string, string> = {
   low: "var(--success)",
@@ -36,6 +36,7 @@ function invalidateBanking(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ["banks"] });
   queryClient.invalidateQueries({ queryKey: ["myBanks"] });
   queryClient.invalidateQueries({ queryKey: ["myLoans"] });
+  queryClient.invalidateQueries({ queryKey: ["myDeposits"] });
   queryClient.invalidateQueries({ queryKey: ["myCompanies"] });
   queryClient.invalidateQueries({ queryKey: ["gameState"] });
 }
@@ -270,6 +271,132 @@ function MyLoansList() {
   );
 }
 
+function MakeDepositForm() {
+  const queryClient = useQueryClient();
+  const { data: banks } = useBanks();
+  const { data: gameState } = useGameState();
+  const [bankId, setBankId] = useState("");
+  const [amount, setAmount] = useState(100);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const makeDeposit = useMutation({
+    mutationFn: () => api.requestDeposit(bankId, amount),
+    onSuccess: () => {
+      setError(null);
+      setMessage(`Deposited ${amount}g.`);
+      invalidateBanking(queryClient);
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Deposit failed"),
+  });
+
+  const bankOptions = banks?.banks ?? [];
+  const selectedBank = bankOptions.find((b) => b.id === bankId);
+  const gold = gameState?.settlement.gold ?? 0;
+  const canAfford = amount > 0 && amount <= gold;
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Make a Deposit</h2>
+      {error && <div className="auth-error">{error}</div>}
+      {message && !error && <div className="suggestion">{message}</div>}
+      <div className="trade-row" style={{ flexWrap: "wrap" }}>
+        <select value={bankId} onChange={(e) => setBankId(e.target.value)}>
+          <option value="">Bank...</option>
+          {bankOptions.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name} ({(b.interestRatePerHour * DEPOSIT_TUNING.rateFraction * 100).toFixed(2)}%/hr deposit rate)
+            </option>
+          ))}
+        </select>
+        <input type="number" min={1} value={amount} onChange={(e) => setAmount(Math.max(1, Number(e.target.value)))} />
+        <button
+          className="btn btn--accent"
+          disabled={!bankId || !canAfford || makeDeposit.isPending}
+          onClick={() => makeDeposit.mutate()}
+        >
+          Deposit
+        </button>
+      </div>
+      <p className="suggestion" style={{ marginTop: 8 }}>
+        Settlement gold parked at a bank earns interest — a fraction of what the bank charges borrowers, since the
+        spread is the bank's margin.{selectedBank && ` This deposit stays at ${(selectedBank.interestRatePerHour * DEPOSIT_TUNING.rateFraction * 100).toFixed(2)}%/hr for its lifetime.`} Withdrawals are
+        capped by the bank's current liquid cash — a bank that's lent heavily against its deposits may not be able to
+        pay out everything at once.
+      </p>
+    </div>
+  );
+}
+
+function MyDepositsList() {
+  const queryClient = useQueryClient();
+  const { data: deposits } = useMyDeposits();
+  const [withdrawAmounts, setWithdrawAmounts] = useState<Record<string, number>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  const withdraw = useMutation({
+    mutationFn: ({ depositId, amount }: { depositId: string; amount: number }) => api.withdrawDeposit(depositId, amount),
+    onSuccess: () => {
+      setError(null);
+      invalidateBanking(queryClient);
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Withdrawal failed"),
+  });
+
+  if (!deposits || deposits.deposits.length === 0) {
+    return (
+      <div className="card">
+        <h2 className="card__title">My Deposits</h2>
+        <div className="empty-state">No deposits yet.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <h2 className="card__title">My Deposits</h2>
+      {error && <div className="auth-error">{error}</div>}
+      <table className="settlement-table">
+        <thead>
+          <tr>
+            <th>Bank</th>
+            <th>Balance</th>
+            <th>Rate/hr</th>
+            <th>Withdraw</th>
+          </tr>
+        </thead>
+        <tbody>
+          {deposits.deposits.map((d) => (
+            <tr key={d.id}>
+              <td>{d.bankName}</td>
+              <td>{d.amount.toFixed(1)}g</td>
+              <td>{(d.interestRatePerHour * 100).toFixed(2)}%</td>
+              <td>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <input
+                    type="number"
+                    min={1}
+                    value={withdrawAmounts[d.id] ?? Math.round(d.amount)}
+                    onChange={(e) => setWithdrawAmounts({ ...withdrawAmounts, [d.id]: Number(e.target.value) })}
+                    style={{ width: 70 }}
+                  />
+                  <button
+                    className="btn"
+                    disabled={withdraw.isPending}
+                    onClick={() => withdraw.mutate({ depositId: d.id, amount: withdrawAmounts[d.id] ?? Math.round(d.amount) })}
+                  >
+                    Pay out
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function Banking() {
   const { data: myBanks } = useMyBanks();
   const { data: banks } = useBanks();
@@ -317,6 +444,10 @@ export default function Banking() {
                     <div className="delta-cell__label">Loans issued</div>
                     <div className="delta-cell__value">{b.loansIssued.length}</div>
                   </div>
+                  <div>
+                    <div className="delta-cell__label">Deposits held</div>
+                    <div className="delta-cell__value">{b.depositsHeld.length}</div>
+                  </div>
                 </div>
                 {b.loansIssued.length > 0 && (
                   <table className="settlement-table">
@@ -336,6 +467,24 @@ export default function Banking() {
                     </tbody>
                   </table>
                 )}
+                {b.depositsHeld.length > 0 && (
+                  <table className="settlement-table">
+                    <thead>
+                      <tr>
+                        <th>Depositor</th>
+                        <th>Balance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {b.depositsHeld.map((d) => (
+                        <tr key={d.id}>
+                          <td>{d.depositorName}</td>
+                          <td>{d.amount.toFixed(1)}g</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             ))}
           </div>
@@ -345,6 +494,8 @@ export default function Banking() {
       <FoundBankForm />
       <RequestLoanForm />
       <MyLoansList />
+      <MakeDepositForm />
+      <MyDepositsList />
 
       <div className="card">
         <h2 className="card__title">Banks of the World</h2>

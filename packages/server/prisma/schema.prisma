@@ -23,6 +23,7 @@ model Player {
   companies  Company[]
   shareholdings Shareholding[]
   banks      Bank[]
+  deposits   Deposit[]
   government Government?
 }
 
@@ -158,9 +159,32 @@ model Bank {
   interestRatePerHour Float
   foundedAt         DateTime @default(now())
 
-  loans Loan[]
+  loans    Loan[]
+  deposits Deposit[]
 
   @@index([ownerId])
+}
+
+// The opposite side of a Loan: a player parks settlement gold at a bank and
+// earns interest at a fraction of the bank's lending rate (DEPOSIT_TUNING),
+// the bank's spread. The deposited gold becomes real bank.cash, available to
+// lend out — so a withdrawal can be capped by the bank's current liquidity,
+// not just the deposit's own balance (a real fractional-reserve consequence,
+// not modeled as a special case, just Math.min against bank.cash at withdraw
+// time).
+model Deposit {
+  id                  String   @id @default(cuid())
+  bankId              String
+  bank                Bank     @relation(fields: [bankId], references: [id])
+  playerId            String
+  player              Player   @relation(fields: [playerId], references: [id])
+  amount              Float
+  interestRatePerHour Float
+  createdAt           DateTime @default(now())
+  lastAccrualAt       DateTime @default(now())
+
+  @@index([bankId])
+  @@index([playerId])
 }
 
 model Loan {
