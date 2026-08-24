@@ -470,6 +470,45 @@ function SupplyContractForm() {
   );
 }
 
+const STATUS_LABELS: Record<MyContract["status"], string> = {
+  pending: "Pending",
+  active: "Active",
+  expired: "Expired",
+  cancelled: "Cancelled",
+};
+
+// The at-a-glance view the detailed table below can't give you: who feeds
+// whom, and how healthy that relationship is, without reading rows of
+// numbers. Cancelled contracts are excluded — they're not part of the
+// live chain anymore, and the table below is the record of those.
+function SupplyChainView() {
+  const { data: contracts } = useMyContracts();
+  const visible = (contracts?.contracts ?? []).filter((c) => c.status !== "cancelled");
+
+  if (visible.length === 0) return null;
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Supply Chain</h2>
+      <div className="chain-card">
+        {visible.map((c) => (
+          <div className="chain-row" key={c.id}>
+            <span className={`chain-node${c.sellerIsMine ? " chain-node--mine" : ""}`}>{c.sellerCompanyName}</span>
+            <span className="chain-arrow">
+              <span className="chain-arrow__label">
+                {OUTPUT_LABELS[c.resourceType]} · {c.quantityPerHour}/hr @ {c.pricePerUnit.toFixed(2)}g
+              </span>
+              <span className="chain-arrow__line" />
+            </span>
+            <span className={`chain-node${c.buyerIsMine ? " chain-node--mine" : ""}`}>{c.buyerCompanyName}</span>
+            <span className={`chain-status chain-status--${c.status}`}>{STATUS_LABELS[c.status]}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function MyContractsList() {
   const queryClient = useQueryClient();
   const { data: contracts } = useMyContracts();
@@ -489,13 +528,6 @@ function MyContractsList() {
   });
 
   if (!contracts || contracts.contracts.length === 0) return null;
-
-  const STATUS_LABELS: Record<MyContract["status"], string> = {
-    pending: "Pending",
-    active: "Active",
-    expired: "Expired",
-    cancelled: "Cancelled",
-  };
 
   return (
     <div className="card">
@@ -571,6 +603,7 @@ export default function Companies() {
       </div>
 
       <FoundCompanyForm />
+      <SupplyChainView />
       <SupplyContractForm />
       <MyContractsList />
 

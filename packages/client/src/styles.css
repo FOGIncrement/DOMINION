@@ -1,17 +1,28 @@
-:root {
+/*
+ * Theming: every visual token lives here, keyed by [data-theme] on <html>
+ * (set in theme.ts / main.tsx before first paint, switched live via the
+ * TopBar select). Component rules below reference only these variables —
+ * never a literal color/radius/font — so a theme is fully defined by its
+ * block here and nothing else needs to change to add a fourth one later.
+ */
+:root,
+:root[data-theme="terminal"] {
   color-scheme: dark;
 
-  --surface-0: #0d0d0d;
-  --surface-1: #1a1a19;
-  --surface-2: #232322;
-  --text-primary: #ffffff;
-  --text-secondary: #c3c2b7;
-  --text-muted: #898781;
-  --gridline: #2c2c2a;
-  --border: rgba(255, 255, 255, 0.1);
-  --success: #0ca30c;
-  --warning: #fab219;
-  --critical: #e66767;
+  --surface-0: #0b0d10;
+  --surface-1: #12151a;
+  --surface-2: #0e1013;
+  --text-primary: #e8ebef;
+  --text-secondary: #838d9c;
+  --text-muted: #565f6c;
+  --gridline: rgba(255, 255, 255, 0.09);
+  --border: rgba(255, 255, 255, 0.16);
+  --success: #45d1a8;
+  --warning: #e0a94c;
+  --critical: #e2685f;
+
+  --accent: #45d1a8;
+  --accent-ink: #06231b;
 
   --series-food: #199e70;
   --series-wood: #d95926;
@@ -20,6 +31,84 @@
   --series-goods: #9085e9;
 
   --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-sans);
+  --font-numeric: ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+
+  --radius-card: 4px;
+  --radius-control: 4px;
+  --radius-pill: 3px;
+  --card-border: 1px solid var(--border);
+  --card-shadow: none;
+}
+
+:root[data-theme="ledger"] {
+  color-scheme: dark;
+
+  --surface-0: #1c1712;
+  --surface-1: #26201a;
+  --surface-2: #1f1a15;
+  --text-primary: #f1e6d6;
+  --text-secondary: #b3a08a;
+  --text-muted: #7d6f5d;
+  --gridline: rgba(241, 230, 214, 0.12);
+  --border: rgba(241, 230, 214, 0.22);
+  --success: #7fa17e;
+  --warning: #d4923f;
+  --critical: #c1655a;
+
+  --accent: #d4923f;
+  --accent-ink: #241505;
+
+  --series-food: #4f8f5c;
+  --series-wood: #b56a35;
+  --series-stone: #5a83a6;
+  --series-gold: #c98500;
+  --series-goods: #8c7bb0;
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font-numeric: var(--font-sans);
+
+  --radius-card: 8px;
+  --radius-control: 6px;
+  --radius-pill: 999px;
+  --card-border: 1px solid var(--border);
+  --card-shadow: none;
+}
+
+:root[data-theme="console"] {
+  color-scheme: dark;
+
+  --surface-0: #101216;
+  --surface-1: #191c22;
+  --surface-2: #14161b;
+  --text-primary: #f0f2f5;
+  --text-secondary: #9199a8;
+  --text-muted: #5b6270;
+  --gridline: rgba(255, 255, 255, 0.07);
+  --border: rgba(255, 255, 255, 0.07);
+  --success: #35d0b0;
+  --warning: #f0b23e;
+  --critical: #ff6b6b;
+
+  --accent: #7c8cff;
+  --accent-ink: #0d0e1f;
+
+  --series-food: #35b06a;
+  --series-wood: #e0793f;
+  --series-stone: #5a8fd6;
+  --series-gold: #d6a324;
+  --series-goods: #9f8fe0;
+
+  --font-sans: -apple-system, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-sans);
+  --font-numeric: var(--font-sans);
+
+  --radius-card: 14px;
+  --radius-control: 9px;
+  --radius-pill: 999px;
+  --card-border: none;
+  --card-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
 }
 
 * {
@@ -41,7 +130,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font-family: inherit;
   font-size: inherit;
 }
@@ -69,6 +159,7 @@ a {
 }
 
 .top-bar__brand {
+  font-family: var(--font-display);
   font-weight: 700;
   letter-spacing: 0.03em;
   margin-right: 8px;
@@ -90,6 +181,7 @@ a {
 
 .resource-pill__value {
   color: var(--text-primary);
+  font-family: var(--font-numeric);
   font-weight: 600;
 }
 
@@ -118,7 +210,18 @@ a {
   color: var(--text-secondary);
   font-size: 13px;
   display: flex;
+  align-items: center;
   gap: 16px;
+}
+
+.theme-select {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: var(--radius-control);
+  padding: 5px 8px;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 /* --- Nav --- */
@@ -143,7 +246,7 @@ a {
 
 .nav-link.active {
   color: var(--text-primary);
-  border-bottom-color: var(--series-stone);
+  border-bottom-color: var(--accent);
 }
 
 .nav-link--locked {
@@ -190,12 +293,14 @@ a {
 
 .card {
   background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: var(--card-border);
+  box-shadow: var(--card-shadow);
+  border-radius: var(--radius-card);
   padding: 16px;
 }
 
 .card__title {
+  font-family: var(--font-display);
   font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
@@ -231,8 +336,9 @@ a {
 
 .building-card {
   background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: var(--card-border);
+  box-shadow: var(--card-shadow);
+  border-radius: var(--radius-card);
   padding: 12px;
 }
 
@@ -244,6 +350,7 @@ a {
 }
 
 .building-card__name {
+  font-family: var(--font-display);
   font-weight: 600;
 }
 
@@ -269,7 +376,7 @@ a {
 .worker-row button {
   width: 22px;
   height: 22px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--surface-1);
   color: var(--text-primary);
@@ -297,8 +404,9 @@ a {
 
 .company-card {
   background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: var(--card-border);
+  box-shadow: var(--card-shadow);
+  border-radius: var(--radius-card);
   padding: 14px;
 }
 
@@ -323,8 +431,9 @@ a {
 
 .build-option {
   background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: var(--card-border);
+  box-shadow: var(--card-shadow);
+  border-radius: var(--radius-card);
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -338,7 +447,7 @@ a {
 
 .btn {
   padding: 7px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--surface-1);
   color: var(--text-primary);
@@ -358,9 +467,9 @@ a {
 }
 
 .btn--accent {
-  background: var(--series-stone);
-  border-color: var(--series-stone);
-  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .btn--accent:hover:not(:disabled) {
@@ -402,8 +511,9 @@ a {
 
 .stat-tile {
   background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: var(--card-border);
+  box-shadow: var(--card-shadow);
+  border-radius: var(--radius-card);
   padding: 16px;
 }
 
@@ -417,12 +527,15 @@ a {
 }
 
 .stat-tile__value {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
   font-size: 28px;
   font-weight: 600;
   margin-bottom: 2px;
 }
 
 .stat-tile__delta {
+  font-family: var(--font-numeric);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -453,7 +566,7 @@ a {
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text-primary);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   padding: 6px 8px;
 }
 
@@ -476,7 +589,7 @@ a {
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text-primary);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   padding: 6px 8px;
   font-size: 13px;
 }
@@ -520,13 +633,14 @@ a {
 .settlement-table td {
   padding: 8px 10px;
   border-bottom: 1px solid var(--gridline);
+  font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
 }
 
 .archetype-tag {
   font-size: 11px;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   color: var(--text-secondary);
   border: 1px solid var(--border);
@@ -535,7 +649,7 @@ a {
 .controller-tag {
   font-size: 11px;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid;
 }
 
@@ -593,12 +707,14 @@ a {
 .auth-card {
   width: 340px;
   background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: var(--card-border);
+  box-shadow: var(--card-shadow);
+  border-radius: var(--radius-card);
   padding: 28px;
 }
 
 .auth-card h1 {
+  font-family: var(--font-display);
   font-size: 20px;
   margin: 0 0 4px 0;
 }
@@ -625,7 +741,7 @@ a {
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text-primary);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   padding: 8px 10px;
 }
 
@@ -645,7 +761,7 @@ a {
 .auth-toggle button {
   background: none;
   border: none;
-  color: var(--series-stone);
+  color: var(--accent);
   cursor: pointer;
   padding: 0;
   font-weight: 600;
@@ -669,12 +785,14 @@ a {
   max-height: calc(100vh - 32px);
   overflow-y: auto;
   background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: var(--card-border);
+  box-shadow: var(--card-shadow);
+  border-radius: var(--radius-card);
   padding: 22px;
 }
 
 .modal h2 {
+  font-family: var(--font-display);
   margin: 0 0 4px 0;
   font-size: 18px;
 }
@@ -694,8 +812,9 @@ a {
 
 .delta-cell {
   background: var(--surface-2);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 10px;
+  font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
 }
 
@@ -721,6 +840,108 @@ a {
   color: var(--text-muted);
   font-size: 13px;
   padding: 20px 0;
+}
+
+/* --- Supply chain visual ---
+   A company-to-company contract shown as connected nodes rather than a row
+   in a table, so a chain of who-supplies-whom reads at a glance instead of
+   needing to be pieced together from separate records. */
+
+.chain-card {
+  background: var(--surface-1);
+  border: var(--card-border);
+  box-shadow: var(--card-shadow);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+}
+
+.chain-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 10px 0;
+  flex-wrap: wrap;
+}
+
+.chain-row + .chain-row {
+  border-top: 1px solid var(--gridline);
+}
+
+.chain-node {
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.chain-node--mine {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chain-arrow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 12px;
+  min-width: 118px;
+}
+
+.chain-arrow__label {
+  font-family: var(--font-numeric);
+  font-size: 10.5px;
+  color: var(--accent);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.chain-arrow__line {
+  width: 100%;
+  height: 1px;
+  background: var(--border);
+  position: relative;
+  margin-top: 4px;
+}
+
+.chain-arrow__line::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  top: -3px;
+  border: 4px solid transparent;
+  border-left-color: var(--border);
+  border-right-width: 0;
+}
+
+.chain-status {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid;
+  margin-left: auto;
+  background: transparent;
+}
+
+.chain-status--active {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.chain-status--pending {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+.chain-status--expired,
+.chain-status--cancelled {
+  color: var(--text-muted);
+  border-color: var(--border);
 }
 
 /* --- Cheat menu (dev/testing only) --- */

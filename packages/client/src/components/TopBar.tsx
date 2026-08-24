@@ -9,6 +9,7 @@ import {
 } from "@dominion/shared";
 import { api } from "../api/client.js";
 import { useGameState } from "../api/hooks.js";
+import { THEME_IDS, THEME_LABELS, useTheme } from "../theme.js";
 
 const RESOURCE_COLORS: Record<ResourceType, string> = {
   food: "var(--series-food)",
@@ -29,6 +30,7 @@ function formatRate(perHour: number): string {
 export default function TopBar() {
   const { data } = useGameState();
   const [now, setNow] = useState(new Date());
+  const [theme, setTheme] = useTheme();
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -112,6 +114,18 @@ export default function TopBar() {
       <div className="top-bar__meta">
         <span>Era {s?.era ?? 1}</span>
         <span>{now.toLocaleTimeString()}</span>
+        <select
+          className="theme-select"
+          value={theme}
+          onChange={(e) => setTheme(e.target.value as (typeof THEME_IDS)[number])}
+          title="Visual theme"
+        >
+          {THEME_IDS.map((id) => (
+            <option key={id} value={id}>
+              {THEME_LABELS[id]}
+            </option>
+          ))}
+        </select>
         <button className="btn" onClick={() => logout.mutate()}>
           Log out
         </button>
