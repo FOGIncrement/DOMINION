@@ -295,7 +295,7 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
   // market's flows accumulator, same as how a manual trade moves cash but a
   // contract additionally moves the resource without touching market price.
   const activeContracts = await prisma.contract.findMany({
-    where: { cancelledAt: null, expiresAt: { gt: now } },
+    where: { cancelledAt: null, acceptedAt: { not: null }, expiresAt: { gt: now } },
     include: { seller: true, buyer: true },
   });
   for (const contract of activeContracts) {

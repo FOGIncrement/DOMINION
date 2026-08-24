@@ -154,11 +154,12 @@ model Company {
 
 // A standing supply agreement between two companies — a locked price and
 // hourly quantity, settled every tick, instead of either side trading blind
-// on the spot market. v1 scope: both companies must be controlled by the
-// same player (see routes/contracts.ts) — vertical integration within one
-// player's own portfolio, not a multi-party negotiation/offer system. That's
-// a deliberate, documented cut, not an oversight: contracting with another
-// player's or an NPC's company needs an accept/reject flow this doesn't have.
+// on the spot market. v2: the proposer must control one of the two
+// companies; if the counterparty is an NPC (or the proposer's own other
+// company), the contract activates immediately, but if it's another
+// player's company it starts as a pending offer (acceptedAt/expiresAt null)
+// until that player accepts — expiresAt is computed from acceptance, not
+// proposal, so an offer sitting unanswered doesn't eat into its own term.
 model Contract {
   id              String    @id @default(cuid())
   sellerCompanyId String
@@ -168,8 +169,10 @@ model Contract {
   resourceType    String
   quantityPerHour Float
   pricePerUnit    Float
+  termHours       Int
   createdAt       DateTime  @default(now())
-  expiresAt       DateTime
+  acceptedAt      DateTime?
+  expiresAt       DateTime?
   lastSettledAt   DateTime  @default(now())
   cancelledAt     DateTime?
 

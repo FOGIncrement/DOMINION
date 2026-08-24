@@ -348,40 +348,52 @@ const TERM_LABELS: Record<number, string> = { 24: "1 day", 72: "3 days", 168: "7
 function SupplyContractForm() {
   const queryClient = useQueryClient();
   const { data: myCompanies } = useMyCompanies();
-  const [sellerId, setSellerId] = useState("");
-  const [buyerId, setBuyerId] = useState("");
+  const { data: allCompanies } = useAllCompanies();
+  const [myCompanyId, setMyCompanyId] = useState("");
+  const [counterpartyId, setCounterpartyId] = useState("");
   const [quantityPerHour, setQuantityPerHour] = useState(5);
   const [pricePerUnit, setPricePerUnit] = useState(1);
   const [termHours, setTermHours] = useState(CONTRACT_TERM_HOURS_OPTIONS[0]);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
+  const companies = myCompanies?.companies ?? [];
+  const world = allCompanies?.companies ?? [];
+  const myCompanyIds = new Set(companies.map((c) => c.id));
+
+  const mine = companies.find((c) => c.id === myCompanyId);
+  const mineIndustry = mine ? COMPANY_INDUSTRIES[mine.industry as CompanyIndustryId] : null;
+  // An extraction industry (no inputResource) can only ever be a seller; a
+  // processing industry (has inputResource) can only ever be a buyer of that
+  // input — every current industry falls cleanly into exactly one role.
+  const mineIsSeller = mineIndustry ? !mineIndustry.inputResource : false;
+
+  const eligibleCounterparties = world.filter((c) => {
+    if (c.id === myCompanyId) return false;
+    const industry = COMPANY_INDUSTRIES[c.industry as CompanyIndustryId];
+    if (!mineIndustry) return false;
+    return mineIsSeller ? industry.inputResource === mineIndustry.outputResource : industry.outputResource === mineIndustry.inputResource;
+  });
+
   const create = useMutation({
-    mutationFn: () => api.createContract(sellerId, buyerId, quantityPerHour, pricePerUnit, termHours),
-    onSuccess: () => {
+    mutationFn: () => {
+      const sellerCompanyId = mineIsSeller ? myCompanyId : counterpartyId;
+      const buyerCompanyId = mineIsSeller ? counterpartyId : myCompanyId;
+      return api.createContract(sellerCompanyId, buyerCompanyId, quantityPerHour, pricePerUnit, termHours);
+    },
+    onSuccess: (res) => {
       setError(null);
-      setMessage("Contract created.");
+      setMessage(res.pending ? "Offer sent — awaiting the other company's acceptance." : "Contract created and active.");
       queryClient.invalidateQueries({ queryKey: ["myContracts"] });
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "Couldn't create contract"),
   });
 
-  const companies = myCompanies?.companies ?? [];
-  const seller = companies.find((c) => c.id === sellerId);
-  const sellerIndustry = seller ? COMPANY_INDUSTRIES[seller.industry as CompanyIndustryId] : null;
-  // Only companies whose input matches the seller's output can actually use
-  // what the contract delivers — mirrors the server's own compatibility check.
-  const eligibleBuyers = companies.filter((c) => {
-    if (c.id === sellerId) return false;
-    const industry = COMPANY_INDUSTRIES[c.industry as CompanyIndustryId];
-    return sellerIndustry && industry.inputResource === sellerIndustry.outputResource;
-  });
-
-  if (companies.length < 2) {
+  if (companies.length === 0) {
     return (
       <div className="card">
         <h2 className="card__title">Supply Contracts</h2>
-        <div className="empty-state">Found at least two companies to set up a supply contract between them.</div>
+        <div className="empty-state">Found a company first to propose a supply contract.</div>
       </div>
     );
   }
@@ -392,19 +404,20 @@ function SupplyContractForm() {
       {error && <div className="auth-error">{error}</div>}
       {message && !error && <div className="suggestion">{message}</div>}
       <div className="trade-row" style={{ flexWrap: "wrap" }}>
-        <select value={sellerId} onChange={(e) => { setSellerId(e.target.value); setBuyerId(""); }}>
-          <option value="">Seller company...</option>
+        <select value={myCompanyId} onChange={(e) => { setMyCompanyId(e.target.value); setCounterpartyId(""); }}>
+          <option value="">My company...</option>
           {companies.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name} ({OUTPUT_LABELS[COMPANY_INDUSTRIES[c.industry as CompanyIndustryId].outputResource]})
+              {c.name} ({COMPANY_INDUSTRIES[c.industry as CompanyIndustryId].name})
             </option>
           ))}
         </select>
-        <select value={buyerId} onChange={(e) => setBuyerId(e.target.value)} disabled={!sellerId}>
-          <option value="">Buyer company...</option>
-          {eligibleBuyers.map((c) => (
+        <span className="suggestion">{mine ? (mineIsSeller ? "sells to" : "buys from") : ""}</span>
+        <select value={counterpartyId} onChange={(e) => setCounterpartyId(e.target.value)} disabled={!myCompanyId}>
+          <option value="">Counterparty company...</option>
+          {eligibleCounterparties.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name}
+              {c.name} ({myCompanyIds.has(c.id) ? "yours" : c.isPlayerOwned ? "player" : "NPC"})
             </option>
           ))}
         </select>
@@ -434,22 +447,24 @@ function SupplyContractForm() {
         </select>
         <button
           className="btn btn--accent"
-          disabled={!sellerId || !buyerId || create.isPending}
+          disabled={!myCompanyId || !counterpartyId || create.isPending}
           onClick={() => create.mutate()}
         >
-          Create Contract
+          Propose Contract
         </button>
       </div>
-      {sellerId && eligibleBuyers.length === 0 && (
+      {myCompanyId && eligibleCounterparties.length === 0 && (
         <p className="suggestion" style={{ marginTop: 8 }}>
-          None of your other companies use {sellerIndustry ? OUTPUT_LABELS[sellerIndustry.outputResource] : "this"} as
-          an input — found a compatible company first.
+          No company in the world can {mineIsSeller ? "use" : "supply"}{" "}
+          {mineIndustry ? OUTPUT_LABELS[mineIsSeller ? mineIndustry.outputResource : mineIndustry.inputResource!] : "this"}{" "}
+          right now.
         </p>
       )}
       <p className="suggestion" style={{ marginTop: 8 }}>
         A locked price and hourly quantity settled automatically every tick, instead of trading blind on the spot
-        market — vertical integration between two of your own companies. Settlement is capped by the seller's stock
-        and the buyer's cash, so an under-supplied or under-funded contract just delivers less that tick.
+        market. Proposing to your own other company or an NPC activates immediately; proposing to another player's
+        company sends a pending offer they need to accept first. Settlement is capped by the seller's stock and the
+        buyer's cash, so an under-supplied or under-funded contract just delivers less that tick.
       </p>
     </div>
   );
@@ -460,21 +475,26 @@ function MyContractsList() {
   const { data: contracts } = useMyContracts();
   const [error, setError] = useState<string | null>(null);
 
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["myContracts"] });
+
+  const accept = useMutation({
+    mutationFn: (id: string) => api.acceptContract(id),
+    onSuccess: () => { setError(null); invalidate(); },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Couldn't accept offer"),
+  });
   const cancel = useMutation({
     mutationFn: (id: string) => api.cancelContract(id),
-    onSuccess: () => {
-      setError(null);
-      queryClient.invalidateQueries({ queryKey: ["myContracts"] });
-    },
+    onSuccess: () => { setError(null); invalidate(); },
     onError: (err) => setError(err instanceof ApiError ? err.message : "Couldn't cancel contract"),
   });
 
   if (!contracts || contracts.contracts.length === 0) return null;
 
-  const statusOf = (c: MyContract) => {
-    if (c.cancelledAt) return "Cancelled";
-    if (new Date(c.expiresAt) <= new Date()) return "Expired";
-    return "Active";
+  const STATUS_LABELS: Record<MyContract["status"], string> = {
+    pending: "Pending",
+    active: "Active",
+    expired: "Expired",
+    cancelled: "Cancelled",
   };
 
   return (
@@ -489,29 +509,36 @@ function MyContractsList() {
             <th>Resource</th>
             <th>Qty/hr</th>
             <th>Price/unit</th>
-            <th>Expires</th>
+            <th>Term</th>
             <th>Status</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           {contracts.contracts.map((c) => {
-            const status = statusOf(c);
+            const status = c.status;
             return (
               <tr key={c.id}>
-                <td>{c.sellerCompanyName}</td>
-                <td>{c.buyerCompanyName}</td>
+                <td>{c.sellerCompanyName}{c.sellerIsMine && " (yours)"}</td>
+                <td>{c.buyerCompanyName}{c.buyerIsMine && " (yours)"}</td>
                 <td>{OUTPUT_LABELS[c.resourceType]}</td>
                 <td>{c.quantityPerHour}</td>
                 <td>{c.pricePerUnit.toFixed(2)}g</td>
-                <td>{new Date(c.expiresAt).toLocaleDateString()}</td>
-                <td>{status}</td>
+                <td>{TERM_LABELS[c.termHours] ?? `${c.termHours}h`}</td>
+                <td>{STATUS_LABELS[status]}</td>
                 <td>
-                  {status === "Active" && (
-                    <button className="btn" disabled={cancel.isPending} onClick={() => cancel.mutate(c.id)}>
-                      Cancel
-                    </button>
-                  )}
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {status === "pending" && (
+                      <button className="btn btn--accent" disabled={accept.isPending} onClick={() => accept.mutate(c.id)}>
+                        Accept
+                      </button>
+                    )}
+                    {(status === "pending" || status === "active") && (
+                      <button className="btn" disabled={cancel.isPending} onClick={() => cancel.mutate(c.id)}>
+                        Cancel
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             );

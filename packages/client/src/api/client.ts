@@ -97,11 +97,12 @@ export const api = {
     pricePerUnit: number,
     termHours: number,
   ) =>
-    request<{ ok: true; contractId: string }>("/contracts", {
+    request<{ ok: true; contractId: string; pending: boolean }>("/contracts", {
       method: "POST",
       body: JSON.stringify({ sellerCompanyId, buyerCompanyId, quantityPerHour, pricePerUnit, termHours }),
     }),
   cancelContract: (contractId: string) => request<{ ok: true }>(`/contracts/${contractId}/cancel`, { method: "POST" }),
+  acceptContract: (contractId: string) => request<{ ok: true }>(`/contracts/${contractId}/accept`, { method: "POST" }),
 
   stocks: () => request<{ stocks: StockSummary[] }>("/stocks"),
   stockDetail: (companyId: string) => request<StockDetail>(`/stocks/${companyId}`),
@@ -331,14 +332,19 @@ export interface MyContract {
   id: string;
   sellerCompanyId: string;
   sellerCompanyName: string;
+  sellerIsMine: boolean;
   buyerCompanyId: string;
   buyerCompanyName: string;
+  buyerIsMine: boolean;
   resourceType: MarketResourceType;
   quantityPerHour: number;
   pricePerUnit: number;
+  termHours: number;
   createdAt: string;
-  expiresAt: string;
+  acceptedAt: string | null;
+  expiresAt: string | null;
   cancelledAt: string | null;
+  status: "pending" | "active" | "expired" | "cancelled";
 }
 
 export interface MyDeposit {

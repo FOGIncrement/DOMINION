@@ -156,7 +156,10 @@ cheatsRouter.post("/simulate-offline", async (req: AuthedRequest, res) => {
     prisma.company.findMany({ select: { id: true, lastTickAt: true } }),
     prisma.loan.findMany({ where: { defaultedAt: null }, select: { id: true, lastAccrualAt: true } }),
     prisma.deposit.findMany({ select: { id: true, lastAccrualAt: true } }),
-    prisma.contract.findMany({ where: { cancelledAt: null }, select: { id: true, lastSettledAt: true } }),
+    prisma.contract.findMany({
+      where: { cancelledAt: null, acceptedAt: { not: null } },
+      select: { id: true, lastSettledAt: true },
+    }),
     prisma.worldState.findUnique({ where: { id: 1 } }),
   ]);
 
