@@ -298,17 +298,30 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     where: { cancelledAt: null, acceptedAt: { not: null }, expiresAt: { gt: now } },
     include: { seller: true, buyer: true },
   });
+
+  // Two contracts can share the same seller (or buyer) and both get settled
+  // in this same loop. contract.seller/buyer are a snapshot from the
+  // findMany above, taken once before any of them settle — using that
+  // snapshot's goodsStock/cash directly would let every contract on that
+  // company check scarcity against the same start-of-tick number, so their
+  // transfers stack past what the company actually has (goodsStock can go
+  // negative even though no single contract over-asked). This ledger tracks
+  // the running balance across the loop so the second contract on a company
+  // sees what the first one already took.
+  const goodsStockLedger = new Map<string, number>();
+  const cashLedger = new Map<string, number>();
+  const ledgerGoods = (companyId: string, fallback: number) => goodsStockLedger.get(companyId) ?? fallback;
+  const ledgerCash = (companyId: string, fallback: number) => cashLedger.get(companyId) ?? fallback;
+
   for (const contract of activeContracts) {
     const rawElapsedHours = (now.getTime() - contract.lastSettledAt.getTime()) / (1000 * 60 * 60);
     const elapsedHours = Math.max(0, Math.min(MAX_CATCHUP_HOURS, rawElapsedHours));
     if (elapsedHours <= 0) continue;
 
-    const { transferred, grossCost } = settleContract(
-      contract,
-      elapsedHours,
-      contract.seller.goodsStock,
-      contract.buyer.cash,
-    );
+    const sellerGoodsStock = ledgerGoods(contract.sellerCompanyId, contract.seller.goodsStock);
+    const buyerCash = ledgerCash(contract.buyerCompanyId, contract.buyer.cash);
+
+    const { transferred, grossCost } = settleContract(contract, elapsedHours, sellerGoodsStock, buyerCash);
     if (transferred <= 0) {
       await prisma.contract.update({ where: { id: contract.id }, data: { lastSettledAt: now } });
       continue;
@@ -319,6 +332,10 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
       : null;
     const tax = sellerGovernment ? grossCost * sellerGovernment.corporateTaxRate : 0;
     const netProceeds = grossCost - tax;
+
+    goodsStockLedger.set(contract.sellerCompanyId, sellerGoodsStock - transferred);
+    cashLedger.set(contract.buyerCompanyId, buyerCash - grossCost);
+    cashLedger.set(contract.sellerCompanyId, ledgerCash(contract.sellerCompanyId, contract.seller.cash) + netProceeds);
 
     await prisma.$transaction([
       prisma.company.update({
