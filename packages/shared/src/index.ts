@@ -5,3 +5,4 @@ export * from "./companyProduction.js";
 export * from "./stocks.js";
 export * from "./employment.js";
 export * from "./loans.js";
+export * from "./bonds.js";

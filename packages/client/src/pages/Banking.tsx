@@ -1,8 +1,25 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { BANK_TUNING, DEPOSIT_TUNING, LOAN_TERM_OPTIONS, computeLoanRate, computeMaxLoanAmount } from "@dominion/shared";
+import {
+  BANK_TUNING,
+  BOND_TERM_OPTIONS,
+  DEPOSIT_TUNING,
+  LOAN_TERM_OPTIONS,
+  computeBondRate,
+  computeLoanRate,
+  computeMaxLoanAmount,
+} from "@dominion/shared";
 import { api, ApiError, type PublicBank } from "../api/client.js";
-import { useBanks, useGameState, useMyBanks, useMyCompanies, useMyDeposits, useMyLoans } from "../api/hooks.js";
+import {
+  useBanks,
+  useBondGovernments,
+  useGameState,
+  useMyBanks,
+  useMyBonds,
+  useMyCompanies,
+  useMyDeposits,
+  useMyLoans,
+} from "../api/hooks.js";
 
 const RISK_COLOR: Record<string, string> = {
   low: "var(--success)",
@@ -39,6 +56,8 @@ function invalidateBanking(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ["myDeposits"] });
   queryClient.invalidateQueries({ queryKey: ["myCompanies"] });
   queryClient.invalidateQueries({ queryKey: ["gameState"] });
+  queryClient.invalidateQueries({ queryKey: ["bondGovernments"] });
+  queryClient.invalidateQueries({ queryKey: ["myBonds"] });
 }
 
 function FoundBankForm() {
@@ -418,6 +437,128 @@ function MyDepositsList() {
   );
 }
 
+function BuyBondForm() {
+  const queryClient = useQueryClient();
+  const { data: governments } = useBondGovernments();
+  const { data: gameState } = useGameState();
+  const [governmentId, setGovernmentId] = useState("");
+  const [amount, setAmount] = useState(100);
+  const [termHours, setTermHours] = useState(BOND_TERM_OPTIONS[0].hours);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const buyBond = useMutation({
+    mutationFn: () => api.buyBond(governmentId, amount, termHours),
+    onSuccess: (res) => {
+      setError(null);
+      setMessage(`Bought a ${amount}g bond at ${(res.interestRatePerHour * 100).toFixed(2)}%/hr, matures ${new Date(res.maturesAt).toLocaleDateString()}.`);
+      invalidateBanking(queryClient);
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Bond purchase failed"),
+  });
+
+  const govOptions = governments?.governments ?? [];
+  const gold = gameState?.settlement.gold ?? 0;
+  const canAfford = amount > 0 && amount <= gold;
+  const termOption = BOND_TERM_OPTIONS.find((t) => t.hours === termHours);
+  const rate = computeBondRate(termHours);
+
+  if (govOptions.length === 0) {
+    return (
+      <div className="card">
+        <h2 className="card__title">Government Bonds</h2>
+        <div className="empty-state">No other nations to buy bonds from yet.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Government Bonds</h2>
+      {error && <div className="auth-error">{error}</div>}
+      {message && !error && <div className="suggestion">{message}</div>}
+      <div className="trade-row" style={{ flexWrap: "wrap" }}>
+        <select value={governmentId} onChange={(e) => setGovernmentId(e.target.value)}>
+          <option value="">Nation...</option>
+          {govOptions.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name} ({Math.floor(g.treasury)}g treasury)
+            </option>
+          ))}
+        </select>
+        <select value={termHours} onChange={(e) => setTermHours(Number(e.target.value))}>
+          {BOND_TERM_OPTIONS.map((t) => (
+            <option key={t.hours} value={t.hours}>
+              {t.label} ({(computeBondRate(t.hours) * 100).toFixed(2)}%/hr)
+            </option>
+          ))}
+        </select>
+        <input type="number" min={1} value={amount} onChange={(e) => setAmount(Math.max(1, Number(e.target.value)))} />
+        <button
+          className="btn btn--accent"
+          disabled={!governmentId || !canAfford || buyBond.isPending}
+          onClick={() => buyBond.mutate()}
+        >
+          Buy Bond
+        </button>
+      </div>
+      <p className="suggestion" style={{ marginTop: 8 }}>
+        A fixed-term, fixed-rate loan to another player's government — {termOption?.label.toLowerCase()} locks in{" "}
+        {(rate * 100).toFixed(2)}%/hr, paid out once in full at maturity rather than compounding like a bank deposit.
+        Longer terms pay a better rate for locking capital up longer. Redemption is capped by that government's
+        treasury at maturity — a nation that spends beyond its means may not be able to redeem in full.
+      </p>
+    </div>
+  );
+}
+
+function MyBondsList() {
+  const { data: bonds } = useMyBonds();
+
+  if (!bonds || bonds.bonds.length === 0) {
+    return (
+      <div className="card">
+        <h2 className="card__title">My Bonds</h2>
+        <div className="empty-state">No bonds yet.</div>
+      </div>
+    );
+  }
+
+  const active = bonds.bonds.filter((b) => !b.redeemedAt);
+  const totalPrincipal = active.reduce((sum, b) => sum + b.principal, 0);
+
+  return (
+    <div className="card">
+      <h2 className="card__title">My Bonds</h2>
+      <p className="suggestion" style={{ paddingTop: 0 }}>
+        {active.length} active bond{active.length === 1 ? "" : "s"}, {totalPrincipal.toFixed(0)}g principal outstanding
+      </p>
+      <table className="settlement-table">
+        <thead>
+          <tr>
+            <th>Nation</th>
+            <th>Principal</th>
+            <th>Rate/hr</th>
+            <th>Redemption value</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {bonds.bonds.map((b) => (
+            <tr key={b.id}>
+              <td>{b.governmentName}</td>
+              <td>{b.principal.toFixed(0)}g</td>
+              <td>{(b.interestRatePerHour * 100).toFixed(2)}%</td>
+              <td>{b.redemptionValue.toFixed(1)}g</td>
+              <td>{b.redeemedAt ? "Redeemed" : `Matures ${new Date(b.maturesAt).toLocaleDateString()}`}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function Banking() {
   const { data: myBanks } = useMyBanks();
   const { data: banks } = useBanks();
@@ -568,6 +709,8 @@ export default function Banking() {
       <MyLoansList />
       <MakeDepositForm />
       <MyDepositsList />
+      <BuyBondForm />
+      <MyBondsList />
 
       <div className="card">
         <h2 className="card__title">Banks of the World</h2>

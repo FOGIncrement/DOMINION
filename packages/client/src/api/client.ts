@@ -142,6 +142,14 @@ export const api = {
       body: JSON.stringify({ amount }),
     }),
 
+  bondGovernments: () => request<{ governments: BondGovernment[] }>("/bonds/governments"),
+  buyBond: (governmentId: string, amount: number, termHours: number) =>
+    request<{ ok: true; bondId: string; interestRatePerHour: number; maturesAt: string }>("/bonds", {
+      method: "POST",
+      body: JSON.stringify({ governmentId, amount, termHours }),
+    }),
+  myBonds: () => request<{ bonds: MyBond[] }>("/bonds/mine"),
+
   cheatsStatus: () => request<{ enabled: boolean }>("/cheats/status"),
   cheatAddResources: (deltas: Partial<Record<"food" | "wood" | "stone" | "gold", number>>) =>
     request<{ ok: true }>("/cheats/resources", { method: "POST", body: JSON.stringify(deltas) }),
@@ -379,6 +387,24 @@ export interface MyDeposit {
   amount: number;
   interestRatePerHour: number;
   createdAt: string;
+}
+
+export interface BondGovernment {
+  id: string;
+  name: string;
+  treasury: number;
+}
+
+export interface MyBond {
+  id: string;
+  governmentName: string;
+  principal: number;
+  interestRatePerHour: number;
+  termHours: number;
+  issuedAt: string;
+  maturesAt: string;
+  redeemedAt: string | null;
+  redemptionValue: number;
 }
 
 export interface MyLoan {

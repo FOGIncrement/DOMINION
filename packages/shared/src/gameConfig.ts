@@ -393,6 +393,16 @@ export const DEPOSIT_TUNING = {
   rateFraction: 0.4, // depositors earn this fraction of the bank's lending rate — the spread is the bank's margin
 };
 
+// Government bonds: a distinct debt instrument from a bank Deposit — see the
+// Bond model comment in schema.prisma. Base rate sits a bit above a typical
+// deposit's yield (0.002 bank base rate * 0.4 rateFraction = 0.0008/hr)
+// since capital is genuinely locked for the term rather than withdrawable
+// anytime; the longest term's bonus brings it up to roughly a bank's own
+// base lending rate, rewarding the longer lock-up.
+export const BOND_TUNING = {
+  baseRatePerHour: 0.001,
+};
+
 export const RESOURCE_LABELS: Record<ResourceType, string> = {
   food: "Food",
   wood: "Wood",

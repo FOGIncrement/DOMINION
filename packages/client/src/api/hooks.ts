@@ -76,6 +76,14 @@ export function useMyDeposits() {
   return useQuery({ queryKey: ["myDeposits"], queryFn: api.myDeposits, refetchInterval: POLL_MS });
 }
 
+export function useBondGovernments() {
+  return useQuery({ queryKey: ["bondGovernments"], queryFn: api.bondGovernments, refetchInterval: POLL_MS });
+}
+
+export function useMyBonds() {
+  return useQuery({ queryKey: ["myBonds"], queryFn: api.myBonds, refetchInterval: POLL_MS });
+}
+
 export function useCheatsEnabled() {
   return useQuery({
     queryKey: ["cheatsEnabled"],

@@ -4,6 +4,7 @@ import {
   MAX_CATCHUP_HOURS,
   REFERENCE_TICK_HOURS,
   WORLD_DEMAND_TUNING,
+  computeBondRedemptionValue,
   computeTargetSharePrice,
   computeUnemployment,
   computeWelfareCostPerHour,
@@ -322,6 +323,35 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
 
     const newAmount = accrueDepositInterest(deposit, elapsedHours);
     await prisma.deposit.update({ where: { id: deposit.id }, data: { amount: newAmount, lastAccrualAt: now } });
+  }
+
+  // Bonds: redeemed once, in full, at maturity — unlike a loan or deposit
+  // there's no accrual step, since a bond's value is fixed at issuance.
+  // Redemption is capped by the issuing government's treasury (the same
+  // "can't pay out more than it has" idiom deposit withdrawals already get
+  // from bank liquidity), and marked redeemed regardless of whether the
+  // payout was full or partial — this is an automatic tick-driven event, not
+  // a player action the holder can just retry once the government has more
+  // treasury, so leaving it "stuck" indefinitely isn't the right failure
+  // mode. A holder of a bond from an over-extended government genuinely
+  // eats the shortfall, a real economic stake matching this game's other
+  // debt instruments.
+  const maturedBonds = await prisma.bond.findMany({
+    where: { redeemedAt: null, maturesAt: { lte: now } },
+    include: { government: true },
+  });
+  const treasuryLedger = new Map<string, number>();
+  for (const bond of maturedBonds) {
+    const redemptionValue = computeBondRedemptionValue(bond.principal, bond.interestRatePerHour, bond.termHours);
+    const availableTreasury = treasuryLedger.get(bond.governmentId) ?? bond.government.treasury;
+    const payout = Math.min(redemptionValue, Math.max(0, availableTreasury));
+    treasuryLedger.set(bond.governmentId, availableTreasury - payout);
+
+    await prisma.$transaction([
+      prisma.government.update({ where: { id: bond.governmentId }, data: { treasury: { decrement: payout } } }),
+      prisma.settlement.update({ where: { playerId: bond.holderId }, data: { gold: { increment: payout } } }),
+      prisma.bond.update({ where: { id: bond.id }, data: { redeemedAt: now } }),
+    ]);
   }
 
   // Contracts: settle standing supply agreements between companies, capped

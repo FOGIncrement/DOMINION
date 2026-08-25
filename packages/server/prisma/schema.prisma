@@ -24,6 +24,7 @@ model Player {
   shareholdings Shareholding[]
   banks      Bank[]
   deposits   Deposit[]
+  bondsHeld  Bond[]
   government Government?
 }
 
@@ -36,6 +37,31 @@ model Government {
   corporateTaxRate                Float    @default(0)
   welfareRatePerUnemployedPerHour Float    @default(0.5)
   createdAt                       DateTime @default(now())
+
+  bondsIssued Bond[]
+}
+
+// Government debt, distinct from a bank Deposit: the borrower is a
+// government's treasury (not a bank's lending pool), and the term is a real
+// maturity — full principal + accrued interest redeemed automatically once,
+// not a withdraw-anytime balance. Redemption is capped by the issuing
+// government's treasury at maturity, the same "can't pay out more than it
+// actually has" idiom a deposit withdrawal already gets from bank liquidity.
+model Bond {
+  id                  String    @id @default(cuid())
+  governmentId        String
+  government          Government @relation(fields: [governmentId], references: [id])
+  holderId            String
+  holder              Player    @relation(fields: [holderId], references: [id])
+  principal           Float
+  interestRatePerHour Float
+  termHours           Int
+  issuedAt            DateTime  @default(now())
+  maturesAt           DateTime
+  redeemedAt          DateTime?
+
+  @@index([governmentId])
+  @@index([holderId])
 }
 
 model Settlement {
