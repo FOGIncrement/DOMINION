@@ -345,6 +345,7 @@ a {
   width: 100%;
   margin: 0 auto;
   align-items: start;
+  align-content: start;
 }
 
 .page--full {
@@ -1027,6 +1028,219 @@ a {
   color: var(--text-muted);
 }
 
+/* --- Page-level tab rail ---
+   A folder-tab strip docked to a panel below it, replacing "every section
+   stacked on one endless scroll" on pages with several distinct concerns
+   (Dashboard's Overview/Build/Research, Banking's Loans/Deposits/Bonds/World). */
+
+.page-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: -1px;
+  flex-wrap: wrap;
+}
+
+.page-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  border: var(--card-border);
+  border-bottom: none;
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  cursor: pointer;
+}
+
+.page-tab--active {
+  color: var(--text-primary);
+  background: var(--surface-2);
+}
+
+.page-tab__badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--critical);
+  color: #fff;
+}
+
+.page-panel {
+  background: var(--surface-2);
+  border: var(--card-border);
+  box-shadow: var(--card-shadow);
+  border-radius: 0 var(--radius-card) var(--radius-card) var(--radius-card);
+  padding: 20px 22px;
+}
+
+/* A lighter sub-card for grouping a form with its own related list inside a
+   page-panel (e.g. Banking's "Request a Loan" + "My Loans" pair) — same
+   nesting depth rule as .cc-stat-tile/.cc-info-box inside .cc-shell: the
+   outer panel carries the Atlas corner-bracket ornament, nested content
+   inside stays plain so brackets don't nest inside brackets. */
+
+.panel {
+  background: var(--surface-1);
+  border: 1px solid var(--gridline);
+  border-radius: var(--radius-control);
+  padding: 15px 17px;
+  margin-bottom: 16px;
+}
+
+.panel:last-child {
+  margin-bottom: 0;
+}
+
+.panel__title {
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin: 0 0 12px;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 820px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- Compact icon rows (buildings, palette cards) --- */
+
+.icon-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--gridline);
+}
+
+.icon-row:last-child {
+  border-bottom: none;
+}
+
+.icon-row__icon {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: var(--radius-control);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.icon-row__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.icon-row__name {
+  font-weight: 700;
+  font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.icon-row__name .lv {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.icon-row__meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.icon-row__right {
+  text-align: right;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+/* --- Research tree (dependency tiers, not a flat list) --- */
+
+.tree-tier {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px dashed var(--gridline);
+}
+
+.tree-tier:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.tree-node {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 11px 14px;
+  min-width: 200px;
+  flex: 1;
+  max-width: 260px;
+}
+
+.tree-node--done {
+  border-color: var(--success);
+}
+
+.tree-node--done .tree-node__name {
+  color: var(--success);
+}
+
+.tree-node--locked {
+  opacity: 0.55;
+}
+
+.tree-node__name {
+  font-weight: 700;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tree-node__desc {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.tree-node__cost {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-numeric);
+  margin-top: 6px;
+}
+
 .btn {
   padding: 7px 12px;
   border-radius: var(--radius-control);
@@ -1668,7 +1882,8 @@ a {
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .chain-card,
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .auth-card,
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .modal,
-:is([data-theme="atlas"], [data-theme="atlasDark"]) .build-option {
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .build-option,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .page-panel {
   position: relative;
 }
 
@@ -1681,6 +1896,7 @@ a {
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .auth-card::before,
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .modal::before,
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .build-option::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .page-panel::before,
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .card::after,
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .company-card::after,
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .building-card::after,
@@ -1689,7 +1905,8 @@ a {
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .chain-card::after,
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .auth-card::after,
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .modal::after,
-:is([data-theme="atlas"], [data-theme="atlasDark"]) .build-option::after {
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .build-option::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .page-panel::after {
   content: "";
   position: absolute;
   width: 13px;
@@ -1706,7 +1923,8 @@ a {
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .chain-card::before,
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .auth-card::before,
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .modal::before,
-:is([data-theme="atlas"], [data-theme="atlasDark"]) .build-option::before {
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .build-option::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .page-panel::before {
   top: 5px;
   left: 5px;
   border-top: 2px solid var(--accent);
@@ -1721,7 +1939,8 @@ a {
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .chain-card::after,
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .auth-card::after,
 :is([data-theme="atlas"], [data-theme="atlasDark"]) .modal::after,
-:is([data-theme="atlas"], [data-theme="atlasDark"]) .build-option::after {
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .build-option::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .page-panel::after {
   bottom: 5px;
   right: 5px;
   border-bottom: 2px solid var(--accent);

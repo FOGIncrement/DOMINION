@@ -23,6 +23,7 @@ import {
   useMyDeposits,
   useMyLoans,
 } from "../api/hooks.js";
+import { GlobeIcon, LayersIcon, PlusCircleIcon, ScrollIcon } from "../icons.js";
 
 const RISK_COLOR: Record<string, string> = {
   low: "var(--success)",
@@ -32,6 +33,8 @@ const RISK_COLOR: Record<string, string> = {
 };
 
 type BankSortKey = "cash" | "interestRatePerHour";
+type BankingTab = "loans" | "deposits" | "bonds" | "world";
+type BondSubTab = "government" | "corporate";
 
 function SortableHeader({
   label,
@@ -84,10 +87,10 @@ function FoundBankForm() {
   const canAfford = (gameState?.settlement.gold ?? 0) >= BANK_TUNING.foundingCost;
 
   return (
-    <div className="card">
-      <h2 className="card__title">Found a Bank</h2>
+    <div className="panel">
+      <div className="panel__title">Found a Bank</div>
       {error && <div className="auth-error">{error}</div>}
-      <div className="trade-row">
+      <div className="trade-row" style={{ marginTop: 0 }}>
         <input type="text" placeholder="Bank name" value={name} onChange={(e) => setName(e.target.value)} style={{ width: 200 }} />
         <button className="btn btn--accent" disabled={!canAfford || found.isPending} onClick={() => found.mutate()}>
           Found ({BANK_TUNING.foundingCost}g)
@@ -134,15 +137,15 @@ function RequestLoanForm() {
       : null;
 
   return (
-    <div className="card">
-      <h2 className="card__title">Request a Loan</h2>
+    <div className="panel">
+      <div className="panel__title">Request a Loan</div>
       {companies.length === 0 ? (
         <div className="empty-state">Found a company first — banks lend to companies, not settlements directly.</div>
       ) : (
         <>
           {error && <div className="auth-error">{error}</div>}
           {message && !error && <div className="suggestion">{message}</div>}
-          <div className="trade-row" style={{ flexWrap: "wrap" }}>
+          <div className="trade-row" style={{ flexWrap: "wrap", marginTop: 0 }}>
             <select value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
               <option value="">Company...</option>
               {companies.map((c) => (
@@ -212,34 +215,18 @@ function MyLoansList() {
 
   if (!loans || loans.loans.length === 0) {
     return (
-      <div className="card">
-        <h2 className="card__title">My Loans</h2>
+      <div className="panel">
+        <div className="panel__title">My Loans</div>
         <div className="empty-state">No outstanding loans.</div>
       </div>
     );
   }
 
   const visibleLoans = riskFilter === "all" ? loans.loans : loans.loans.filter((l) => l.risk === riskFilter);
-  const totalOwed = loans.loans.reduce((sum, l) => sum + (l.defaultedAt ? 0 : l.outstandingBalance), 0);
-  const atRiskCount = loans.loans.filter((l) => l.risk === "high" || l.risk === "defaulted").length;
 
   return (
-    <div className="card">
-      <h2 className="card__title">My Loans</h2>
-      <div className="summary-bar">
-        <div className="summary-stat">
-          <div className="summary-stat__label">Outstanding loans</div>
-          <div className="summary-stat__value">{loans.loans.length}</div>
-        </div>
-        <div className="summary-stat">
-          <div className="summary-stat__label">Total owed</div>
-          <div className="summary-stat__value">{totalOwed.toFixed(0)}g</div>
-        </div>
-        <div className="summary-stat">
-          <div className="summary-stat__label">At risk</div>
-          <div className={`summary-stat__value${atRiskCount > 0 ? " attention" : ""}`}>{atRiskCount}</div>
-        </div>
-      </div>
+    <div className="panel">
+      <div className="panel__title">My Loans — {loans.loans.length} active</div>
       {error && <div className="auth-error">{error}</div>}
       <div className="filter-row">
         <select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value as typeof riskFilter)}>
@@ -258,7 +245,6 @@ function MyLoansList() {
           <tr>
             <th>Company</th>
             <th>Bank</th>
-            <th>Principal</th>
             <th>Balance</th>
             <th>Rate/hr</th>
             <th>Term</th>
@@ -271,7 +257,6 @@ function MyLoansList() {
             <tr key={l.id} className={l.risk === "high" || l.risk === "defaulted" ? "attention-row" : ""}>
               <td>{l.companyName}</td>
               <td>{l.bankName}</td>
-              <td>{l.principal.toFixed(0)}g</td>
               <td>{l.outstandingBalance.toFixed(1)}g</td>
               <td>{(l.interestRatePerHour * 100).toFixed(2)}%</td>
               <td>{l.maturityAt ? `Matures ${new Date(l.maturityAt).toLocaleDateString()}` : "Revolving"}</td>
@@ -336,11 +321,11 @@ function MakeDepositForm() {
   const canAfford = amount > 0 && amount <= gold;
 
   return (
-    <div className="card">
-      <h2 className="card__title">Make a Deposit</h2>
+    <div className="panel">
+      <div className="panel__title">Make a Deposit</div>
       {error && <div className="auth-error">{error}</div>}
       {message && !error && <div className="suggestion">{message}</div>}
-      <div className="trade-row" style={{ flexWrap: "wrap" }}>
+      <div className="trade-row" style={{ flexWrap: "wrap", marginTop: 0 }}>
         <select value={bankId} onChange={(e) => setBankId(e.target.value)}>
           <option value="">Bank...</option>
           {bankOptions.map((b) => (
@@ -385,21 +370,16 @@ function MyDepositsList() {
 
   if (!deposits || deposits.deposits.length === 0) {
     return (
-      <div className="card">
-        <h2 className="card__title">My Deposits</h2>
+      <div className="panel">
+        <div className="panel__title">My Deposits</div>
         <div className="empty-state">No deposits yet.</div>
       </div>
     );
   }
 
-  const totalDeposited = deposits.deposits.reduce((sum, d) => sum + d.amount, 0);
-
   return (
-    <div className="card">
-      <h2 className="card__title">My Deposits</h2>
-      <p className="suggestion" style={{ paddingTop: 0 }}>
-        {deposits.deposits.length} deposit{deposits.deposits.length === 1 ? "" : "s"}, {totalDeposited.toFixed(0)}g total
-      </p>
+    <div className="panel">
+      <div className="panel__title">My Deposits — {deposits.deposits.length} bank{deposits.deposits.length === 1 ? "" : "s"}</div>
       {error && <div className="auth-error">{error}</div>}
       <table className="settlement-table">
         <thead>
@@ -470,19 +450,19 @@ function BuyBondForm() {
 
   if (govOptions.length === 0) {
     return (
-      <div className="card">
-        <h2 className="card__title">Government Bonds</h2>
+      <div className="panel">
+        <div className="panel__title">Buy a Government Bond</div>
         <div className="empty-state">No other nations to buy bonds from yet.</div>
       </div>
     );
   }
 
   return (
-    <div className="card">
-      <h2 className="card__title">Government Bonds</h2>
+    <div className="panel">
+      <div className="panel__title">Buy a Government Bond</div>
       {error && <div className="auth-error">{error}</div>}
       {message && !error && <div className="suggestion">{message}</div>}
-      <div className="trade-row" style={{ flexWrap: "wrap" }}>
+      <div className="trade-row" style={{ flexWrap: "wrap", marginTop: 0 }}>
         <select value={governmentId} onChange={(e) => setGovernmentId(e.target.value)}>
           <option value="">Nation...</option>
           {govOptions.map((g) => (
@@ -522,22 +502,20 @@ function MyBondsList() {
 
   if (!bonds || bonds.bonds.length === 0) {
     return (
-      <div className="card">
-        <h2 className="card__title">My Bonds</h2>
+      <div className="panel">
+        <div className="panel__title">My Bonds</div>
         <div className="empty-state">No bonds yet.</div>
       </div>
     );
   }
 
   const active = bonds.bonds.filter((b) => !b.redeemedAt);
-  const totalPrincipal = active.reduce((sum, b) => sum + b.principal, 0);
 
   return (
-    <div className="card">
-      <h2 className="card__title">My Bonds</h2>
-      <p className="suggestion" style={{ paddingTop: 0 }}>
-        {active.length} active bond{active.length === 1 ? "" : "s"}, {totalPrincipal.toFixed(0)}g principal outstanding
-      </p>
+    <div className="panel">
+      <div className="panel__title">
+        My Bonds — {active.length} active, {active.reduce((sum, b) => sum + b.principal, 0).toFixed(0)}g outstanding
+      </div>
       <table className="settlement-table">
         <thead>
           <tr>
@@ -593,19 +571,19 @@ function BuyCorporateBondForm() {
 
   if (companyOptions.length === 0) {
     return (
-      <div className="card">
-        <h2 className="card__title">Corporate Bonds</h2>
+      <div className="panel">
+        <div className="panel__title">Buy a Corporate Bond</div>
         <div className="empty-state">No companies you don't already control to buy bonds from yet.</div>
       </div>
     );
   }
 
   return (
-    <div className="card">
-      <h2 className="card__title">Corporate Bonds</h2>
+    <div className="panel">
+      <div className="panel__title">Buy a Corporate Bond</div>
       {error && <div className="auth-error">{error}</div>}
       {message && !error && <div className="suggestion">{message}</div>}
-      <div className="trade-row" style={{ flexWrap: "wrap" }}>
+      <div className="trade-row" style={{ flexWrap: "wrap", marginTop: 0 }}>
         <select value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
           <option value="">Company...</option>
           {companyOptions.map((c) => (
@@ -653,22 +631,20 @@ function MyCorporateBondsList() {
 
   if (!bonds || bonds.bonds.length === 0) {
     return (
-      <div className="card">
-        <h2 className="card__title">My Corporate Bonds</h2>
+      <div className="panel">
+        <div className="panel__title">My Corporate Bonds</div>
         <div className="empty-state">No corporate bonds yet.</div>
       </div>
     );
   }
 
   const active = bonds.bonds.filter((b) => !b.redeemedAt);
-  const totalPrincipal = active.reduce((sum, b) => sum + b.principal, 0);
 
   return (
-    <div className="card">
-      <h2 className="card__title">My Corporate Bonds</h2>
-      <p className="suggestion" style={{ paddingTop: 0 }}>
-        {active.length} active bond{active.length === 1 ? "" : "s"}, {totalPrincipal.toFixed(0)}g principal outstanding
-      </p>
+    <div className="panel">
+      <div className="panel__title">
+        My Corporate Bonds — {active.length} active, {active.reduce((sum, b) => sum + b.principal, 0).toFixed(0)}g outstanding
+      </div>
       <table className="settlement-table">
         <thead>
           <tr>
@@ -695,9 +671,133 @@ function MyCorporateBondsList() {
   );
 }
 
-export default function Banking() {
+function MyBanksSection() {
   const { data: myBanks } = useMyBanks();
+
+  if (!myBanks || myBanks.banks.length === 0) return null;
+
+  const summary = {
+    count: myBanks.banks.length,
+    totalCash: myBanks.banks.reduce((sum, b) => sum + b.cash, 0),
+    totalDeposits: myBanks.banks.reduce((sum, b) => sum + b.depositsHeld.reduce((s, d) => s + d.amount, 0), 0),
+    illiquid: myBanks.banks.filter((b) => {
+      const depositTotal = b.depositsHeld.reduce((s, d) => s + d.amount, 0);
+      return depositTotal > 0 && b.cash < depositTotal * 0.2;
+    }).length,
+  };
+
+  return (
+    <div className="card">
+      <h2 className="card__title">My Banks</h2>
+      <div className="summary-bar">
+        <div className="summary-stat">
+          <div className="summary-stat__label">Banks</div>
+          <div className="summary-stat__value">{summary.count}</div>
+        </div>
+        <div className="summary-stat">
+          <div className="summary-stat__label">Combined reserve cash</div>
+          <div className="summary-stat__value">{summary.totalCash.toFixed(0)}g</div>
+        </div>
+        <div className="summary-stat">
+          <div className="summary-stat__label">Deposits owed</div>
+          <div className="summary-stat__value">{summary.totalDeposits.toFixed(0)}g</div>
+        </div>
+        <div className="summary-stat">
+          <div className="summary-stat__label">Low liquidity</div>
+          <div className={`summary-stat__value${summary.illiquid > 0 ? " attention" : ""}`}>{summary.illiquid}</div>
+        </div>
+      </div>
+      <div className="company-grid">
+        {myBanks.banks.map((b) => {
+          const depositTotal = b.depositsHeld.reduce((s, d) => s + d.amount, 0);
+          const lowLiquidity = depositTotal > 0 && b.cash < depositTotal * 0.2;
+          return (
+          <div className={`company-card${lowLiquidity ? " company-card--attention" : ""}`} key={b.id}>
+            <div className="building-card__head">
+              <span className="building-card__name">{b.name}</span>
+              <span className="archetype-tag">{(b.interestRatePerHour * 100).toFixed(2)}%/hr</span>
+            </div>
+            <div className="company-card__stats">
+              <div>
+                <div className="delta-cell__label">Reserve cash</div>
+                <div className="delta-cell__value">{b.cash.toFixed(0)}g</div>
+              </div>
+              <div>
+                <div className="delta-cell__label">Loans issued</div>
+                <div className="delta-cell__value">{b.loansIssued.length}</div>
+              </div>
+              <div>
+                <div className="delta-cell__label">Deposits held</div>
+                <div className="delta-cell__value">{b.depositsHeld.length}</div>
+              </div>
+            </div>
+            {lowLiquidity && (
+              <p className="suggestion" style={{ color: "var(--critical)", paddingTop: 0 }}>
+                Reserve cash covers less than 20% of deposits owed — a withdrawal could be turned away.
+              </p>
+            )}
+            {b.loansIssued.length > 0 && (
+              <>
+                <div className="card-section-label">Loans issued</div>
+                <div className="scroll-table">
+                <table className="settlement-table">
+                  <thead>
+                    <tr>
+                      <th>Borrower</th>
+                      <th>Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {b.loansIssued.map((l) => (
+                      <tr key={l.id}>
+                        <td>{l.companyName}</td>
+                        <td>{l.outstandingBalance.toFixed(1)}g</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              </>
+            )}
+            {b.depositsHeld.length > 0 && (
+              <>
+                <div className="card-section-label">Deposits held</div>
+                <div className="scroll-table">
+                <table className="settlement-table">
+                  <thead>
+                    <tr>
+                      <th>Depositor</th>
+                      <th>Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {b.depositsHeld.map((d) => (
+                      <tr key={d.id}>
+                        <td>{d.depositorName}</td>
+                        <td>{d.amount.toFixed(1)}g</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              </>
+            )}
+          </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export default function Banking() {
+  const { data: myLoans } = useMyLoans();
+  const { data: myDeposits } = useMyDeposits();
+  const { data: myBonds } = useMyBonds();
+  const { data: myCorporateBonds } = useMyCorporateBonds();
   const { data: banks } = useBanks();
+  const [activeTab, setActiveTab] = useState<BankingTab>("loans");
+  const [bondSubTab, setBondSubTab] = useState<BondSubTab>("government");
   const [ownerFilter, setOwnerFilter] = useState<"all" | "player" | "npc">("all");
   const [sort, setSort] = useState<{ key: BankSortKey; direction: "asc" | "desc" }>({
     key: "cash",
@@ -721,184 +821,170 @@ export default function Banking() {
     );
   };
 
-  const myBanksSummary = myBanks
-    ? {
-        count: myBanks.banks.length,
-        totalCash: myBanks.banks.reduce((sum, b) => sum + b.cash, 0),
-        totalDeposits: myBanks.banks.reduce((sum, b) => sum + b.depositsHeld.reduce((s, d) => s + d.amount, 0), 0),
-        illiquid: myBanks.banks.filter((b) => {
-          const depositTotal = b.depositsHeld.reduce((s, d) => s + d.amount, 0);
-          return depositTotal > 0 && b.cash < depositTotal * 0.2;
-        }).length,
-      }
-    : null;
+  const totalBorrowed = (myLoans?.loans ?? []).reduce((sum, l) => sum + (l.defaultedAt ? 0 : l.outstandingBalance), 0);
+  const totalDeposited = (myDeposits?.deposits ?? []).reduce((sum, d) => sum + d.amount, 0);
+  const activeBonds = (myBonds?.bonds ?? []).filter((b) => !b.redeemedAt);
+  const activeCorporateBonds = (myCorporateBonds?.bonds ?? []).filter((b) => !b.redeemedAt);
+  const totalBondsHeld = activeBonds.reduce((sum, b) => sum + b.principal, 0) + activeCorporateBonds.reduce((sum, b) => sum + b.principal, 0);
+  const netPosition = totalDeposited + totalBondsHeld - totalBorrowed;
+
+  const bondCount = activeBonds.length + activeCorporateBonds.length;
 
   return (
     <div className="page page--full">
-      {myBanks && myBanks.banks.length > 0 && myBanksSummary && (
-        <div className="card">
-          <h2 className="card__title">My Banks</h2>
-          <div className="summary-bar">
-            <div className="summary-stat">
-              <div className="summary-stat__label">Banks</div>
-              <div className="summary-stat__value">{myBanksSummary.count}</div>
-            </div>
-            <div className="summary-stat">
-              <div className="summary-stat__label">Combined reserve cash</div>
-              <div className="summary-stat__value">{myBanksSummary.totalCash.toFixed(0)}g</div>
-            </div>
-            <div className="summary-stat">
-              <div className="summary-stat__label">Deposits owed</div>
-              <div className="summary-stat__value">{myBanksSummary.totalDeposits.toFixed(0)}g</div>
-            </div>
-            <div className="summary-stat">
-              <div className="summary-stat__label">Low liquidity</div>
-              <div className={`summary-stat__value${myBanksSummary.illiquid > 0 ? " attention" : ""}`}>
-                {myBanksSummary.illiquid}
-              </div>
-            </div>
-          </div>
-          <div className="company-grid">
-            {myBanks.banks.map((b) => {
-              const depositTotal = b.depositsHeld.reduce((s, d) => s + d.amount, 0);
-              const lowLiquidity = depositTotal > 0 && b.cash < depositTotal * 0.2;
-              return (
-              <div className={`company-card${lowLiquidity ? " company-card--attention" : ""}`} key={b.id}>
-                <div className="building-card__head">
-                  <span className="building-card__name">{b.name}</span>
-                  <span className="archetype-tag">{(b.interestRatePerHour * 100).toFixed(2)}%/hr</span>
-                </div>
-                <div className="company-card__stats">
-                  <div>
-                    <div className="delta-cell__label">Reserve cash</div>
-                    <div className="delta-cell__value">{b.cash.toFixed(0)}g</div>
-                  </div>
-                  <div>
-                    <div className="delta-cell__label">Loans issued</div>
-                    <div className="delta-cell__value">{b.loansIssued.length}</div>
-                  </div>
-                  <div>
-                    <div className="delta-cell__label">Deposits held</div>
-                    <div className="delta-cell__value">{b.depositsHeld.length}</div>
-                  </div>
-                </div>
-                {lowLiquidity && (
-                  <p className="suggestion" style={{ color: "var(--critical)", paddingTop: 0 }}>
-                    Reserve cash covers less than 20% of deposits owed — a withdrawal could be turned away.
-                  </p>
-                )}
-                {b.loansIssued.length > 0 && (
-                  <>
-                    <div className="card-section-label">Loans issued</div>
-                    <div className="scroll-table">
-                    <table className="settlement-table">
-                      <thead>
-                        <tr>
-                          <th>Borrower</th>
-                          <th>Balance</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {b.loansIssued.map((l) => (
-                          <tr key={l.id}>
-                            <td>{l.companyName}</td>
-                            <td>{l.outstandingBalance.toFixed(1)}g</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    </div>
-                  </>
-                )}
-                {b.depositsHeld.length > 0 && (
-                  <>
-                    <div className="card-section-label">Deposits held</div>
-                    <div className="scroll-table">
-                    <table className="settlement-table">
-                      <thead>
-                        <tr>
-                          <th>Depositor</th>
-                          <th>Balance</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {b.depositsHeld.map((d) => (
-                          <tr key={d.id}>
-                            <td>{d.depositorName}</td>
-                            <td>{d.amount.toFixed(1)}g</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    </div>
-                  </>
-                )}
-              </div>
-              );
-            })}
-          </div>
+      <div className="summary-bar">
+        <div className="summary-stat">
+          <div className="summary-stat__label">Deposited</div>
+          <div className="summary-stat__value">{totalDeposited.toFixed(0)}g</div>
         </div>
-      )}
+        <div className="summary-stat">
+          <div className="summary-stat__label">Borrowed</div>
+          <div className={`summary-stat__value${totalBorrowed > 0 ? " attention" : ""}`}>{totalBorrowed.toFixed(0)}g</div>
+        </div>
+        <div className="summary-stat">
+          <div className="summary-stat__label">Bonds held</div>
+          <div className="summary-stat__value">{totalBondsHeld.toFixed(0)}g</div>
+        </div>
+        <div className="summary-stat">
+          <div className="summary-stat__label">Net position</div>
+          <div className="summary-stat__value">{netPosition >= 0 ? "+" : ""}{netPosition.toFixed(0)}g</div>
+        </div>
+      </div>
 
-      <FoundBankForm />
-      <RequestLoanForm />
-      <MyLoansList />
-      <MakeDepositForm />
-      <MyDepositsList />
-      <BuyBondForm />
-      <MyBondsList />
-      <BuyCorporateBondForm />
-      <MyCorporateBondsList />
+      <MyBanksSection />
 
-      <div className="card">
-        <h2 className="card__title">Banks of the World</h2>
-        {!banks ? (
-          <div className="loading">Loading...</div>
-        ) : (
+      <div className="page-tabs">
+        <button
+          className={`page-tab${activeTab === "loans" ? " page-tab--active" : ""}`}
+          onClick={() => setActiveTab("loans")}
+        >
+          <LayersIcon className="icon" />
+          Loans
+        </button>
+        <button
+          className={`page-tab${activeTab === "deposits" ? " page-tab--active" : ""}`}
+          onClick={() => setActiveTab("deposits")}
+        >
+          <PlusCircleIcon className="icon" />
+          Deposits
+        </button>
+        <button
+          className={`page-tab${activeTab === "bonds" ? " page-tab--active" : ""}`}
+          onClick={() => setActiveTab("bonds")}
+        >
+          <ScrollIcon className="icon" />
+          Bonds
+          {bondCount > 0 && <span className="page-tab__badge">{bondCount}</span>}
+        </button>
+        <button
+          className={`page-tab${activeTab === "world" ? " page-tab--active" : ""}`}
+          onClick={() => setActiveTab("world")}
+        >
+          <GlobeIcon className="icon" />
+          Banks of the World
+        </button>
+      </div>
+
+      <div className="page-panel">
+        {activeTab === "loans" && (
+          <div className="split">
+            <RequestLoanForm />
+            <MyLoansList />
+          </div>
+        )}
+
+        {activeTab === "deposits" && (
+          <div className="split">
+            <MakeDepositForm />
+            <MyDepositsList />
+          </div>
+        )}
+
+        {activeTab === "bonds" && (
           <>
-            <div className="filter-row">
-              <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value as typeof ownerFilter)}>
-                <option value="all">All owners</option>
-                <option value="player">Player-owned</option>
-                <option value="npc">NPC-owned</option>
-              </select>
+            <div className="cc-tabs" style={{ marginBottom: 16 }}>
+              <button
+                className={`cc-tab${bondSubTab === "government" ? " cc-tab--active" : ""}`}
+                onClick={() => setBondSubTab("government")}
+              >
+                Government {activeBonds.length > 0 && `(${activeBonds.length})`}
+              </button>
+              <button
+                className={`cc-tab${bondSubTab === "corporate" ? " cc-tab--active" : ""}`}
+                onClick={() => setBondSubTab("corporate")}
+              >
+                Corporate {activeCorporateBonds.length > 0 && `(${activeCorporateBonds.length})`}
+              </button>
             </div>
-            {visibleBanks.length === 0 ? (
-              <div className="empty-state">No banks match that filter.</div>
+            {bondSubTab === "government" ? (
+              <div className="split">
+                <BuyBondForm />
+                <MyBondsList />
+              </div>
             ) : (
-              <table className="settlement-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Owner</th>
-                    <SortableHeader
-                      label="Reserve Cash"
-                      active={sort.key === "cash"}
-                      direction={sort.direction}
-                      onClick={() => toggleSort("cash")}
-                    />
-                    <SortableHeader
-                      label="Rate/hr"
-                      active={sort.key === "interestRatePerHour"}
-                      direction={sort.direction}
-                      onClick={() => toggleSort("interestRatePerHour")}
-                    />
-                    <th>Founded</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleBanks.map((b: PublicBank) => (
-                    <tr key={b.id}>
-                      <td>{b.name}</td>
-                      <td>{b.isPlayerOwned ? "Player" : "NPC"}</td>
-                      <td>{b.cash.toLocaleString()}g</td>
-                      <td>{(b.interestRatePerHour * 100).toFixed(2)}%</td>
-                      <td>{new Date(b.foundedAt).toLocaleDateString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="split">
+                <BuyCorporateBondForm />
+                <MyCorporateBondsList />
+              </div>
             )}
+          </>
+        )}
+
+        {activeTab === "world" && (
+          <>
+          <FoundBankForm />
+          <div className="panel" style={{ margin: 0 }}>
+            <div className="panel__title">Banks of the World</div>
+            {!banks ? (
+              <div className="loading">Loading...</div>
+            ) : (
+              <>
+                <div className="filter-row">
+                  <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value as typeof ownerFilter)}>
+                    <option value="all">All owners</option>
+                    <option value="player">Player-owned</option>
+                    <option value="npc">NPC-owned</option>
+                  </select>
+                </div>
+                {visibleBanks.length === 0 ? (
+                  <div className="empty-state">No banks match that filter.</div>
+                ) : (
+                  <table className="settlement-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Owner</th>
+                        <SortableHeader
+                          label="Reserve Cash"
+                          active={sort.key === "cash"}
+                          direction={sort.direction}
+                          onClick={() => toggleSort("cash")}
+                        />
+                        <SortableHeader
+                          label="Rate/hr"
+                          active={sort.key === "interestRatePerHour"}
+                          direction={sort.direction}
+                          onClick={() => toggleSort("interestRatePerHour")}
+                        />
+                        <th>Founded</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleBanks.map((b: PublicBank) => (
+                        <tr key={b.id}>
+                          <td>{b.name}</td>
+                          <td>{b.isPlayerOwned ? "Player" : "NPC"}</td>
+                          <td>{b.cash.toLocaleString()}g</td>
+                          <td>{(b.interestRatePerHour * 100).toFixed(2)}%</td>
+                          <td>{new Date(b.foundedAt).toLocaleDateString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            )}
+          </div>
           </>
         )}
       </div>
