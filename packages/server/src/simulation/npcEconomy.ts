@@ -9,6 +9,11 @@ const STOCK_BUFFER: Record<TradeableResource, number> = { food: 80, wood: 60, st
 // buying and selling can never thrash against each other in the same tick.
 const FOOD_SHORTAGE_BUY_THRESHOLD = 30;
 
+// Same idea for wood/stone, but a much smaller trigger — running out only
+// stalls maybeExpand for a tick, not a starvation spiral, so there's no
+// need to react as eagerly as food does.
+const MATERIAL_SHORTAGE_BUY_THRESHOLD: Record<"wood" | "stone", number> = { wood: 20, stone: 15 };
+
 export interface MutableResources {
   food: number;
   wood: number;
@@ -43,10 +48,9 @@ export async function settleNpcSurplus(
  * followed with no recourse (see the death-spiral fix in maybeAssignIdleWorkers,
  * below). This lets a cash-rich NPC settlement buy food from the world
  * market the same way a player could, mirroring settleNpcSurplus's sell
- * side. Deliberately food-only: a wood/stone shortage just slows expansion,
- * a real and fine economic outcome, not a survival crisis, so it's left
- * alone — this is also the concrete first step toward NPC settlements ever
- * being able to rely on companies instead of their own buildings.
+ * side. This is also the concrete first step toward NPC settlements ever
+ * being able to rely on companies instead of their own buildings — see
+ * maybeCoverMaterialShortfall for the wood/stone counterpart.
  */
 export async function maybeCoverFoodShortfall(
   state: MutableResources,
@@ -62,6 +66,38 @@ export async function maybeCoverFoodShortfall(
     state.food += toBuy;
     state.gold -= toBuy * price;
     await applyTradeImpact("food", "buy", toBuy);
+  }
+}
+
+/**
+ * The wood/stone counterpart to maybeCoverFoodShortfall. Lower stakes than
+ * food — running out just stalls maybeExpand for a tick, not a survival
+ * crisis — but it's the concrete missing half of what NPC settlements would
+ * need before retiring their own Lumber Camp/Quarry construction is even
+ * worth considering (see the economy-driver initiative's phase 2 note):
+ * NPCs currently have no way to get wood or stone except their own
+ * buildings, the same gap food had until maybeCoverFoodShortfall existed.
+ * Called before maybeExpand each tick so a purchase this tick can actually
+ * fund that same tick's expansion, not just top up for next time.
+ */
+export async function maybeCoverMaterialShortfall(
+  state: MutableResources,
+  prices: Record<TradeableResource, number>,
+): Promise<void> {
+  if (state.gold <= 0) return;
+
+  for (const resourceType of ["wood", "stone"] as const) {
+    if (state[resourceType] >= MATERIAL_SHORTAGE_BUY_THRESHOLD[resourceType]) continue;
+
+    const price = prices[resourceType];
+    const need = STOCK_BUFFER[resourceType] - state[resourceType];
+    const affordable = state.gold / price;
+    const toBuy = Math.max(0, Math.min(need, affordable));
+    if (toBuy > 0.01) {
+      state[resourceType] += toBuy;
+      state.gold -= toBuy * price;
+      await applyTradeImpact(resourceType, "buy", toBuy);
+    }
   }
 }
 

@@ -23,6 +23,7 @@ import { ensureMarketSeeded, TRADEABLE_RESOURCES, tickMarket, type TradeableReso
 import {
   maybeAssignIdleWorkers,
   maybeCoverFoodShortfall,
+  maybeCoverMaterialShortfall,
   maybeExpand,
   settleNpcSurplus,
   type MutableResources,
@@ -175,6 +176,7 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
       settlement.population.count * WORLD_DEMAND_TUNING.goodsDemandPerCapitaPerHour * elapsedHours;
 
     if (!settlement.playerId) {
+      await maybeCoverMaterialShortfall(state, prices);
       await maybeExpand(settlement, state);
       await settleNpcSurplus(state, prices);
     }
