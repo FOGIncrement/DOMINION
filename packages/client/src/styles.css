@@ -111,6 +111,81 @@
   --card-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
 }
 
+/* "Illuminated Atlas" — a lit parchment ledger. First light theme in the app;
+   surface-1 (panels) is deliberately the brightest surface, so cards read as
+   pages catching light off a deeper desk (surface-0). */
+:root[data-theme="atlas"] {
+  color-scheme: light;
+
+  --surface-0: #e8dcb8;
+  --surface-1: #f1e6c6;
+  --surface-2: #ece1bf;
+  --text-primary: #2c2013;
+  --text-secondary: #6b5636;
+  --text-muted: #9c8a63;
+  --gridline: rgba(203, 179, 126, 0.45);
+  --border: #cbb37e;
+  --success: #3f5c3f;
+  --warning: #9c7a25;
+  --critical: #8f2f2f;
+
+  --accent: #9c7a25;
+  --accent-ink: #2c2013;
+
+  --series-food: #4f7942;
+  --series-wood: #9c5a2e;
+  --series-stone: #4f7396;
+  --series-gold: #b8860b;
+  --series-goods: #7d5a96;
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  --font-numeric: "Courier New", ui-monospace, monospace;
+
+  --radius-card: 3px;
+  --radius-control: 3px;
+  --radius-pill: 3px;
+  --card-border: 1px solid var(--border);
+  --card-shadow: 0 2px 10px rgba(44, 32, 19, 0.18);
+}
+
+/* "Night Chronicle" — the same ledger read by candlelight, not a literal
+   inversion: warm dark leather/ink rather than a desaturated grey. */
+:root[data-theme="atlasDark"] {
+  color-scheme: dark;
+
+  --surface-0: #241a10;
+  --surface-1: #2e2313;
+  --surface-2: #291f12;
+  --text-primary: #ecdfc0;
+  --text-secondary: #b9a273;
+  --text-muted: #8a7550;
+  --gridline: rgba(122, 92, 46, 0.4);
+  --border: #7a5c2e;
+  --success: #5a8f5a;
+  --warning: #d4af37;
+  --critical: #c1453f;
+
+  --accent: #d4af37;
+  --accent-ink: #241a10;
+
+  --series-food: #6fa15e;
+  --series-wood: #c07840;
+  --series-stone: #6f9dc4;
+  --series-gold: #d4af37;
+  --series-goods: #a084c4;
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  --font-numeric: "Courier New", ui-monospace, monospace;
+
+  --radius-card: 3px;
+  --radius-control: 3px;
+  --radius-pill: 3px;
+  --card-border: 1px solid var(--border);
+  --card-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -1560,4 +1635,103 @@ a {
 .cheat-menu .trade-row select,
 .cheat-menu .trade-row input {
   padding: 5px 6px;
+}
+
+/* --- Illuminated Atlas ornamentation ---
+   Textured page ground + gilt corner brackets on panels, scoped to the two
+   Atlas themes only. Every other theme's cards stay flat rectangles;
+   nothing here is a token, so it can't leak into terminal/ledger/console. */
+
+[data-theme="atlas"] body {
+  background:
+    radial-gradient(ellipse 900px 700px at -10% -10%, rgba(255, 255, 255, 0.35), transparent 60%),
+    radial-gradient(ellipse 900px 700px at 110% 110%, rgba(0, 0, 0, 0.12), transparent 60%),
+    repeating-linear-gradient(45deg, rgba(120, 95, 45, 0.035) 0px, rgba(120, 95, 45, 0.035) 1px, transparent 1px, transparent 3px),
+    var(--surface-0);
+  background-attachment: fixed;
+}
+
+[data-theme="atlasDark"] body {
+  background:
+    radial-gradient(ellipse 900px 700px at -10% -10%, rgba(212, 175, 55, 0.12), transparent 60%),
+    radial-gradient(ellipse 900px 700px at 110% 110%, rgba(0, 0, 0, 0.5), transparent 60%),
+    repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.06) 0px, rgba(0, 0, 0, 0.06) 1px, transparent 1px, transparent 3px),
+    var(--surface-0);
+  background-attachment: fixed;
+}
+
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .card,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .company-card,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .building-card,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .cc-shell,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .stat-tile,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .chain-card,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .auth-card,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .modal,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .build-option {
+  position: relative;
+}
+
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .card::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .company-card::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .building-card::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .cc-shell::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .stat-tile::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .chain-card::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .auth-card::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .modal::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .build-option::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .card::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .company-card::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .building-card::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .cc-shell::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .stat-tile::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .chain-card::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .auth-card::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .modal::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .build-option::after {
+  content: "";
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .card::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .company-card::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .building-card::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .cc-shell::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .stat-tile::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .chain-card::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .auth-card::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .modal::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .build-option::before {
+  top: 5px;
+  left: 5px;
+  border-top: 2px solid var(--accent);
+  border-left: 2px solid var(--accent);
+}
+
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .card::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .company-card::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .building-card::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .cc-shell::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .stat-tile::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .chain-card::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .auth-card::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .modal::after,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .build-option::after {
+  bottom: 5px;
+  right: 5px;
+  border-bottom: 2px solid var(--accent);
+  border-right: 2px solid var(--accent);
+}
+
+/* cc-shell nests the toolbar flush to its top edge; give the bracket room
+   so it doesn't collide with the search input. */
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .cc-shell::before,
+:is([data-theme="atlas"], [data-theme="atlasDark"]) .cc-shell::after {
+  width: 16px;
+  height: 16px;
 }

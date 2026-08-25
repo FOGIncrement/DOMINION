@@ -1,16 +1,18 @@
 import { useEffect, useState } from "react";
 
-export const THEME_IDS = ["terminal", "ledger", "console"] as const;
+export const THEME_IDS = ["atlas", "atlasDark", "terminal", "ledger", "console"] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
 
 export const THEME_LABELS: Record<ThemeId, string> = {
+  atlas: "Illuminated Atlas",
+  atlasDark: "Night Chronicle",
   terminal: "Ledger Terminal",
   ledger: "Frontier Ledger",
   console: "Modern Console",
 };
 
 const STORAGE_KEY = "dominion-theme";
-const DEFAULT_THEME: ThemeId = "terminal";
+const DEFAULT_THEME: ThemeId = "atlas";
 
 function isThemeId(value: string | null): value is ThemeId {
   return value !== null && (THEME_IDS as readonly string[]).includes(value);
