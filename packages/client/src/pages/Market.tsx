@@ -125,8 +125,8 @@ export default function Market() {
           </div>
           {gameState && (
             <p className="suggestion" style={{ marginTop: 10 }}>
-              You hold {Math.round(gameState.settlement[resourceType])} {resourceType} and{" "}
-              {Math.round(gameState.settlement.gold)} gold.
+              You hold {Math.floor(gameState.settlement[resourceType])} {resourceType} and{" "}
+              {Math.floor(gameState.settlement.gold)} gold.
             </p>
           )}
         </div>

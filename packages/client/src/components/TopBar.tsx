@@ -19,7 +19,7 @@ const RESOURCE_COLORS: Record<ResourceType, string> = {
 };
 
 function formatNumber(value: number): string {
-  return Math.round(value).toLocaleString();
+  return Math.floor(value).toLocaleString();
 }
 
 function formatRate(perHour: number): string {

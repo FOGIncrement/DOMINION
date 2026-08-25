@@ -294,7 +294,7 @@ export const REFERENCE_TICK_HOURS = 1 / 60;
 
 export const NPC_GROWTH_TUNING = {
   minGoldToExpand: 200,
-  expandChancePerTick: 0.05,
+  expandChancePerTick: 0.08, // was 0.05 — bumped 2026-08-25 alongside the sell-before-build ordering fix (see engine.ts)
 };
 
 // Auto-close is a multiple of a baseline (foundingCost), same idiom as
@@ -315,6 +315,14 @@ export const NPC_COMPANY_TUNING = {
   hireChancePerTick: 0.05,
   minCashToUpgrade: 400,
   upgradeChancePerTick: 0.02,
+  // The NPC company roster could previously only shrink (auto-close on deep
+  // debt) — nothing ever replaced a company that closed, or grew the roster
+  // as the world's settlement count grew. foundChancePerTick rolls once per
+  // tick, world-wide (not per-settlement); maxCompaniesPerSettlement keeps
+  // the roster bounded relative to how many NPC settlements actually exist,
+  // rather than growing unboundedly forever.
+  foundChancePerTick: 0.04,
+  maxCompaniesPerSettlement: 1.5,
 };
 
 // One level stat raises both a company's worker cap and its per-worker

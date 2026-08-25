@@ -123,7 +123,7 @@ function RequestLoanForm() {
               <option value="">Company...</option>
               {companies.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name} ({Math.round(c.cash)}g cash)
+                  {c.name} ({Math.floor(c.cash)}g cash)
                 </option>
               ))}
             </select>
@@ -264,14 +264,14 @@ function MyLoansList() {
                     <input
                       type="number"
                       min={1}
-                      value={repayAmounts[l.id] ?? Math.round(l.outstandingBalance / 4)}
+                      value={repayAmounts[l.id] ?? Math.floor(l.outstandingBalance / 4)}
                       onChange={(e) => setRepayAmounts({ ...repayAmounts, [l.id]: Number(e.target.value) })}
                       style={{ width: 70 }}
                     />
                     <button
                       className="btn"
                       disabled={repay.isPending}
-                      onClick={() => repay.mutate({ loanId: l.id, amount: repayAmounts[l.id] ?? Math.round(l.outstandingBalance / 4) })}
+                      onClick={() => repay.mutate({ loanId: l.id, amount: repayAmounts[l.id] ?? Math.floor(l.outstandingBalance / 4) })}
                     >
                       Pay
                     </button>
@@ -397,14 +397,14 @@ function MyDepositsList() {
                   <input
                     type="number"
                     min={1}
-                    value={withdrawAmounts[d.id] ?? Math.round(d.amount)}
+                    value={withdrawAmounts[d.id] ?? Math.floor(d.amount)}
                     onChange={(e) => setWithdrawAmounts({ ...withdrawAmounts, [d.id]: Number(e.target.value) })}
                     style={{ width: 70 }}
                   />
                   <button
                     className="btn"
                     disabled={withdraw.isPending}
-                    onClick={() => withdraw.mutate({ depositId: d.id, amount: withdrawAmounts[d.id] ?? Math.round(d.amount) })}
+                    onClick={() => withdraw.mutate({ depositId: d.id, amount: withdrawAmounts[d.id] ?? Math.floor(d.amount) })}
                   >
                     Pay out
                   </button>

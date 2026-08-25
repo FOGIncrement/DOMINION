@@ -19,8 +19,14 @@ import { getControllingPlayerId } from "./control.js";
 import { computeConsumption, reconcileWorkersWithPopulation } from "./consumption.js";
 import { maybeRollEvent } from "./events.js";
 import { ensureMarketSeeded, TRADEABLE_RESOURCES, tickMarket, type TradeableResource } from "./market.js";
-import { maybeExpand, settleNpcSurplus, type MutableResources } from "./npcEconomy.js";
-import { maybeHire, maybeUpgradeCompany, settleNpcCompanyTrading, type MutableCompanyState } from "./npcCompanyEconomy.js";
+import { maybeAssignIdleWorkers, maybeExpand, settleNpcSurplus, type MutableResources } from "./npcEconomy.js";
+import {
+  maybeFoundNpcCompany,
+  maybeHire,
+  maybeUpgradeCompany,
+  settleNpcCompanyTrading,
+  type MutableCompanyState,
+} from "./npcCompanyEconomy.js";
 import { runNpcInvestorTick, type PublicCompanyForInvesting } from "./npcInvestors.js";
 import { computeProduction } from "./production.js";
 import { driftSharePrice, maybeDividend } from "./stocks.js";
@@ -158,8 +164,8 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
       settlement.population.count * WORLD_DEMAND_TUNING.goodsDemandPerCapitaPerHour * elapsedHours;
 
     if (!settlement.playerId) {
-      await settleNpcSurplus(state, prices);
       await maybeExpand(settlement, state);
+      await settleNpcSurplus(state, prices);
     }
 
     const workerAdjustments = reconcileWorkersWithPopulation(settlement, consumption.newPopulationCount);
@@ -168,6 +174,14 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
         where: { id: adjustment.buildingId },
         data: { workersAssigned: adjustment.workersAssigned },
       });
+    }
+
+    if (!settlement.playerId) {
+      const currentAssignments = new Map(settlement.buildings.map((b) => [b.id, b.workersAssigned]));
+      for (const adjustment of workerAdjustments) {
+        currentAssignments.set(adjustment.buildingId, adjustment.workersAssigned);
+      }
+      await maybeAssignIdleWorkers(settlement, currentAssignments, consumption.newPopulationCount, consumption.wellFed);
     }
 
     if (settlement.playerId) {
@@ -397,6 +411,7 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
 
   await tickMarket(flows, worldElapsedHours);
   await maybeRollEvent(snapshots);
+  await maybeFoundNpcCompany(snapshots.length);
 
   await prisma.worldState.upsert({
     where: { id: 1 },

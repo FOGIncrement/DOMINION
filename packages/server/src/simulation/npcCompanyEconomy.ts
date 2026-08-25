@@ -1,8 +1,10 @@
 import {
   COMPANY_INDUSTRIES,
+  COMPANY_INDUSTRY_IDS,
   NPC_COMPANY_TUNING,
   computeCompanyMaxWorkers,
   computeCompanyUpgradeCost,
+  type CompanyIndustryId,
 } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { applyTradeImpact, type TradeableResource } from "./market.js";
@@ -83,5 +85,62 @@ export async function maybeUpgradeCompany(company: CompanySnapshot, state: Mutab
   await prisma.company.update({
     where: { id: company.id },
     data: { level: company.level + 1 },
+  });
+}
+
+const NPC_COMPANY_NAME_PREFIXES = [
+  "Northgate",
+  "Silverline",
+  "Cedarbrook",
+  "Ironhollow",
+  "Fairwind",
+  "Redstone",
+  "Millbrook",
+  "Ashford",
+  "Blackpine",
+  "Golden Vale",
+  "Stonebridge",
+  "Wren's Hollow",
+];
+
+const NPC_COMPANY_NAME_SUFFIXES: Record<CompanyIndustryId, string[]> = {
+  bakery: ["Bakery", "Bread Co.", "Baking House"],
+  sawmill: ["Sawmill", "Timber Co.", "Lumber Works"],
+  stoneworks: ["Stoneworks", "Masonry Co.", "Quarry Works"],
+  farming: ["Farm", "Farmstead", "Growers"],
+  logging: ["Logging Camp", "Timber Camp", "Woodcutters"],
+  quarrying: ["Quarry", "Stone Pit", "Extraction Co."],
+};
+
+function generateNpcCompanyName(industry: CompanyIndustryId): string {
+  const prefix = NPC_COMPANY_NAME_PREFIXES[Math.floor(Math.random() * NPC_COMPANY_NAME_PREFIXES.length)];
+  const suffixOptions = NPC_COMPANY_NAME_SUFFIXES[industry];
+  const suffix = suffixOptions[Math.floor(Math.random() * suffixOptions.length)];
+  return `${prefix} ${suffix}`;
+}
+
+/**
+ * The NPC company roster could previously only shrink (auto-close on deep
+ * debt) — nothing ever replaced a closed company, or grew the roster as the
+ * world's settlement count grew. Rolls once per tick, world-wide, subject to
+ * a cap relative to the current settlement count so the roster doesn't grow
+ * unboundedly forever.
+ */
+export async function maybeFoundNpcCompany(settlementCount: number): Promise<void> {
+  if (Math.random() > NPC_COMPANY_TUNING.foundChancePerTick) return;
+
+  const openNpcCompanyCount = await prisma.company.count({ where: { ownerId: null, closedAt: null } });
+  if (openNpcCompanyCount >= settlementCount * NPC_COMPANY_TUNING.maxCompaniesPerSettlement) return;
+
+  const industryId = COMPANY_INDUSTRY_IDS[Math.floor(Math.random() * COMPANY_INDUSTRY_IDS.length)];
+  const industry = COMPANY_INDUSTRIES[industryId];
+
+  await prisma.company.create({
+    data: {
+      name: generateNpcCompanyName(industryId),
+      industry: industryId,
+      cash: industry.foundingCost,
+      workersAssigned: 0,
+    },
   });
 }

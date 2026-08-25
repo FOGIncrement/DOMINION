@@ -124,7 +124,7 @@ function StockDetailPanel({ companyId }: { companyId: string }) {
         </div>
         {gameState && (
           <p className="suggestion" style={{ marginTop: 8 }}>
-            You have {Math.round(gameState.settlement.gold)} gold available.
+            You have {Math.floor(gameState.settlement.gold)} gold available.
           </p>
         )}
       </div>

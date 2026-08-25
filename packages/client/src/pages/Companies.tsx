@@ -146,18 +146,18 @@ function CompanyCard({ company }: { company: MyCompany }) {
         <div>
           <div className="delta-cell__label">Cash</div>
           <div className={`delta-cell__value ${company.cash < 0 ? "stat-tile__delta--down" : ""}`}>
-            {company.cash.toFixed(0)}g
+            {Math.floor(company.cash)}g
           </div>
         </div>
         {industry.inputResource && (
           <div>
             <div className="delta-cell__label">{RESOURCE_LABELS[industry.inputResource as ResourceType]} stock</div>
-            <div className="delta-cell__value">{company.inputStock.toFixed(1)}</div>
+            <div className="delta-cell__value">{Math.floor(company.inputStock)}</div>
           </div>
         )}
         <div>
           <div className="delta-cell__label">{OUTPUT_LABELS[industry.outputResource]} stock</div>
-          <div className="delta-cell__value">{company.goodsStock.toFixed(1)}</div>
+          <div className="delta-cell__value">{Math.floor(company.goodsStock)}</div>
         </div>
         <div>
           <div className="delta-cell__label">Lifetime profit</div>
@@ -272,7 +272,7 @@ function CompanyCard({ company }: { company: MyCompany }) {
           )}
           {gameState && company.cash < 0 && (
             <p className="suggestion" style={{ padding: "4px 0" }}>
-              You have {Math.round(gameState.settlement.gold)} gold available.
+              You have {Math.floor(gameState.settlement.gold)} gold available.
             </p>
           )}
 
