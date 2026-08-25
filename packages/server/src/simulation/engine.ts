@@ -15,6 +15,7 @@ import { accrueDepositInterest, accrueLoanInterest, isLoanDefaulted, maybeBorrow
 import { tickCompany } from "./companies.js";
 import { autoCloseCompany, shouldAutoClose, shouldForceLayoff } from "./companyFailure.js";
 import { settleContract } from "./contracts.js";
+import { getControllingPlayerId } from "./control.js";
 import { computeConsumption, reconcileWorkersWithPopulation } from "./consumption.js";
 import { maybeRollEvent } from "./events.js";
 import { ensureMarketSeeded, TRADEABLE_RESOURCES, tickMarket, type TradeableResource } from "./market.js";
@@ -71,6 +72,7 @@ async function loadCompanySnapshots(): Promise<CompanySnapshot[]> {
     workersAssigned: c.workersAssigned,
     level: c.level,
     isPublic: c.isPublic,
+    sharesOutstanding: c.sharesOutstanding,
     lastTickAt: c.lastTickAt,
   }));
 }
@@ -223,8 +225,17 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
       goodsStock: result.goodsStock,
     };
 
+    // Gate on actual control, not raw ownership — a company a founding
+    // player still technically "owns" but has lost majority control of (an
+    // NPC investor bought >50%, see control.ts) needs the same autonomous
+    // management an NPC-founded company gets, or it just sits frozen: no
+    // selling stock, no hiring, no loan upkeep, forever. getControllingPlayerId
+    // already short-circuits to company.ownerId for private/non-majority
+    // cases, so this costs an extra query only for genuinely contested
+    // public companies.
+    const controllingPlayerId = await getControllingPlayerId(company);
     let revenue = 0;
-    if (!company.ownerId) {
+    if (!controllingPlayerId) {
       revenue = await settleNpcCompanyTrading(company, state, prices);
       await maybeHire(company, state);
       await maybeUpgradeCompany(company, state);

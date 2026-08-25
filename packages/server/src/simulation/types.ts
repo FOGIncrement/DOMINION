@@ -34,5 +34,6 @@ export interface CompanySnapshot {
   workersAssigned: number;
   level: number;
   isPublic: boolean;
+  sharesOutstanding: number;
   lastTickAt: Date;
 }
