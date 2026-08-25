@@ -103,6 +103,10 @@ export default function Dashboard() {
 
   const totalAssigned = data.buildings.reduce((sum, b) => sum + b.workersAssigned, 0);
   const idleWorkers = Math.floor(data.population.count - totalAssigned);
+  const idleBuildings = data.buildings.filter((b) => {
+    const def = BUILDING_TYPES[b.type as BuildingTypeId];
+    return def.maxWorkers > 0 && b.workersAssigned === 0;
+  }).length;
   const suggestions = buildSuggestions(data, techData?.techs);
 
   return (
@@ -111,37 +115,78 @@ export default function Dashboard() {
         {actionError && <div className="auth-error" style={{ marginBottom: 12 }}>{actionError}</div>}
 
         <div className="card">
-          <h2 className="card__title">
-            {data.settlement.name} · Buildings ({idleWorkers} idle worker{idleWorkers === 1 ? "" : "s"})
-          </h2>
+          <h2 className="card__title">{data.settlement.name} · Buildings</h2>
+          <div className="summary-bar">
+            <div className="summary-stat">
+              <div className="summary-stat__label">Buildings</div>
+              <div className="summary-stat__value">{data.buildings.length}</div>
+            </div>
+            <div className="summary-stat">
+              <div className="summary-stat__label">Workers assigned</div>
+              <div className="summary-stat__value">{totalAssigned}</div>
+            </div>
+            <div className="summary-stat">
+              <div className="summary-stat__label">Idle population</div>
+              <div className={`summary-stat__value${idleWorkers >= 3 ? " attention" : ""}`}>{idleWorkers}</div>
+            </div>
+            <div className="summary-stat">
+              <div className="summary-stat__label">Unstaffed buildings</div>
+              <div className={`summary-stat__value${idleBuildings > 0 ? " attention" : ""}`}>{idleBuildings}</div>
+            </div>
+          </div>
           <div className="building-grid">
             {data.buildings.map((b) => {
               const def = BUILDING_TYPES[b.type as BuildingTypeId];
               const canAddWorker = idleWorkers > 0 && b.workersAssigned < def.maxWorkers;
+              const isIdle = def.maxWorkers > 0 && b.workersAssigned === 0;
+              const staffedFraction = def.maxWorkers > 0 ? b.workersAssigned / def.maxWorkers : 0;
               return (
-                <div className="building-card" key={b.id}>
+                <div className={`building-card${isIdle ? " building-card--attention" : ""}`} key={b.id}>
                   <div className="building-card__head">
                     <span className="building-card__name">{def.name}</span>
                     <span className="building-card__count">Lv {b.level}</span>
                   </div>
                   <p className="building-card__desc">{def.description}</p>
                   {def.maxWorkers > 0 ? (
-                    <div className="worker-row">
-                      <button
-                        disabled={b.workersAssigned <= 0 || setWorkers.isPending}
-                        onClick={() => setWorkers.mutate({ buildingId: b.id, workers: b.workersAssigned - 1 })}
-                      >
-                        −
-                      </button>
-                      <span>
-                        {b.workersAssigned} / {def.maxWorkers} workers
-                      </span>
-                      <button
-                        disabled={!canAddWorker || setWorkers.isPending}
-                        onClick={() => setWorkers.mutate({ buildingId: b.id, workers: b.workersAssigned + 1 })}
-                      >
-                        +
-                      </button>
+                    <div className="workforce">
+                      <div className="workforce__head">
+                        <span>Workforce{isIdle && " — idle"}</span>
+                        <span className="workforce__count">
+                          {b.workersAssigned} / {def.maxWorkers}
+                        </span>
+                      </div>
+                      <div className="workforce-bar">
+                        <button
+                          disabled={b.workersAssigned <= 0 || setWorkers.isPending}
+                          onClick={() => setWorkers.mutate({ buildingId: b.id, workers: b.workersAssigned - 1 })}
+                        >
+                          −
+                        </button>
+                        <div className="workforce-bar__track">
+                          <div
+                            className={`workforce-bar__fill${isIdle ? " workforce-bar__fill--idle" : ""}`}
+                            style={{ width: `${staffedFraction * 100}%` }}
+                          />
+                        </div>
+                        <button
+                          disabled={!canAddWorker || setWorkers.isPending}
+                          onClick={() => setWorkers.mutate({ buildingId: b.id, workers: b.workersAssigned + 1 })}
+                        >
+                          +
+                        </button>
+                        <button
+                          className="workforce-bar__max"
+                          disabled={!canAddWorker}
+                          onClick={() =>
+                            setWorkers.mutate({
+                              buildingId: b.id,
+                              workers: Math.min(def.maxWorkers, b.workersAssigned + idleWorkers),
+                            })
+                          }
+                        >
+                          Max
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="worker-row">Houses +{def.populationCapacity} capacity</div>
@@ -217,30 +262,45 @@ export default function Dashboard() {
 
         <div className="card">
           <h2 className="card__title">Technology</h2>
-          <div className="build-menu">
-            {(techData?.techs ?? []).map((tech) => (
-              <div className="build-option" key={tech.id}>
-                <div className="building-card__head">
-                  <span className="building-card__name">{tech.name}</span>
+          {(
+            [
+              { label: "Available to research", filter: (t: TechInfo) => !t.researched && t.available },
+              { label: "Locked", filter: (t: TechInfo) => !t.researched && !t.available },
+              { label: "Researched", filter: (t: TechInfo) => t.researched },
+            ] as const
+          ).map(({ label, filter }) => {
+            const techsInGroup = (techData?.techs ?? []).filter(filter);
+            if (techsInGroup.length === 0) return null;
+            return (
+              <div key={label}>
+                <div className="card-section-label">{label}</div>
+                <div className="build-menu">
+                  {techsInGroup.map((tech) => (
+                    <div className="build-option" key={tech.id}>
+                      <div className="building-card__head">
+                        <span className="building-card__name">{tech.name}</span>
+                      </div>
+                      <p className="building-card__desc">{tech.description}</p>
+                      <span className="build-option__cost">{formatCost(tech.cost)}</span>
+                      {tech.researched ? (
+                        <span className="build-option__cost">Researched</span>
+                      ) : tech.available ? (
+                        <button
+                          className="btn"
+                          disabled={!canAfford(data.settlement, tech.cost) || research.isPending}
+                          onClick={() => research.mutate(tech.id as TechId)}
+                        >
+                          Research
+                        </button>
+                      ) : (
+                        <span className="build-option__cost">Requires {TECHS[tech.requiredTech as TechId]?.name}</span>
+                      )}
+                    </div>
+                  ))}
                 </div>
-                <p className="building-card__desc">{tech.description}</p>
-                <span className="build-option__cost">{formatCost(tech.cost)}</span>
-                {tech.researched ? (
-                  <span className="build-option__cost">Researched</span>
-                ) : tech.available ? (
-                  <button
-                    className="btn"
-                    disabled={!canAfford(data.settlement, tech.cost) || research.isPending}
-                    onClick={() => research.mutate(tech.id as TechId)}
-                  >
-                    Research
-                  </button>
-                ) : (
-                  <span className="build-option__cost">Requires {TECHS[tech.requiredTech as TechId]?.name}</span>
-                )}
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       </div>
 
