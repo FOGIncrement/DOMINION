@@ -1,4 +1,7 @@
 import "dotenv/config";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
@@ -40,6 +43,23 @@ app.use("/api/world", worldRouter);
 app.use("/api/news", newsRouter);
 app.use("/api/tech", techRouter);
 app.use("/api/cheats", cheatsRouter);
+
+// Serves the built client (packages/client/dist) when present, so one
+// process can be the whole production deployment — no separate static file
+// server needed. In dev, the client is never built to disk (Vite's dev
+// server handles it on its own port instead), so this block is simply
+// skipped and nothing changes about the local dev workflow.
+const clientDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../client/dist");
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.get("*", (req, res) => {
+    if (req.path.startsWith("/api/")) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    res.sendFile(path.join(clientDist, "index.html"));
+  });
+}
 
 app.listen(port, () => {
   console.log(`[server] listening on http://localhost:${port}`);

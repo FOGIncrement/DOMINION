@@ -3,6 +3,7 @@ dist/
 build/
 .env
 *.local
+*.tsbuildinfo
 
 # Prisma / SQLite
 packages/server/prisma/dev.db
