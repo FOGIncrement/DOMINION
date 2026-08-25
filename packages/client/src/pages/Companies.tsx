@@ -13,27 +13,12 @@ import {
 } from "@dominion/shared";
 import { api, ApiError, type MyCompany, type MyContract, type PublicCompany } from "../api/client.js";
 import { useAllCompanies, useGameState, useMarket, useMyCompanies, useMyContracts, useWorldContracts } from "../api/hooks.js";
+import { CompanyAvatar, INDUSTRY_META } from "../industryMeta.js";
 
 // RESOURCE_LABELS covers settlement-holdable resources only — "goods" is a
 // market resource with no settlement equivalent, so it needs its own entry
 // here (mirrors the same extension Market.tsx already does).
 const OUTPUT_LABELS: Record<MarketResourceType, string> = { ...RESOURCE_LABELS, goods: "Goods" };
-
-// Purely presentational grouping for the sidebar avatar — no equivalent
-// field on CompanyIndustryDef, so this stays a local lookup. The three
-// extraction industries map onto their output resource's existing series
-// color for consistency with the rest of the app; the three processing
-// industries (which all output "goods") get distinct colors of their own
-// since collapsing them onto --series-goods would make them indistinguishable
-// in the sidebar, defeating the point of the avatar.
-const INDUSTRY_META: Record<CompanyIndustryId, { color: string; letter: string }> = {
-  farming: { color: "var(--series-food)", letter: "Fm" },
-  logging: { color: "var(--series-wood)", letter: "Lg" },
-  quarrying: { color: "var(--series-stone)", letter: "Qr" },
-  bakery: { color: "var(--series-goods)", letter: "Bk" },
-  sawmill: { color: "#b5763f", letter: "Sw" },
-  stoneworks: { color: "#6b7280", letter: "St" },
-};
 
 type Status = "healthy" | "attention" | "critical" | "neutral";
 
@@ -96,15 +81,6 @@ function deriveStatus(controlled: boolean, alerts: Alert[]): Status {
   if (alerts.some((a) => a.severity === "critical")) return "critical";
   if (alerts.length > 0) return "attention";
   return "healthy";
-}
-
-function CompanyAvatar({ industry, size = "sm" }: { industry: CompanyIndustryId; size?: "sm" | "lg" }) {
-  const meta = INDUSTRY_META[industry];
-  return (
-    <div className={`cc-avatar${size === "lg" ? " cc-avatar--lg" : ""}`} style={{ background: meta.color }}>
-      {meta.letter}
-    </div>
-  );
 }
 
 const TERM_LABELS: Record<number, string> = { 24: "1 day", 72: "3 days", 168: "7 days" };
