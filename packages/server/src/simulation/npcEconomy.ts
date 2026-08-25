@@ -5,6 +5,10 @@ import type { SettlementSnapshot } from "./types.js";
 
 const STOCK_BUFFER: Record<TradeableResource, number> = { food: 80, wood: 60, stone: 40 };
 
+// Buy food once stock drops this low — well under the sell buffer (80) so
+// buying and selling can never thrash against each other in the same tick.
+const FOOD_SHORTAGE_BUY_THRESHOLD = 30;
+
 export interface MutableResources {
   food: number;
   wood: number;
@@ -30,6 +34,34 @@ export async function settleNpcSurplus(
       state.gold += excess * prices[resourceType];
       await applyTradeImpact(resourceType, "sell", excess);
     }
+  }
+}
+
+/**
+ * NPC settlements previously had no way to react to a food shortage beyond
+ * their own farm production — if that alone couldn't keep up, starvation
+ * followed with no recourse (see the death-spiral fix in maybeAssignIdleWorkers,
+ * below). This lets a cash-rich NPC settlement buy food from the world
+ * market the same way a player could, mirroring settleNpcSurplus's sell
+ * side. Deliberately food-only: a wood/stone shortage just slows expansion,
+ * a real and fine economic outcome, not a survival crisis, so it's left
+ * alone — this is also the concrete first step toward NPC settlements ever
+ * being able to rely on companies instead of their own buildings.
+ */
+export async function maybeCoverFoodShortfall(
+  state: MutableResources,
+  prices: Record<TradeableResource, number>,
+): Promise<void> {
+  if (state.food >= FOOD_SHORTAGE_BUY_THRESHOLD || state.gold <= 0) return;
+
+  const price = prices.food;
+  const need = STOCK_BUFFER.food - state.food;
+  const affordable = state.gold / price;
+  const toBuy = Math.max(0, Math.min(need, affordable));
+  if (toBuy > 0.01) {
+    state.food += toBuy;
+    state.gold -= toBuy * price;
+    await applyTradeImpact("food", "buy", toBuy);
   }
 }
 

@@ -19,7 +19,13 @@ import { getControllingPlayerId } from "./control.js";
 import { computeConsumption, reconcileWorkersWithPopulation } from "./consumption.js";
 import { maybeRollEvent } from "./events.js";
 import { ensureMarketSeeded, TRADEABLE_RESOURCES, tickMarket, type TradeableResource } from "./market.js";
-import { maybeAssignIdleWorkers, maybeExpand, settleNpcSurplus, type MutableResources } from "./npcEconomy.js";
+import {
+  maybeAssignIdleWorkers,
+  maybeCoverFoodShortfall,
+  maybeExpand,
+  settleNpcSurplus,
+  type MutableResources,
+} from "./npcEconomy.js";
 import {
   maybeFoundNpcCompany,
   maybeHire,
@@ -151,6 +157,10 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
       stone: Math.min(settlement.storageCap, settlement.stone + production.stone),
       gold: settlement.gold + production.gold,
     };
+
+    if (!settlement.playerId) {
+      await maybeCoverFoodShortfall(state, prices);
+    }
 
     const consumption = computeConsumption(settlement, state.food, elapsedHours);
     state.food = Math.max(0, state.food - consumption.foodConsumed);
