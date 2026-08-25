@@ -14,6 +14,7 @@ export const INDUSTRY_META: Record<CompanyIndustryId, { color: string; letter: s
   bakery: { color: "var(--series-goods)", letter: "Bk" },
   sawmill: { color: "#b5763f", letter: "Sw" },
   stoneworks: { color: "#6b7280", letter: "St" },
+  retail: { color: "#2f8f8a", letter: "Rt" },
 };
 
 export function CompanyAvatar({ industry, size = "sm" }: { industry: CompanyIndustryId; size?: "sm" | "lg" }) {

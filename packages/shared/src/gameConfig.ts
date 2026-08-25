@@ -109,6 +109,26 @@ export const COMPANY_INDUSTRIES: Record<CompanyIndustryId, CompanyIndustryDef> =
     maxWorkers: 4,
     foundingCost: 150,
   },
+  // Buys wholesale food and resells it — not to the open market, but
+  // directly to its own founder's settlement population (see
+  // maybeBuyFromOwnedRetail in simulation/directSales.ts). Deliberately
+  // outputs "food" rather than "goods": reselling the same resource type is
+  // what makes it a shop rather than a transformation industry like the
+  // three above, and it's what gives Retail a reason to exist distinct from
+  // Farming (which also outputs food, but from labor alone with no
+  // customer relationship).
+  retail: {
+    id: "retail",
+    name: "Retail Store",
+    description: "Buys wholesale food and resells it directly to the settlement's own population.",
+    inputResource: "food",
+    inputPerWorkerPerHour: 3,
+    outputResource: "food",
+    goodsPerWorkerPerHour: 3,
+    wagePerWorkerPerHour: 1.5,
+    maxWorkers: 4,
+    foundingCost: 150,
+  },
   // Extraction industries: labor in, raw resource out, nothing to buy.
   // Output rates match the equivalent settlement building exactly
   // (BUILDING_TYPES.farm/lumberCamp/quarry) so a company is a direct
@@ -256,6 +276,27 @@ export const POPULATION_TUNING = {
   starvationShrinkPerHourWhenHungry: 0.01,
   happinessRecoveryPerHour: 0.01,
   happinessDeclinePerHourWhenHungry: 0.03,
+};
+
+// A settlement buys baseline food from a Retail company its own player owns
+// (see maybeBuyFromOwnedRetail) at this markup over the current world food
+// price — the markup is the retailer's entire margin, since buying and
+// reselling the same resource type creates no quantity-conversion profit
+// the way a processing industry's input-to-goods conversion does.
+export const RETAIL_TUNING = {
+  markup: 1.15,
+};
+
+// The Bakery-luxury counterpart: once a settlement is fed, surplus gold can
+// optionally buy "goods" from an owned Bakery (or the shared market as a
+// fallback) purely for a happiness boost beyond plain food sufficiency —
+// goods bought this way are consumed for happiness immediately, never
+// stockpiled (no Settlement.goods field).
+export const LUXURY_GOODS_TUNING = {
+  goodsWantedPerCapitaPerHour: 0.02,
+  maxGoldSpendFraction: 0.1, // never more than this fraction of on-hand gold in one tick
+  markup: 1.1,
+  happinessBoostPerHour: 0.02, // scaled by fulfillment fraction; comparable to happinessDeclinePerHourWhenHungry so it's a meaningful bump
 };
 
 // Wood/stone have no direct population upkeep in this MVP model (no building

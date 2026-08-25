@@ -856,8 +856,14 @@ function SupplyContractForm({ presetCounterpartyId }: { presetCounterpartyId: st
   const mine = companies.find((c) => c.id === myCompanyId);
   const mineIndustry = mine ? COMPANY_INDUSTRIES[mine.industry as CompanyIndustryId] : null;
   // An extraction industry (no inputResource) can only ever be a seller; a
-  // processing industry (has inputResource) can only ever be a buyer of that
-  // input — every current industry falls cleanly into exactly one role.
+  // processing industry (has inputResource) is treated here as only ever a
+  // buyer of that input. Retail is the one exception this simplification
+  // doesn't fully cover — it has an inputResource (buys wholesale food) but
+  // could conceptually also sell food — so a Contract where "my company" is
+  // a Retail store can only be proposed in the buyer role from this side.
+  // Not a hard block: the same Contract is still createable by picking the
+  // counterparty as "my company" instead (eligibleCounterparties below
+  // already matches correctly either way).
   const mineIsSeller = mineIndustry ? !mineIndustry.inputResource : false;
   const contractResource = mineIndustry ? (mineIsSeller ? mineIndustry.outputResource : mineIndustry.inputResource) : null;
   const marketRate = contractResource

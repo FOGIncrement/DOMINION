@@ -38,6 +38,7 @@ export const COMPANY_INDUSTRY_IDS = [
   "farming",
   "logging",
   "quarrying",
+  "retail",
 ] as const;
 export type CompanyIndustryId = (typeof COMPANY_INDUSTRY_IDS)[number];
 

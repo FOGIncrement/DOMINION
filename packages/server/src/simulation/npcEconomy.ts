@@ -3,11 +3,14 @@ import { prisma } from "../db.js";
 import { applyTradeImpact, type TradeableResource } from "./market.js";
 import type { SettlementSnapshot } from "./types.js";
 
-const STOCK_BUFFER: Record<TradeableResource, number> = { food: 80, wood: 60, stone: 40 };
+// Exported: directSales.ts shares this same buffer target for the
+// owned-Retail purchase path, so the two mechanisms top off toward one
+// consistent number instead of drifting apart.
+export const STOCK_BUFFER: Record<TradeableResource, number> = { food: 80, wood: 60, stone: 40 };
 
 // Buy food once stock drops this low — well under the sell buffer (80) so
 // buying and selling can never thrash against each other in the same tick.
-const FOOD_SHORTAGE_BUY_THRESHOLD = 30;
+export const FOOD_SHORTAGE_BUY_THRESHOLD = 30;
 
 // Same idea for wood/stone, but a much smaller trigger — running out only
 // stalls maybeExpand for a tick, not a starvation spiral, so there's no
@@ -43,13 +46,15 @@ export async function settleNpcSurplus(
 }
 
 /**
- * NPC settlements previously had no way to react to a food shortage beyond
- * their own farm production — if that alone couldn't keep up, starvation
- * followed with no recourse (see the death-spiral fix in maybeAssignIdleWorkers,
- * below). This lets a cash-rich NPC settlement buy food from the world
- * market the same way a player could, mirroring settleNpcSurplus's sell
- * side. This is also the concrete first step toward NPC settlements ever
- * being able to rely on companies instead of their own buildings — see
+ * A settlement short on food beyond its own production buys the shortfall
+ * from the shared world market — the last-resort fallback once a player
+ * settlement's owned Retail company (see maybeBuyFromOwnedRetail in
+ * directSales.ts, tried first) can't fully cover the need, or has none.
+ * Runs for every settlement, player and NPC alike: NPC settlements never
+ * had any alternative here since they can't own a Retail company, and
+ * player settlements had *no* safety net at all before this was extended to
+ * them — not parity with NPCs, strictly worse, since an absent player's
+ * nation could starve to zero with nothing to stop it. See
  * maybeCoverMaterialShortfall for the wood/stone counterpart.
  */
 export async function maybeCoverFoodShortfall(
@@ -72,13 +77,13 @@ export async function maybeCoverFoodShortfall(
 /**
  * The wood/stone counterpart to maybeCoverFoodShortfall. Lower stakes than
  * food — running out just stalls maybeExpand for a tick, not a survival
- * crisis — but it's the concrete missing half of what NPC settlements would
- * need before retiring their own Lumber Camp/Quarry construction is even
- * worth considering (see the economy-driver initiative's phase 2 note):
- * NPCs currently have no way to get wood or stone except their own
- * buildings, the same gap food had until maybeCoverFoodShortfall existed.
- * Called before maybeExpand each tick so a purchase this tick can actually
- * fund that same tick's expansion, not just top up for next time.
+ * crisis. Runs for every settlement (extended alongside maybeCoverFoodShortfall);
+ * only NPC settlements actually act on the result today since maybeExpand
+ * (the thing this unblocks) is NPC-only, but there's no reason to withhold
+ * the purchase itself from a player settlement that happens to be low on
+ * materials for some other reason. Called before maybeExpand each tick so a
+ * purchase this tick can actually fund that same tick's expansion, not just
+ * top up for next time.
  */
 export async function maybeCoverMaterialShortfall(
   state: MutableResources,

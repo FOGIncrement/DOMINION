@@ -110,6 +110,7 @@ const NPC_COMPANY_NAME_SUFFIXES: Record<CompanyIndustryId, string[]> = {
   farming: ["Farm", "Farmstead", "Growers"],
   logging: ["Logging Camp", "Timber Camp", "Woodcutters"],
   quarrying: ["Quarry", "Stone Pit", "Extraction Co."],
+  retail: ["Retail Co.", "General Store", "Trading Post"],
 };
 
 function generateNpcCompanyName(industry: CompanyIndustryId): string {

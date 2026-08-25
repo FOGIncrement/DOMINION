@@ -18,6 +18,7 @@ import { autoCloseCompany, shouldAutoClose, shouldForceLayoff } from "./companyF
 import { settleContract } from "./contracts.js";
 import { getControllingPlayerId } from "./control.js";
 import { computeConsumption, reconcileWorkersWithPopulation } from "./consumption.js";
+import { applyLuxuryGoodsPurchase, maybeBuyFromOwnedRetail } from "./directSales.js";
 import { maybeRollEvent } from "./events.js";
 import { ensureMarketSeeded, TRADEABLE_RESOURCES, tickMarket, type TradeableResource } from "./market.js";
 import {
@@ -118,6 +119,25 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     );
   }
 
+  // Same "founder, not current controller" idiom as companyWorkersByOwner
+  // just above — a settlement's Retail/Bakery direct purchases (below) go
+  // to whichever of that industry its own player founded, looked up once
+  // here instead of a query per settlement.
+  const ownedCompaniesByOwnerAndIndustry = new Map<string, CompanySnapshot[]>();
+  for (const company of companies) {
+    if (!company.ownerId) continue;
+    const key = `${company.ownerId}:${company.industry}`;
+    const list = ownedCompaniesByOwnerAndIndustry.get(key) ?? [];
+    list.push(company);
+    ownedCompaniesByOwnerAndIndustry.set(key, list);
+  }
+
+  // Revenue booked by a settlement buying directly from a company it owns
+  // (directSales.ts) — folded into that company's totalRevenue when the
+  // company loop persists it below, the same "accumulate now, apply at the
+  // company's own update" idiom the loan/deposit ledgers further down use.
+  const ownedSaleRevenueByCompanyId = new Map<string, number>();
+
   const marketRows = await prisma.marketResource.findMany();
   const prices = Object.fromEntries(
     TRADEABLE_RESOURCES.map((r) => [r, marketRows.find((m) => m.resourceType === r)?.price ?? BASE_PRICES[r]]),
@@ -160,9 +180,19 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
       gold: settlement.gold + production.gold,
     };
 
-    if (!settlement.playerId) {
-      await maybeCoverFoodShortfall(state, prices);
+    if (settlement.playerId) {
+      const retailCompanies = ownedCompaniesByOwnerAndIndustry.get(`${settlement.playerId}:retail`) ?? [];
+      const retailSale = maybeBuyFromOwnedRetail(retailCompanies, state, prices);
+      if (retailSale) {
+        ownedSaleRevenueByCompanyId.set(
+          retailSale.companyId,
+          (ownedSaleRevenueByCompanyId.get(retailSale.companyId) ?? 0) + retailSale.revenue,
+        );
+      }
     }
+    // Every settlement, not just NPCs — see the doc comment on
+    // maybeCoverFoodShortfall in npcEconomy.ts for why.
+    await maybeCoverFoodShortfall(state, prices);
 
     const consumption = computeConsumption(settlement, state.food, elapsedHours);
     state.food = Math.max(0, state.food - consumption.foodConsumed);
@@ -175,10 +205,33 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     flows.goods.demand +=
       settlement.population.count * WORLD_DEMAND_TUNING.goodsDemandPerCapitaPerHour * elapsedHours;
 
+    // Every settlement, not just NPCs — maybeExpand/settleNpcSurplus (below)
+    // stay NPC-only since nothing player-side acts on materials this way,
+    // but there's no reason to withhold the purchase itself.
+    await maybeCoverMaterialShortfall(state, prices);
+
     if (!settlement.playerId) {
-      await maybeCoverMaterialShortfall(state, prices);
       await maybeExpand(settlement, state);
       await settleNpcSurplus(state, prices);
+    }
+
+    // Player settlements only: spend surplus gold on Bakery-made goods for
+    // a happiness boost beyond plain food sufficiency (see directSales.ts).
+    // NPC settlements deliberately get no equivalent lever — this is a
+    // treasury-spending decision, and NPCs' existing gold-spending
+    // behaviors (maybeExpand, maybeCoverMaterialShortfall) were never tuned
+    // to compete against a third consumer of the same gold pool.
+    let finalHappiness = consumption.newHappiness;
+    if (settlement.playerId) {
+      const bakeryCompanies = ownedCompaniesByOwnerAndIndustry.get(`${settlement.playerId}:bakery`) ?? [];
+      const luxury = await applyLuxuryGoodsPurchase(settlement, state, prices, bakeryCompanies, elapsedHours);
+      finalHappiness = Math.min(1, finalHappiness + luxury.happinessBoost);
+      if (luxury.sale) {
+        ownedSaleRevenueByCompanyId.set(
+          luxury.sale.companyId,
+          (ownedSaleRevenueByCompanyId.get(luxury.sale.companyId) ?? 0) + luxury.sale.revenue,
+        );
+      }
     }
 
     const workerAdjustments = reconcileWorkersWithPopulation(settlement, consumption.newPopulationCount);
@@ -226,7 +279,7 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
         population: {
           update: {
             count: consumption.newPopulationCount,
-            happiness: consumption.newHappiness,
+            happiness: finalHappiness,
           },
         },
       },
@@ -269,6 +322,11 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
       await maybeRepayLoan(company.id, state);
       await maybeBorrow(company.id, state);
     }
+    // A direct sale to its own founder's settlement (directSales.ts), if
+    // any — folded in here so it counts toward totalRevenue the same as any
+    // other sale, which is what IPO eligibility/share pricing/dividends key
+    // off of.
+    revenue += ownedSaleRevenueByCompanyId.get(company.id) ?? 0;
 
     if (shouldAutoClose(industry, state.cash, company.isPublic)) {
       await autoCloseCompany(company.id, state.cash);
