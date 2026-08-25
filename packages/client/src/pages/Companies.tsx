@@ -115,9 +115,12 @@ function CompanyCard({ company }: { company: MyCompany }) {
   const netProfit = company.totalRevenue - company.totalExpenses;
   const canIpo = netProfit >= STOCK_TUNING.minProfitToIPO;
   const { controlledByMe } = company;
+  const isIdle = company.maxWorkers > 0 && company.workersAssigned === 0;
+  const needsAttention = company.cash < 0 || isIdle;
+  const staffedFraction = company.maxWorkers > 0 ? company.workersAssigned / company.maxWorkers : 0;
 
   return (
-    <div className="company-card">
+    <div className={`company-card${needsAttention ? " company-card--attention" : ""}`}>
       <div className="building-card__head">
         <span className="building-card__name">{company.name}</span>
         <span className="archetype-tag">{industry.name}</span>
@@ -142,7 +145,9 @@ function CompanyCard({ company }: { company: MyCompany }) {
       <div className="company-card__stats">
         <div>
           <div className="delta-cell__label">Cash</div>
-          <div className="delta-cell__value">{company.cash.toFixed(0)}g</div>
+          <div className={`delta-cell__value ${company.cash < 0 ? "stat-tile__delta--down" : ""}`}>
+            {company.cash.toFixed(0)}g
+          </div>
         </div>
         {industry.inputResource && (
           <div>
@@ -171,32 +176,40 @@ function CompanyCard({ company }: { company: MyCompany }) {
 
       {controlledByMe ? (
         <>
-          <div className="worker-row">
-            <button
-              disabled={company.workersAssigned <= 0}
-              onClick={() => setWorkers.mutate(company.workersAssigned - 1)}
-            >
-              −
-            </button>
-            <span>
-              {company.workersAssigned} / {company.maxWorkers} workers
-            </span>
-            <button
-              disabled={company.workersAssigned >= company.maxWorkers}
-              onClick={() => setWorkers.mutate(company.workersAssigned + 1)}
-            >
-              +
-            </button>
-          </div>
-
-          <div className="trade-row" style={{ margin: "4px 0" }}>
-            <button
-              className="btn"
-              disabled={company.upgradeCost === null || upgrade.isPending}
-              onClick={() => upgrade.mutate()}
-            >
-              {company.upgradeCost === null ? "Max level" : `Upgrade for ${company.upgradeCost.toFixed(0)}g`}
-            </button>
+          <div className="workforce">
+            <div className="workforce__head">
+              <span>Workforce{isIdle && " — idle"}</span>
+              <span className="workforce__count">
+                {company.workersAssigned} / {company.maxWorkers}
+              </span>
+            </div>
+            <div className="workforce-bar">
+              <button
+                disabled={company.workersAssigned <= 0}
+                onClick={() => setWorkers.mutate(company.workersAssigned - 1)}
+              >
+                −
+              </button>
+              <div className="workforce-bar__track">
+                <div
+                  className={`workforce-bar__fill${isIdle ? " workforce-bar__fill--idle" : ""}`}
+                  style={{ width: `${staffedFraction * 100}%` }}
+                />
+              </div>
+              <button
+                disabled={company.workersAssigned >= company.maxWorkers}
+                onClick={() => setWorkers.mutate(company.workersAssigned + 1)}
+              >
+                +
+              </button>
+              <button
+                className="workforce-bar__max"
+                disabled={company.workersAssigned >= company.maxWorkers}
+                onClick={() => setWorkers.mutate(company.maxWorkers)}
+              >
+                Max
+              </button>
+            </div>
           </div>
 
           {error && <div className="auth-error">{error}</div>}
@@ -206,20 +219,25 @@ function CompanyCard({ company }: { company: MyCompany }) {
             </div>
           )}
 
-          {industry.inputResource && (
+          <div className="company-card__actions">
+            {industry.inputResource ? (
+              <div className="trade-row">
+                <input type="number" min={1} value={buyQty} onChange={(e) => setBuyQty(Math.max(1, Number(e.target.value)))} />
+                <button className="btn" disabled={buy.isPending} onClick={() => buy.mutate()}>
+                  Buy {industry.inputResource}
+                </button>
+              </div>
+            ) : (
+              <div />
+            )}
             <div className="trade-row">
-              <input type="number" min={1} value={buyQty} onChange={(e) => setBuyQty(Math.max(1, Number(e.target.value)))} />
-              <button className="btn" disabled={buy.isPending} onClick={() => buy.mutate()}>
-                Buy {industry.inputResource}
+              <input type="number" min={1} value={sellQty} onChange={(e) => setSellQty(Math.max(1, Number(e.target.value)))} />
+              <button className="btn" disabled={sell.isPending} onClick={() => sell.mutate()}>
+                Sell {OUTPUT_LABELS[industry.outputResource].toLowerCase()}
               </button>
             </div>
-          )}
-          <div className="trade-row">
-            <input type="number" min={1} value={sellQty} onChange={(e) => setSellQty(Math.max(1, Number(e.target.value)))} />
-            <button className="btn" disabled={sell.isPending} onClick={() => sell.mutate()}>
-              Sell {OUTPUT_LABELS[industry.outputResource].toLowerCase()}
-            </button>
           </div>
+
           <div className="trade-row">
             <input
               type="number"
@@ -229,6 +247,13 @@ function CompanyCard({ company }: { company: MyCompany }) {
             />
             <button className="btn btn--accent" disabled={withdraw.isPending} onClick={() => withdraw.mutate()}>
               Withdraw to settlement
+            </button>
+            <button
+              className="btn"
+              disabled={company.upgradeCost === null || upgrade.isPending}
+              onClick={() => upgrade.mutate()}
+            >
+              {company.upgradeCost === null ? "Max level" : `Upgrade (${company.upgradeCost.toFixed(0)}g)`}
             </button>
           </div>
 
@@ -252,7 +277,7 @@ function CompanyCard({ company }: { company: MyCompany }) {
           )}
 
           {!company.isPublic && (
-            <div className="trade-row" style={{ margin: "8px 0 0" }}>
+            <div className="company-card__footer">
               <button
                 className="btn btn--danger"
                 disabled={close.isPending}
@@ -588,9 +613,53 @@ function MyContractsList() {
   );
 }
 
+type CompanySortKey = "name" | "cash" | "profit" | "workers";
+
 export default function Companies() {
   const { data: mine, isLoading } = useMyCompanies();
   const { data: all } = useAllCompanies();
+  const [search, setSearch] = useState("");
+  const [industryFilter, setIndustryFilter] = useState<string>("all");
+  const [attentionOnly, setAttentionOnly] = useState(false);
+  const [sort, setSort] = useState<{ key: CompanySortKey; direction: "asc" | "desc" }>({
+    key: "name",
+    direction: "asc",
+  });
+
+  const companies = mine?.companies ?? [];
+
+  const summary = {
+    count: companies.length,
+    totalCash: companies.reduce((sum, c) => sum + c.cash, 0),
+    idle: companies.filter((c) => c.maxWorkers > 0 && c.workersAssigned === 0).length,
+    inTheRed: companies.filter((c) => c.cash < 0).length,
+  };
+
+  const visible = companies
+    .filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
+    .filter((c) => industryFilter === "all" || c.industry === industryFilter)
+    .filter((c) => !attentionOnly || c.cash < 0 || (c.maxWorkers > 0 && c.workersAssigned === 0))
+    .sort((a, b) => {
+      const dir = sort.direction === "asc" ? 1 : -1;
+      switch (sort.key) {
+        case "cash":
+          return (a.cash - b.cash) * dir;
+        case "profit":
+          return (a.totalRevenue - a.totalExpenses - (b.totalRevenue - b.totalExpenses)) * dir;
+        case "workers":
+          return (a.workersAssigned - b.workersAssigned) * dir;
+        default:
+          return a.name.localeCompare(b.name) * dir;
+      }
+    });
+
+  const industriesInUse = [...new Set(companies.map((c) => c.industry))];
+
+  const toggleSort = (key: CompanySortKey) => {
+    setSort((prev) =>
+      prev.key === key ? { key, direction: prev.direction === "asc" ? "desc" : "asc" } : { key, direction: "desc" },
+    );
+  };
 
   return (
     <div className="page page--full">
@@ -601,11 +670,77 @@ export default function Companies() {
         ) : mine.companies.length === 0 ? (
           <div className="empty-state">You don't own any companies yet — found one below.</div>
         ) : (
-          <div className="company-grid">
-            {mine.companies.map((c) => (
-              <CompanyCard company={c} key={c.id} />
-            ))}
-          </div>
+          <>
+            <div className="company-summary-bar">
+              <div className="company-summary-stat">
+                <div className="company-summary-stat__label">Companies</div>
+                <div className="company-summary-stat__value">{summary.count}</div>
+              </div>
+              <div className="company-summary-stat">
+                <div className="company-summary-stat__label">Combined cash</div>
+                <div className={`company-summary-stat__value${summary.totalCash < 0 ? " attention" : ""}`}>
+                  {summary.totalCash.toFixed(0)}g
+                </div>
+              </div>
+              <div className="company-summary-stat">
+                <div className="company-summary-stat__label">Idle workforce</div>
+                <div className={`company-summary-stat__value${summary.idle > 0 ? " attention" : ""}`}>
+                  {summary.idle}
+                </div>
+              </div>
+              <div className="company-summary-stat">
+                <div className="company-summary-stat__label">In the red</div>
+                <div className={`company-summary-stat__value${summary.inTheRed > 0 ? " attention" : ""}`}>
+                  {summary.inTheRed}
+                </div>
+              </div>
+            </div>
+
+            <div className="filter-row">
+              <input
+                type="text"
+                placeholder="Search companies..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <select value={industryFilter} onChange={(e) => setIndustryFilter(e.target.value)}>
+                <option value="all">All industries</option>
+                {industriesInUse.map((id) => (
+                  <option key={id} value={id}>
+                    {COMPANY_INDUSTRIES[id as CompanyIndustryId]?.name ?? id}
+                  </option>
+                ))}
+              </select>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--text-secondary)" }}>
+                <input type="checkbox" checked={attentionOnly} onChange={(e) => setAttentionOnly(e.target.checked)} />
+                Needs attention only
+              </label>
+              <span className="suggestion" style={{ padding: 0, border: "none", marginLeft: "auto" }}>
+                Sort:
+              </span>
+              {(["name", "cash", "profit", "workers"] as CompanySortKey[]).map((key) => (
+                <button
+                  key={key}
+                  className="btn"
+                  style={{ textTransform: "capitalize" }}
+                  onClick={() => toggleSort(key)}
+                >
+                  {key}
+                  {sort.key === key && (sort.direction === "asc" ? " ▲" : " ▼")}
+                </button>
+              ))}
+            </div>
+
+            {visible.length === 0 ? (
+              <div className="empty-state">No companies match that filter.</div>
+            ) : (
+              <div className="company-grid">
+                {visible.map((c) => (
+                  <CompanyCard company={c} key={c.id} />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 

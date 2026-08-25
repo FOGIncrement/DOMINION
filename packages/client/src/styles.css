@@ -396,6 +396,41 @@ a {
 
 /* --- Companies --- */
 
+.company-summary-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.company-summary-stat {
+  background: var(--surface-2);
+  border: var(--card-border);
+  box-shadow: var(--card-shadow);
+  border-radius: var(--radius-card);
+  padding: 10px 14px;
+}
+
+.company-summary-stat__label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.company-summary-stat__value {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-size: 19px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.company-summary-stat__value.attention {
+  color: var(--critical);
+}
+
 .company-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -408,6 +443,11 @@ a {
   box-shadow: var(--card-shadow);
   border-radius: var(--radius-card);
   padding: 14px;
+  border-left: 3px solid transparent;
+}
+
+.company-card--attention {
+  border-left: 3px solid var(--critical);
 }
 
 .company-card__stats {
@@ -419,6 +459,110 @@ a {
 
 .company-card__stats .delta-cell__value {
   font-size: 14px;
+}
+
+/* Workforce: a fill bar reads staffing level at a glance instead of parsing
+   "N / M workers" text — the specific complaint that motivated this pass. */
+.workforce {
+  margin: 10px 0;
+}
+
+.workforce__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.workforce__count {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.workforce-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workforce-bar__track {
+  flex: 1;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-0);
+  overflow: hidden;
+}
+
+.workforce-bar__fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+  transition: width 0.15s ease;
+}
+
+.workforce-bar__fill--idle {
+  background: var(--text-muted);
+}
+
+.workforce-bar button {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.workforce-bar button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.workforce-bar__max {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+.workforce-bar__max:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Buy/sell side by side instead of two stacked full-width rows. */
+.company-card__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.company-card__actions .trade-row {
+  margin-top: 0;
+}
+
+.company-card__actions .trade-row input {
+  width: 100%;
+  min-width: 0;
+}
+
+.company-card__footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--gridline);
 }
 
 /* --- Build menu --- */
