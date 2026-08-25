@@ -396,14 +396,14 @@ a {
 
 /* --- Companies --- */
 
-.company-summary-bar {
+.summary-bar {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   margin-bottom: 14px;
 }
 
-.company-summary-stat {
+.summary-stat {
   background: var(--surface-2);
   border: var(--card-border);
   box-shadow: var(--card-shadow);
@@ -411,7 +411,7 @@ a {
   padding: 10px 14px;
 }
 
-.company-summary-stat__label {
+.summary-stat__label {
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -419,7 +419,7 @@ a {
   font-weight: 700;
 }
 
-.company-summary-stat__value {
+.summary-stat__value {
   font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
   font-size: 19px;
@@ -427,7 +427,7 @@ a {
   margin-top: 2px;
 }
 
-.company-summary-stat__value.attention {
+.summary-stat__value.attention {
   color: var(--critical);
 }
 
@@ -779,6 +779,17 @@ a {
   border-bottom: 1px solid var(--gridline);
   font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
+}
+
+.settlement-table tr.attention-row td:first-child {
+  box-shadow: inset 3px 0 0 var(--critical);
+}
+
+/* Caps a long inner table (e.g. every loan a bank has issued) to a scrolling
+   window instead of pushing the rest of the page down indefinitely. */
+.scroll-table {
+  max-height: 220px;
+  overflow-y: auto;
 }
 
 .archetype-tag {

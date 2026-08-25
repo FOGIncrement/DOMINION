@@ -671,26 +671,26 @@ export default function Companies() {
           <div className="empty-state">You don't own any companies yet — found one below.</div>
         ) : (
           <>
-            <div className="company-summary-bar">
-              <div className="company-summary-stat">
-                <div className="company-summary-stat__label">Companies</div>
-                <div className="company-summary-stat__value">{summary.count}</div>
+            <div className="summary-bar">
+              <div className="summary-stat">
+                <div className="summary-stat__label">Companies</div>
+                <div className="summary-stat__value">{summary.count}</div>
               </div>
-              <div className="company-summary-stat">
-                <div className="company-summary-stat__label">Combined cash</div>
-                <div className={`company-summary-stat__value${summary.totalCash < 0 ? " attention" : ""}`}>
+              <div className="summary-stat">
+                <div className="summary-stat__label">Combined cash</div>
+                <div className={`summary-stat__value${summary.totalCash < 0 ? " attention" : ""}`}>
                   {summary.totalCash.toFixed(0)}g
                 </div>
               </div>
-              <div className="company-summary-stat">
-                <div className="company-summary-stat__label">Idle workforce</div>
-                <div className={`company-summary-stat__value${summary.idle > 0 ? " attention" : ""}`}>
+              <div className="summary-stat">
+                <div className="summary-stat__label">Idle workforce</div>
+                <div className={`summary-stat__value${summary.idle > 0 ? " attention" : ""}`}>
                   {summary.idle}
                 </div>
               </div>
-              <div className="company-summary-stat">
-                <div className="company-summary-stat__label">In the red</div>
-                <div className={`company-summary-stat__value${summary.inTheRed > 0 ? " attention" : ""}`}>
+              <div className="summary-stat">
+                <div className="summary-stat__label">In the red</div>
+                <div className={`summary-stat__value${summary.inTheRed > 0 ? " attention" : ""}`}>
                   {summary.inTheRed}
                 </div>
               </div>

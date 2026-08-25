@@ -196,10 +196,26 @@ function MyLoansList() {
   }
 
   const visibleLoans = riskFilter === "all" ? loans.loans : loans.loans.filter((l) => l.risk === riskFilter);
+  const totalOwed = loans.loans.reduce((sum, l) => sum + (l.defaultedAt ? 0 : l.outstandingBalance), 0);
+  const atRiskCount = loans.loans.filter((l) => l.risk === "high" || l.risk === "defaulted").length;
 
   return (
     <div className="card">
       <h2 className="card__title">My Loans</h2>
+      <div className="summary-bar">
+        <div className="summary-stat">
+          <div className="summary-stat__label">Outstanding loans</div>
+          <div className="summary-stat__value">{loans.loans.length}</div>
+        </div>
+        <div className="summary-stat">
+          <div className="summary-stat__label">Total owed</div>
+          <div className="summary-stat__value">{totalOwed.toFixed(0)}g</div>
+        </div>
+        <div className="summary-stat">
+          <div className="summary-stat__label">At risk</div>
+          <div className={`summary-stat__value${atRiskCount > 0 ? " attention" : ""}`}>{atRiskCount}</div>
+        </div>
+      </div>
       {error && <div className="auth-error">{error}</div>}
       <div className="filter-row">
         <select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value as typeof riskFilter)}>
@@ -228,7 +244,7 @@ function MyLoansList() {
         </thead>
         <tbody>
           {visibleLoans.map((l) => (
-            <tr key={l.id}>
+            <tr key={l.id} className={l.risk === "high" || l.risk === "defaulted" ? "attention-row" : ""}>
               <td>{l.companyName}</td>
               <td>{l.bankName}</td>
               <td>{l.principal.toFixed(0)}g</td>
@@ -352,9 +368,14 @@ function MyDepositsList() {
     );
   }
 
+  const totalDeposited = deposits.deposits.reduce((sum, d) => sum + d.amount, 0);
+
   return (
     <div className="card">
       <h2 className="card__title">My Deposits</h2>
+      <p className="suggestion" style={{ paddingTop: 0 }}>
+        {deposits.deposits.length} deposit{deposits.deposits.length === 1 ? "" : "s"}, {totalDeposited.toFixed(0)}g total
+      </p>
       {error && <div className="auth-error">{error}</div>}
       <table className="settlement-table">
         <thead>
@@ -423,14 +444,49 @@ export default function Banking() {
     );
   };
 
+  const myBanksSummary = myBanks
+    ? {
+        count: myBanks.banks.length,
+        totalCash: myBanks.banks.reduce((sum, b) => sum + b.cash, 0),
+        totalDeposits: myBanks.banks.reduce((sum, b) => sum + b.depositsHeld.reduce((s, d) => s + d.amount, 0), 0),
+        illiquid: myBanks.banks.filter((b) => {
+          const depositTotal = b.depositsHeld.reduce((s, d) => s + d.amount, 0);
+          return depositTotal > 0 && b.cash < depositTotal * 0.2;
+        }).length,
+      }
+    : null;
+
   return (
     <div className="page page--full">
-      {myBanks && myBanks.banks.length > 0 && (
+      {myBanks && myBanks.banks.length > 0 && myBanksSummary && (
         <div className="card">
           <h2 className="card__title">My Banks</h2>
+          <div className="summary-bar">
+            <div className="summary-stat">
+              <div className="summary-stat__label">Banks</div>
+              <div className="summary-stat__value">{myBanksSummary.count}</div>
+            </div>
+            <div className="summary-stat">
+              <div className="summary-stat__label">Combined reserve cash</div>
+              <div className="summary-stat__value">{myBanksSummary.totalCash.toFixed(0)}g</div>
+            </div>
+            <div className="summary-stat">
+              <div className="summary-stat__label">Deposits owed</div>
+              <div className="summary-stat__value">{myBanksSummary.totalDeposits.toFixed(0)}g</div>
+            </div>
+            <div className="summary-stat">
+              <div className="summary-stat__label">Low liquidity</div>
+              <div className={`summary-stat__value${myBanksSummary.illiquid > 0 ? " attention" : ""}`}>
+                {myBanksSummary.illiquid}
+              </div>
+            </div>
+          </div>
           <div className="company-grid">
-            {myBanks.banks.map((b) => (
-              <div className="company-card" key={b.id}>
+            {myBanks.banks.map((b) => {
+              const depositTotal = b.depositsHeld.reduce((s, d) => s + d.amount, 0);
+              const lowLiquidity = depositTotal > 0 && b.cash < depositTotal * 0.2;
+              return (
+              <div className={`company-card${lowLiquidity ? " company-card--attention" : ""}`} key={b.id}>
                 <div className="building-card__head">
                   <span className="building-card__name">{b.name}</span>
                   <span className="archetype-tag">{(b.interestRatePerHour * 100).toFixed(2)}%/hr</span>
@@ -449,44 +505,60 @@ export default function Banking() {
                     <div className="delta-cell__value">{b.depositsHeld.length}</div>
                   </div>
                 </div>
+                {lowLiquidity && (
+                  <p className="suggestion" style={{ color: "var(--critical)", paddingTop: 0 }}>
+                    Reserve cash covers less than 20% of deposits owed — a withdrawal could be turned away.
+                  </p>
+                )}
                 {b.loansIssued.length > 0 && (
-                  <table className="settlement-table">
-                    <thead>
-                      <tr>
-                        <th>Borrower</th>
-                        <th>Balance</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {b.loansIssued.map((l) => (
-                        <tr key={l.id}>
-                          <td>{l.companyName}</td>
-                          <td>{l.outstandingBalance.toFixed(1)}g</td>
+                  <>
+                    <div className="card-section-label">Loans issued</div>
+                    <div className="scroll-table">
+                    <table className="settlement-table">
+                      <thead>
+                        <tr>
+                          <th>Borrower</th>
+                          <th>Balance</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {b.loansIssued.map((l) => (
+                          <tr key={l.id}>
+                            <td>{l.companyName}</td>
+                            <td>{l.outstandingBalance.toFixed(1)}g</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    </div>
+                  </>
                 )}
                 {b.depositsHeld.length > 0 && (
-                  <table className="settlement-table">
-                    <thead>
-                      <tr>
-                        <th>Depositor</th>
-                        <th>Balance</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {b.depositsHeld.map((d) => (
-                        <tr key={d.id}>
-                          <td>{d.depositorName}</td>
-                          <td>{d.amount.toFixed(1)}g</td>
+                  <>
+                    <div className="card-section-label">Deposits held</div>
+                    <div className="scroll-table">
+                    <table className="settlement-table">
+                      <thead>
+                        <tr>
+                          <th>Depositor</th>
+                          <th>Balance</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {b.depositsHeld.map((d) => (
+                          <tr key={d.id}>
+                            <td>{d.depositorName}</td>
+                            <td>{d.amount.toFixed(1)}g</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    </div>
+                  </>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
