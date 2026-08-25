@@ -46,6 +46,40 @@ contractsRouter.get("/mine", async (req: AuthedRequest, res) => {
   });
 });
 
+// The full, world-wide supply-chain graph — every currently-active contract
+// regardless of who's party to it, not just the calling player's own. Only
+// "active" (accepted, not cancelled/expired) — a pending offer between two
+// other players is a private negotiation, not a real supply relationship
+// yet, so it stays out of the shared view. Company financials are already
+// fully public (see /companies), so exposing who supplies whom is
+// consistent with the rest of this game's transparency, not a new leak.
+contractsRouter.get("/world", async (req: AuthedRequest, res) => {
+  const contracts = await prisma.contract.findMany({
+    where: { acceptedAt: { not: null }, cancelledAt: null },
+    include: { seller: true, buyer: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const active = contracts.filter((c) => statusOf(c) === "active");
+
+  res.json({
+    contracts: active.map((c) => ({
+      id: c.id,
+      sellerCompanyId: c.sellerCompanyId,
+      sellerCompanyName: c.seller.name,
+      sellerIndustry: c.seller.industry,
+      sellerOwner: c.seller.ownerId === req.playerId ? "you" : c.seller.ownerId ? "player" : "npc",
+      buyerCompanyId: c.buyerCompanyId,
+      buyerCompanyName: c.buyer.name,
+      buyerIndustry: c.buyer.industry,
+      buyerOwner: c.buyer.ownerId === req.playerId ? "you" : c.buyer.ownerId ? "player" : "npc",
+      resourceType: c.resourceType,
+      quantityPerHour: c.quantityPerHour,
+      pricePerUnit: c.pricePerUnit,
+    })),
+  });
+});
+
 const createSchema = z.object({
   sellerCompanyId: z.string(),
   buyerCompanyId: z.string(),

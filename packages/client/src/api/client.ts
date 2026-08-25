@@ -92,6 +92,7 @@ export const api = {
     }),
 
   myContracts: () => request<{ contracts: MyContract[] }>("/contracts/mine"),
+  worldContracts: () => request<{ contracts: WorldContract[] }>("/contracts/world"),
   createContract: (
     sellerCompanyId: string,
     buyerCompanyId: string,
@@ -353,6 +354,21 @@ export interface MyContract {
   expiresAt: string | null;
   cancelledAt: string | null;
   status: "pending" | "active" | "expired" | "cancelled";
+}
+
+export interface WorldContract {
+  id: string;
+  sellerCompanyId: string;
+  sellerCompanyName: string;
+  sellerIndustry: string;
+  sellerOwner: "you" | "player" | "npc";
+  buyerCompanyId: string;
+  buyerCompanyName: string;
+  buyerIndustry: string;
+  buyerOwner: "you" | "player" | "npc";
+  resourceType: MarketResourceType;
+  quantityPerHour: number;
+  pricePerUnit: number;
 }
 
 export interface MyDeposit {

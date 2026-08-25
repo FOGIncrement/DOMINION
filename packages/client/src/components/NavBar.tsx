@@ -11,6 +11,9 @@ export default function NavBar() {
       <NavLink to="/companies" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
         Companies
       </NavLink>
+      <NavLink to="/supply-chain" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+        Supply Chain
+      </NavLink>
       <NavLink to="/stocks" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
         Stock Market
       </NavLink>

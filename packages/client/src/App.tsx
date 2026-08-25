@@ -8,6 +8,7 @@ import Login from "./pages/Login.js";
 import Dashboard from "./pages/Dashboard.js";
 import Banking from "./pages/Banking.js";
 import Companies from "./pages/Companies.js";
+import SupplyChain from "./pages/SupplyChain.js";
 import Government from "./pages/Government.js";
 import Market from "./pages/Market.js";
 import StockMarket from "./pages/StockMarket.js";
@@ -36,6 +37,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/companies" element={<Companies />} />
+        <Route path="/supply-chain" element={<SupplyChain />} />
         <Route path="/market" element={<Market />} />
         <Route path="/stocks" element={<StockMarket />} />
         <Route path="/banking" element={<Banking />} />

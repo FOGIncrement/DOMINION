@@ -1104,6 +1104,35 @@ a {
   border-color: var(--border);
 }
 
+.chain-graph-node {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 10px;
+}
+
+.chain-graph-node__name {
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chain-graph-node__meta {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.chain-node--mine .chain-graph-node__meta {
+  color: var(--accent);
+}
+
 /* --- Cheat menu (dev/testing only) --- */
 
 .cheat-menu {
