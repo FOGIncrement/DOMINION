@@ -115,6 +115,12 @@ gameRouter.post("/buildings", async (req: AuthedRequest, res) => {
   }
 
   const def = BUILDING_TYPES[parsed.data.type];
+  if (def.retiredForConstruction) {
+    res.status(400).json({
+      error: `${def.name} is no longer buildable directly — found a company in that industry instead. Any ${def.name} you already have keeps working.`,
+    });
+    return;
+  }
   if (def.requiredTech && !settlement.techs.some((t) => t.techId === def.requiredTech)) {
     res.status(400).json({ error: `Requires the ${TECHS[def.requiredTech].name} technology` });
     return;

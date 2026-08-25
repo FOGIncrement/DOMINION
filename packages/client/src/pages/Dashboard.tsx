@@ -37,7 +37,14 @@ function buildSuggestions(state: GameStateResponse, techs: TechInfo[] | undefine
   const { settlement, population, buildings } = state;
 
   if (settlement.food < 40) {
-    suggestions.push("Food is running low — build a Farm or assign more workers to farming.");
+    const hasIdleFarmWorker = buildings.some(
+      (b) => b.type === "farm" && b.workersAssigned < BUILDING_TYPES.farm.maxWorkers,
+    );
+    suggestions.push(
+      hasIdleFarmWorker
+        ? "Food is running low — assign more workers to your Farm."
+        : "Food is running low — found a Farm company for more food production.",
+    );
   }
   if (population.count >= population.capacity * 0.9) {
     suggestions.push("Housing is nearly full — build a House to keep your population growing.");
@@ -46,8 +53,8 @@ function buildSuggestions(state: GameStateResponse, techs: TechInfo[] | undefine
     suggestions.push("Build a Marketplace to lower the fee on every trade.");
   }
   const hasQuarry = buildings.some((b) => b.type === "quarry");
-  if (!hasQuarry && techs && !techs.find((t) => t.id === "masonry")?.researched) {
-    suggestions.push("Research Masonry to unlock the Quarry and start producing stone.");
+  if (!hasQuarry && settlement.stone < 20) {
+    suggestions.push("No stone production yet — found a Quarry company to start producing it.");
   }
   const idleWorkers = population.count - buildings.reduce((sum, b) => sum + b.workersAssigned, 0);
   if (idleWorkers >= 3) {
@@ -239,17 +246,25 @@ export default function Dashboard() {
                           <span className="building-card__name">{def.name}</span>
                         </div>
                         <p className="building-card__desc">{def.description}</p>
-                        <span className="build-option__cost">{formatCost(def.cost)}</span>
-                        {unlocked ? (
-                          <button
-                            className="btn"
-                            disabled={!affordable || build.isPending}
-                            onClick={() => build.mutate(def.id)}
-                          >
-                            Build
-                          </button>
+                        {def.retiredForConstruction ? (
+                          <span className="build-option__cost">
+                            Retired — found a {def.name} company instead (see Companies)
+                          </span>
                         ) : (
-                          <span className="build-option__cost">Requires {TECHS[def.requiredTech!].name}</span>
+                          <>
+                            <span className="build-option__cost">{formatCost(def.cost)}</span>
+                            {unlocked ? (
+                              <button
+                                className="btn"
+                                disabled={!affordable || build.isPending}
+                                onClick={() => build.mutate(def.id)}
+                              >
+                                Build
+                              </button>
+                            ) : (
+                              <span className="build-option__cost">Requires {TECHS[def.requiredTech!].name}</span>
+                            )}
+                          </>
                         )}
                       </div>
                     );

@@ -63,6 +63,11 @@ export interface BuildingTypeDef {
   productionPerWorkerPerHour?: number;
   populationCapacity?: number;
   requiredTech?: TechId;
+  // Set once a building's role is fully covered by an equivalent company
+  // industry (see COMPANY_INDUSTRIES) — players can no longer construct new
+  // ones, but any they already have keep working exactly as before. No data
+  // migration: this only gates the "build new" path.
+  retiredForConstruction?: boolean;
 }
 
 export interface TechDef {

@@ -38,6 +38,7 @@ export const BUILDING_TYPES: Record<BuildingTypeId, BuildingTypeDef> = {
     maxWorkers: 3,
     producesResource: "food",
     productionPerWorkerPerHour: 4,
+    retiredForConstruction: true,
   },
   lumberCamp: {
     id: "lumberCamp",
@@ -47,6 +48,7 @@ export const BUILDING_TYPES: Record<BuildingTypeId, BuildingTypeDef> = {
     maxWorkers: 3,
     producesResource: "wood",
     productionPerWorkerPerHour: 3,
+    retiredForConstruction: true,
   },
   quarry: {
     id: "quarry",
@@ -57,6 +59,7 @@ export const BUILDING_TYPES: Record<BuildingTypeId, BuildingTypeDef> = {
     producesResource: "stone",
     productionPerWorkerPerHour: 2,
     requiredTech: "masonry",
+    retiredForConstruction: true,
   },
   marketplace: {
     id: "marketplace",
