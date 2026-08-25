@@ -150,6 +150,14 @@ export const api = {
     }),
   myBonds: () => request<{ bonds: MyBond[] }>("/bonds/mine"),
 
+  corporateBondCompanies: () => request<{ companies: CorporateBondCompany[] }>("/corporate-bonds/companies"),
+  buyCorporateBond: (companyId: string, amount: number, termHours: number) =>
+    request<{ ok: true; bondId: string; interestRatePerHour: number; maturesAt: string }>("/corporate-bonds", {
+      method: "POST",
+      body: JSON.stringify({ companyId, amount, termHours }),
+    }),
+  myCorporateBonds: () => request<{ bonds: MyCorporateBond[] }>("/corporate-bonds/mine"),
+
   cheatsStatus: () => request<{ enabled: boolean }>("/cheats/status"),
   cheatAddResources: (deltas: Partial<Record<"food" | "wood" | "stone" | "gold", number>>) =>
     request<{ ok: true }>("/cheats/resources", { method: "POST", body: JSON.stringify(deltas) }),
@@ -398,6 +406,28 @@ export interface BondGovernment {
 export interface MyBond {
   id: string;
   governmentName: string;
+  principal: number;
+  interestRatePerHour: number;
+  termHours: number;
+  issuedAt: string;
+  maturesAt: string;
+  redeemedAt: string | null;
+  redemptionValue: number;
+}
+
+export interface CorporateBondCompany {
+  id: string;
+  name: string;
+  industry: string;
+  cash: number;
+  maxIssuance: number;
+}
+
+export interface MyCorporateBond {
+  id: string;
+  companyId: string;
+  companyName: string;
+  companyClosed: boolean;
   principal: number;
   interestRatePerHour: number;
   termHours: number;

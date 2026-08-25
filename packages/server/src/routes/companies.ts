@@ -14,6 +14,7 @@ import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
 import { applyTradeImpact } from "../simulation/market.js";
 import { getControllerLabel, getControllingPlayerId } from "../simulation/control.js";
+import { buildCorporateBondClosureOps } from "../simulation/corporateBonds.js";
 
 export const companiesRouter = Router();
 
@@ -382,7 +383,12 @@ companiesRouter.post("/:id/close", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const recoveredCash = Math.max(0, company.cash);
+  // Bondholders are creditors and get priority over whatever the founder
+  // recovers — see buildCorporateBondClosureOps.
+  const { ops: bondOps, remainingCash: recoveredCash } = await buildCorporateBondClosureOps(
+    company.id,
+    Math.max(0, company.cash),
+  );
 
   await prisma.$transaction([
     prisma.company.update({
@@ -393,6 +399,7 @@ companiesRouter.post("/:id/close", async (req: AuthedRequest, res) => {
       where: { companyId: company.id, defaultedAt: null },
       data: { defaultedAt: new Date() },
     }),
+    ...bondOps,
     prisma.settlement.update({ where: { id: settlement.id }, data: { gold: { increment: recoveredCash } } }),
   ]);
   res.json({ ok: true, recoveredCash });

@@ -269,7 +269,7 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     }
 
     if (shouldAutoClose(industry, state.cash, company.isPublic)) {
-      await autoCloseCompany(company.id);
+      await autoCloseCompany(company.id, state.cash);
       continue;
     }
 
@@ -351,6 +351,32 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
       prisma.government.update({ where: { id: bond.governmentId }, data: { treasury: { decrement: payout } } }),
       prisma.settlement.update({ where: { playerId: bond.holderId }, data: { gold: { increment: payout } } }),
       prisma.bond.update({ where: { id: bond.id }, data: { redeemedAt: now } }),
+    ]);
+  }
+
+  // Corporate bonds: the same maturity-redemption idiom as government
+  // bonds, capped by the issuing company's cash instead of a treasury. A
+  // company that closes before maturity redeems its bonds immediately at
+  // closure time instead (buildCorporateBondClosureOps, pro-rata across
+  // whatever's outstanding) — since that already runs earlier in this same
+  // tick (the company loop, above), any bond belonging to a company that
+  // auto-closed this tick is already redeemedAt-set by the time this query
+  // runs, so it's naturally excluded here rather than double-processed.
+  const maturedCorporateBonds = await prisma.corporateBond.findMany({
+    where: { redeemedAt: null, maturesAt: { lte: now } },
+    include: { company: true },
+  });
+  const companyCashLedger = new Map<string, number>();
+  for (const bond of maturedCorporateBonds) {
+    const redemptionValue = computeBondRedemptionValue(bond.principal, bond.interestRatePerHour, bond.termHours);
+    const availableCash = companyCashLedger.get(bond.companyId) ?? bond.company.cash;
+    const payout = Math.min(redemptionValue, Math.max(0, availableCash));
+    companyCashLedger.set(bond.companyId, availableCash - payout);
+
+    await prisma.$transaction([
+      prisma.company.update({ where: { id: bond.companyId }, data: { cash: { decrement: payout } } }),
+      prisma.settlement.update({ where: { playerId: bond.holderId }, data: { gold: { increment: payout } } }),
+      prisma.corporateBond.update({ where: { id: bond.id }, data: { redeemedAt: now } }),
     ]);
   }
 

@@ -25,6 +25,7 @@ model Player {
   banks      Bank[]
   deposits   Deposit[]
   bondsHeld  Bond[]
+  corporateBondsHeld CorporateBond[]
   government Government?
 }
 
@@ -172,10 +173,38 @@ model Company {
   shareholdings     Shareholding[]
   priceHistory      SharePriceHistoryPoint[]
   loans             Loan[]
+  bondsIssued       CorporateBond[]
   contractsAsSeller Contract[] @relation("ContractSeller")
   contractsAsBuyer  Contract[] @relation("ContractBuyer")
 
   @@index([ownerId])
+}
+
+// The corporate counterpart to a government Bond: a company borrows directly
+// from an investor instead of a bank, at a rate priced by how large the
+// issuance is relative to the company's own cash (mirrors computeLoanRate's
+// utilization-based risk premium, applied to issuance instead of borrowing).
+// Redeemed once in full at maturity, capped by the company's cash the same
+// way a government Bond is capped by treasury — except a company can also
+// close before maturity, unlike a government, so an outstanding bond gets
+// force-redeemed (pro-rata against whatever cash remains, if several bonds
+// are outstanding) at closure time too, ahead of any cash the founder
+// recovers. See redeemCorporateBondsOnClosure in simulation/corporateBonds.ts.
+model CorporateBond {
+  id                  String    @id @default(cuid())
+  companyId           String
+  company             Company   @relation(fields: [companyId], references: [id])
+  holderId            String
+  holder              Player    @relation(fields: [holderId], references: [id])
+  principal           Float
+  interestRatePerHour Float
+  termHours           Int
+  issuedAt            DateTime  @default(now())
+  maturesAt           DateTime
+  redeemedAt          DateTime?
+
+  @@index([companyId])
+  @@index([holderId])
 }
 
 // A standing supply agreement between two companies — a locked price and

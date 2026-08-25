@@ -1,4 +1,5 @@
-import { BOND_TUNING } from "./gameConfig.js";
+import { BOND_TUNING, CORPORATE_BOND_TUNING } from "./gameConfig.js";
+import { computeMaxLoanAmount } from "./loans.js";
 
 export interface BondTermOption {
   hours: number;
@@ -23,4 +24,20 @@ export function computeBondRate(termHours: number): number {
 
 export function computeBondRedemptionValue(principal: number, interestRatePerHour: number, termHours: number): number {
   return principal * (1 + interestRatePerHour * termHours);
+}
+
+/**
+ * A company is a riskier borrower than a government — it can go bankrupt
+ * and close before maturity, a government never does — so a corporate bond
+ * prices in a risk premium on top of the same term-length base rate a
+ * government bond gets, scaled by how large the issuance is relative to the
+ * company's own cash. Directly mirrors computeLoanRate's utilization-based
+ * premium (same computeMaxLoanAmount "5x cash" capacity idea), just applied
+ * to bond issuance instead of loan borrowing.
+ */
+export function computeCorporateBondRate(termHours: number, issuedAmount: number, companyCash: number): number {
+  const baseRate = computeBondRate(termHours);
+  const maxCapacity = computeMaxLoanAmount(companyCash);
+  const utilization = maxCapacity > 0 ? Math.min(1, issuedAmount / maxCapacity) : 1;
+  return baseRate * (1 + utilization * CORPORATE_BOND_TUNING.maxRiskPremium);
 }

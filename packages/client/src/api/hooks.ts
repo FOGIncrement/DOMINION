@@ -84,6 +84,14 @@ export function useMyBonds() {
   return useQuery({ queryKey: ["myBonds"], queryFn: api.myBonds, refetchInterval: POLL_MS });
 }
 
+export function useCorporateBondCompanies() {
+  return useQuery({ queryKey: ["corporateBondCompanies"], queryFn: api.corporateBondCompanies, refetchInterval: POLL_MS });
+}
+
+export function useMyCorporateBonds() {
+  return useQuery({ queryKey: ["myCorporateBonds"], queryFn: api.myCorporateBonds, refetchInterval: POLL_MS });
+}
+
 export function useCheatsEnabled() {
   return useQuery({
     queryKey: ["cheatsEnabled"],

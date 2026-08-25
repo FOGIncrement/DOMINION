@@ -403,6 +403,13 @@ export const BOND_TUNING = {
   baseRatePerHour: 0.001,
 };
 
+// Corporate bonds carry the same term-length base rate as a government bond
+// plus a risk premium, the same "riskier borrower pays more" idiom as
+// BANK_TUNING.maxRiskPremium for loans.
+export const CORPORATE_BOND_TUNING = {
+  maxRiskPremium: 1.2, // rate multiplier added at 100% issuance-to-capacity utilization
+};
+
 export const RESOURCE_LABELS: Record<ResourceType, string> = {
   food: "Food",
   wood: "Wood",

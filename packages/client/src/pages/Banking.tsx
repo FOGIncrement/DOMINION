@@ -6,6 +6,7 @@ import {
   DEPOSIT_TUNING,
   LOAN_TERM_OPTIONS,
   computeBondRate,
+  computeCorporateBondRate,
   computeLoanRate,
   computeMaxLoanAmount,
 } from "@dominion/shared";
@@ -13,10 +14,12 @@ import { api, ApiError, type PublicBank } from "../api/client.js";
 import {
   useBanks,
   useBondGovernments,
+  useCorporateBondCompanies,
   useGameState,
   useMyBanks,
   useMyBonds,
   useMyCompanies,
+  useMyCorporateBonds,
   useMyDeposits,
   useMyLoans,
 } from "../api/hooks.js";
@@ -58,6 +61,8 @@ function invalidateBanking(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ["gameState"] });
   queryClient.invalidateQueries({ queryKey: ["bondGovernments"] });
   queryClient.invalidateQueries({ queryKey: ["myBonds"] });
+  queryClient.invalidateQueries({ queryKey: ["corporateBondCompanies"] });
+  queryClient.invalidateQueries({ queryKey: ["myCorporateBonds"] });
 }
 
 function FoundBankForm() {
@@ -559,6 +564,137 @@ function MyBondsList() {
   );
 }
 
+function BuyCorporateBondForm() {
+  const queryClient = useQueryClient();
+  const { data: companies } = useCorporateBondCompanies();
+  const { data: gameState } = useGameState();
+  const [companyId, setCompanyId] = useState("");
+  const [amount, setAmount] = useState(100);
+  const [termHours, setTermHours] = useState(BOND_TERM_OPTIONS[0].hours);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const buyBond = useMutation({
+    mutationFn: () => api.buyCorporateBond(companyId, amount, termHours),
+    onSuccess: (res) => {
+      setError(null);
+      setMessage(`Bought a ${amount}g corporate bond at ${(res.interestRatePerHour * 100).toFixed(2)}%/hr, matures ${new Date(res.maturesAt).toLocaleDateString()}.`);
+      invalidateBanking(queryClient);
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Bond purchase failed"),
+  });
+
+  const companyOptions = companies?.companies ?? [];
+  const gold = gameState?.settlement.gold ?? 0;
+  const canAfford = amount > 0 && amount <= gold;
+  const selectedCompany = companyOptions.find((c) => c.id === companyId);
+  const exceedsCapacity = selectedCompany ? amount > selectedCompany.maxIssuance : false;
+  const rate = selectedCompany ? computeCorporateBondRate(termHours, amount, selectedCompany.cash) : null;
+
+  if (companyOptions.length === 0) {
+    return (
+      <div className="card">
+        <h2 className="card__title">Corporate Bonds</h2>
+        <div className="empty-state">No companies you don't already control to buy bonds from yet.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Corporate Bonds</h2>
+      {error && <div className="auth-error">{error}</div>}
+      {message && !error && <div className="suggestion">{message}</div>}
+      <div className="trade-row" style={{ flexWrap: "wrap" }}>
+        <select value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
+          <option value="">Company...</option>
+          {companyOptions.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} ({Math.floor(c.cash)}g cash, up to {c.maxIssuance.toFixed(0)}g)
+            </option>
+          ))}
+        </select>
+        <select value={termHours} onChange={(e) => setTermHours(Number(e.target.value))}>
+          {BOND_TERM_OPTIONS.map((t) => (
+            <option key={t.hours} value={t.hours}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+        <input type="number" min={1} value={amount} onChange={(e) => setAmount(Math.max(1, Number(e.target.value)))} />
+        <button
+          className="btn btn--accent"
+          disabled={!companyId || !canAfford || exceedsCapacity || buyBond.isPending}
+          onClick={() => buyBond.mutate()}
+        >
+          Buy Bond
+        </button>
+      </div>
+      {rate !== null && (
+        <p className="suggestion" style={{ marginTop: 8 }}>
+          Quoted rate for this amount: <b>{(rate * 100).toFixed(2)}%/hr</b> — a company is a riskier borrower than a
+          government (it can close before maturity), so the rate climbs the closer this gets to the company's{" "}
+          {selectedCompany!.maxIssuance.toFixed(0)}g credit limit.{" "}
+          {exceedsCapacity && "This amount exceeds the credit limit and will be rejected."}
+        </p>
+      )}
+      <p className="suggestion" style={{ marginTop: 8 }}>
+        A company financing itself with debt instead of a bank loan — paid out once in full at maturity like a
+        government bond. If the company closes before maturity (voluntarily or forced), bondholders are paid first
+        from whatever cash remains, ahead of anything the founder recovers — split pro-rata if several bonds are
+        outstanding and there isn't enough to cover everyone.
+      </p>
+    </div>
+  );
+}
+
+function MyCorporateBondsList() {
+  const { data: bonds } = useMyCorporateBonds();
+
+  if (!bonds || bonds.bonds.length === 0) {
+    return (
+      <div className="card">
+        <h2 className="card__title">My Corporate Bonds</h2>
+        <div className="empty-state">No corporate bonds yet.</div>
+      </div>
+    );
+  }
+
+  const active = bonds.bonds.filter((b) => !b.redeemedAt);
+  const totalPrincipal = active.reduce((sum, b) => sum + b.principal, 0);
+
+  return (
+    <div className="card">
+      <h2 className="card__title">My Corporate Bonds</h2>
+      <p className="suggestion" style={{ paddingTop: 0 }}>
+        {active.length} active bond{active.length === 1 ? "" : "s"}, {totalPrincipal.toFixed(0)}g principal outstanding
+      </p>
+      <table className="settlement-table">
+        <thead>
+          <tr>
+            <th>Company</th>
+            <th>Principal</th>
+            <th>Rate/hr</th>
+            <th>Redemption value</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {bonds.bonds.map((b) => (
+            <tr key={b.id} className={b.companyClosed && !b.redeemedAt ? "attention-row" : ""}>
+              <td>{b.companyName}</td>
+              <td>{b.principal.toFixed(0)}g</td>
+              <td>{(b.interestRatePerHour * 100).toFixed(2)}%</td>
+              <td>{b.redemptionValue.toFixed(1)}g</td>
+              <td>{b.redeemedAt ? "Redeemed" : `Matures ${new Date(b.maturesAt).toLocaleDateString()}`}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function Banking() {
   const { data: myBanks } = useMyBanks();
   const { data: banks } = useBanks();
@@ -711,6 +847,8 @@ export default function Banking() {
       <MyDepositsList />
       <BuyBondForm />
       <MyBondsList />
+      <BuyCorporateBondForm />
+      <MyCorporateBondsList />
 
       <div className="card">
         <h2 className="card__title">Banks of the World</h2>
