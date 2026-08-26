@@ -394,9 +394,18 @@ function RivalOverview({ company, onPropose }: { company: PublicCompany; onPropo
 
 function WorkforceTab({ company }: { company: MyCompany }) {
   const queryClient = useQueryClient();
+  const { data: gameState } = useGameState();
   const [error, setError] = useState<string | null>(null);
   const staffedFraction = company.maxWorkers > 0 ? company.workersAssigned / company.maxWorkers : 0;
   const isIdle = company.maxWorkers > 0 && company.workersAssigned === 0;
+
+  // Hiring is capped by both this company's own worker slots AND the
+  // settlement's available population, shared across buildings and every
+  // company this player founded — the server enforces the same thing, this
+  // just keeps the buttons from offering a hire that would get rejected.
+  const available = gameState?.population.available ?? 0;
+  const canAddWorker = company.workersAssigned < company.maxWorkers && available > 0;
+  const hireCap = Math.min(company.maxWorkers, company.workersAssigned + available);
 
   const setWorkers = useMutation({
     mutationFn: (workers: number) => api.setCompanyWorkers(company.id, workers),
@@ -422,13 +431,16 @@ function WorkforceTab({ company }: { company: MyCompany }) {
         <div className="workforce-bar__track">
           <div className={`workforce-bar__fill${isIdle ? " workforce-bar__fill--idle" : ""}`} style={{ width: `${staffedFraction * 100}%` }} />
         </div>
-        <button disabled={company.workersAssigned >= company.maxWorkers} onClick={() => setWorkers.mutate(company.workersAssigned + 1)}>
+        <button disabled={!canAddWorker} onClick={() => setWorkers.mutate(company.workersAssigned + 1)}>
           +
         </button>
-        <button className="workforce-bar__max" disabled={company.workersAssigned >= company.maxWorkers} onClick={() => setWorkers.mutate(company.maxWorkers)}>
+        <button className="workforce-bar__max" disabled={!canAddWorker} onClick={() => setWorkers.mutate(hireCap)}>
           Max
         </button>
       </div>
+      {company.workersAssigned < company.maxWorkers && available <= 0 && (
+        <p className="suggestion">No available population to hire — everyone's already assigned to a building or company.</p>
+      )}
       <p className="suggestion">
         Each worker produces {(company.rates.goodsPerHour / Math.max(1, company.workersAssigned)).toFixed(2)}{" "}
         {OUTPUT_LABELS[COMPANY_INDUSTRIES[company.industry as CompanyIndustryId].outputResource].toLowerCase()}/hr on average.

@@ -177,6 +177,33 @@ companiesRouter.post("/:id/workers", async (req: AuthedRequest, res) => {
   const industry = COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
   const workersAssigned = Math.min(parsed.data.workersAssigned, computeCompanyMaxWorkers(industry, company.level));
 
+  // Same population cap /game/workers enforces on the building side, and
+  // the same "decreasing is always allowed" exception. Drawn from the
+  // FOUNDER's population (company.ownerId), not whoever currently controls
+  // it — a company's jobs belong to whoever founded it, same idiom the tick
+  // engine's employment/welfare accounting already uses. A company with no
+  // owner (NPC-founded) never counted toward any player's population, so
+  // there's nothing to check here.
+  if (company.ownerId && workersAssigned > company.workersAssigned) {
+    const settlement = await prisma.settlement.findUnique({
+      where: { playerId: company.ownerId },
+      include: { population: true, buildings: true },
+    });
+    if (settlement?.population) {
+      const buildingWorkers = settlement.buildings.reduce((sum, b) => sum + b.workersAssigned, 0);
+      const otherCompanies = await prisma.company.findMany({
+        where: { ownerId: company.ownerId, closedAt: null, id: { not: company.id } },
+        select: { workersAssigned: true },
+      });
+      const otherCompanyWorkers = otherCompanies.reduce((sum, c) => sum + c.workersAssigned, 0);
+
+      if (buildingWorkers + otherCompanyWorkers + workersAssigned > settlement.population.count) {
+        res.status(400).json({ error: "Not enough available population for that many workers" });
+        return;
+      }
+    }
+  }
+
   await prisma.company.update({ where: { id: company.id }, data: { workersAssigned } });
   res.json({ ok: true, workersAssigned });
 });

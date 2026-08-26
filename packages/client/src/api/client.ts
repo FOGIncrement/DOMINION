@@ -199,7 +199,10 @@ export interface GameStateResponse {
     storageCap: number;
     foundedAt: string;
   };
-  population: { count: number; happiness: number; capacity: number };
+  // available == unemployed: population.count minus every worker currently
+  // assigned to a building or a company this player founded — the same
+  // number both /game/workers and /companies/:id/workers cap hiring against.
+  population: { count: number; happiness: number; capacity: number; available: number };
   buildings: {
     id: string;
     type: string;

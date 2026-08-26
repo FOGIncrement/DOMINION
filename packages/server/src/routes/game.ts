@@ -6,6 +6,7 @@ import {
   RESOURCE_TYPES,
   TECHS,
   computeBuildingUpgradeCost,
+  computeUnemployment,
   type BuildingTypeId,
   type ResourceType,
 } from "@dominion/shared";
@@ -70,6 +71,17 @@ gameRouter.get("/state", async (req: AuthedRequest, res) => {
     population: settlement.population!.count,
   });
 
+  // "Available" is the same pool /game/workers and /companies/:id/workers
+  // both draw from and enforce a hard cap against — buildings and every
+  // company this player founded share one population, not separate ones.
+  const buildingWorkers = settlement.buildings.reduce((sum, b) => sum + b.workersAssigned, 0);
+  const companies = await prisma.company.findMany({
+    where: { ownerId: req.playerId!, closedAt: null },
+    select: { workersAssigned: true },
+  });
+  const companyWorkers = companies.reduce((sum, c) => sum + c.workersAssigned, 0);
+  const available = computeUnemployment(settlement.population!.count, buildingWorkers + companyWorkers);
+
   res.json({
     settlement: {
       id: settlement.id,
@@ -86,6 +98,7 @@ gameRouter.get("/state", async (req: AuthedRequest, res) => {
       count: settlement.population!.count,
       happiness: settlement.population!.happiness,
       capacity: housingCapacity(snapshot),
+      available,
     },
     buildings: settlement.buildings.map((b) => ({
       id: b.id,
@@ -179,12 +192,22 @@ gameRouter.post("/workers", async (req: AuthedRequest, res) => {
   // decreasing must always be allowed, even if population has since shrunk
   // (e.g. starvation) below the total already assigned elsewhere. Otherwise
   // a player can get stuck unable to unassign workers they no longer have.
+  // Buildings and every company this player founded draw from the same
+  // population pool (see /companies/:id/workers for the company side of
+  // this same check), so this needs to count company workers too, not just
+  // other buildings.
   if (desired > building.workersAssigned) {
     const workersElsewhere = settlement.buildings
       .filter((b) => b.id !== building.id)
       .reduce((sum, b) => sum + b.workersAssigned, 0);
 
-    if (workersElsewhere + desired > settlement.population!.count) {
+    const companies = await prisma.company.findMany({
+      where: { ownerId: req.playerId!, closedAt: null },
+      select: { workersAssigned: true },
+    });
+    const companyWorkers = companies.reduce((sum, c) => sum + c.workersAssigned, 0);
+
+    if (workersElsewhere + companyWorkers + desired > settlement.population!.count) {
       res.status(400).json({ error: "Not enough available population for that many workers" });
       return;
     }

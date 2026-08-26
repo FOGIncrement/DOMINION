@@ -79,9 +79,8 @@ function buildSuggestions(state: GameStateResponse, techs: TechInfo[] | undefine
   if (!hasQuarry && settlement.stone < 20) {
     suggestions.push("No stone production yet — found a Quarry company to start producing it.");
   }
-  const idleWorkers = population.count - buildings.reduce((sum, b) => sum + b.workersAssigned, 0);
-  if (idleWorkers >= 3) {
-    suggestions.push(`You have ${Math.floor(idleWorkers)} idle population — assign them to a building.`);
+  if (population.available >= 3) {
+    suggestions.push(`You have ${Math.floor(population.available)} idle population — assign them to a building.`);
   }
 
   return suggestions.slice(0, 4);
@@ -146,7 +145,9 @@ export default function Dashboard() {
   }
 
   const totalAssigned = data.buildings.reduce((sum, b) => sum + b.workersAssigned, 0);
-  const idleWorkers = Math.floor(data.population.count - totalAssigned);
+  // Population minus buildings AND company workers — not just buildings —
+  // so this matches what the server actually enforces when hiring more.
+  const idleWorkers = Math.floor(data.population.available);
   const idleBuildings = data.buildings.filter((b) => {
     const def = BUILDING_TYPES[b.type as BuildingTypeId];
     return def.maxWorkers > 0 && b.workersAssigned === 0;
