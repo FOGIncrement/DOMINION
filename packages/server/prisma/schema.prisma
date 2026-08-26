@@ -140,10 +140,12 @@ model SettlementZone {
 }
 
 // A government's commission of a construction company to build a zone —
-// one-time delivery (funds + goods move once, at accept), not a recurring
-// resource flow like Contract. settlementId is stored directly rather than
-// derived through government.playerId -> Settlement.playerId, same "store
-// the concrete party" idiom Contract already uses for seller/buyer.
+// one-time delivery (funds move once, at accept), not a recurring resource
+// flow like Contract. Purely treasury-funded — construction is a
+// contractOnly industry with no goods stockpile to consume. settlementId is
+// stored directly rather than derived through government.playerId ->
+// Settlement.playerId, same "store the concrete party" idiom Contract
+// already uses for seller/buyer.
 model ZoneProject {
   id                     String     @id @default(cuid())
   governmentId           String
@@ -153,7 +155,6 @@ model ZoneProject {
   settlementId           String
   settlement             Settlement @relation(fields: [settlementId], references: [id])
   zoneType               String
-  goodsCost              Float
   treasuryCost           Float
   buildTimeHours         Int
   createdAt              DateTime   @default(now())

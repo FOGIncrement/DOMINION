@@ -63,7 +63,10 @@ function deriveAlerts(company: MyCompany, industry: CompanyIndustryDef, contract
     alerts.push({ text: `Cash is negative — ${Math.abs(company.cash).toFixed(0)}g owed`, severity: "critical" });
   }
   if (company.maxWorkers > 0 && company.workersAssigned === 0) {
-    alerts.push({ text: "No workers assigned — producing nothing", severity: "attention" });
+    alerts.push({
+      text: industry.contractOnly ? "No workers assigned — not staffed for contracts" : "No workers assigned — producing nothing",
+      severity: "attention",
+    });
   }
   if (industry.inputResource && company.rates.inputPerHour > 0 && company.inputStock < company.rates.inputPerHour) {
     alerts.push({
@@ -206,24 +209,26 @@ function CompanyActions({ company }: { company: MyCompany }) {
       {error && <div className="auth-error">{error}</div>}
       {message && !error && <div className="suggestion">{message}</div>}
 
-      <div className="company-card__actions">
-        {industry.inputResource ? (
+      {!industry.contractOnly && (
+        <div className="company-card__actions">
+          {industry.inputResource ? (
+            <div className="trade-row">
+              <input type="number" min={1} value={buyQty} onChange={(e) => setBuyQty(Math.max(1, Number(e.target.value)))} />
+              <button className="btn" disabled={buy.isPending} onClick={() => buy.mutate()}>
+                Buy {industry.inputResource}
+              </button>
+            </div>
+          ) : (
+            <div />
+          )}
           <div className="trade-row">
-            <input type="number" min={1} value={buyQty} onChange={(e) => setBuyQty(Math.max(1, Number(e.target.value)))} />
-            <button className="btn" disabled={buy.isPending} onClick={() => buy.mutate()}>
-              Buy {industry.inputResource}
+            <input type="number" min={1} value={sellQty} onChange={(e) => setSellQty(Math.max(1, Number(e.target.value)))} />
+            <button className="btn" disabled={sell.isPending} onClick={() => sell.mutate()}>
+              Sell {OUTPUT_LABELS[industry.outputResource].toLowerCase()}
             </button>
           </div>
-        ) : (
-          <div />
-        )}
-        <div className="trade-row">
-          <input type="number" min={1} value={sellQty} onChange={(e) => setSellQty(Math.max(1, Number(e.target.value)))} />
-          <button className="btn" disabled={sell.isPending} onClick={() => sell.mutate()}>
-            Sell {OUTPUT_LABELS[industry.outputResource].toLowerCase()}
-          </button>
         </div>
-      </div>
+      )}
 
       <div className="trade-row" style={{ flexWrap: "wrap" }}>
         <input type="number" min={1} value={withdrawAmt} onChange={(e) => setWithdrawAmt(Math.max(1, Number(e.target.value)))} style={{ width: 90 }} />
@@ -299,20 +304,24 @@ function OverviewTab({ company, contracts, onGoToWorkforce }: { company: MyCompa
             <div className="cc-stat-tile__value">{Math.floor(company.inputStock)}</div>
           </div>
         )}
-        <div className="cc-stat-tile">
-          <div className="cc-stat-tile__label">{OUTPUT_LABELS[industry.outputResource]} stock</div>
-          <div className="cc-stat-tile__value">{Math.floor(company.goodsStock)}</div>
-        </div>
+        {!industry.contractOnly && (
+          <div className="cc-stat-tile">
+            <div className="cc-stat-tile__label">{OUTPUT_LABELS[industry.outputResource]} stock</div>
+            <div className="cc-stat-tile__value">{Math.floor(company.goodsStock)}</div>
+          </div>
+        )}
         <div className="cc-stat-tile">
           <div className="cc-stat-tile__label">Lifetime profit</div>
           <div className="cc-stat-tile__value" style={{ color: netProfit >= 0 ? "var(--success)" : "var(--critical)" }}>
             {netProfit.toFixed(0)}g
           </div>
         </div>
-        <div className="cc-stat-tile">
-          <div className="cc-stat-tile__label">Production</div>
-          <div className="cc-stat-tile__value">{company.rates.goodsPerHour.toFixed(1)}/hr</div>
-        </div>
+        {!industry.contractOnly && (
+          <div className="cc-stat-tile">
+            <div className="cc-stat-tile__label">Production</div>
+            <div className="cc-stat-tile__value">{company.rates.goodsPerHour.toFixed(1)}/hr</div>
+          </div>
+        )}
       </div>
 
       <div className="cc-stat-tile">
@@ -349,10 +358,12 @@ function LostControlOverview({ company }: { company: MyCompany }) {
           <div className="cc-stat-tile__label">Cash</div>
           <div className="cc-stat-tile__value">{Math.floor(company.cash)}g</div>
         </div>
-        <div className="cc-stat-tile">
-          <div className="cc-stat-tile__label">{OUTPUT_LABELS[industry.outputResource]} stock</div>
-          <div className="cc-stat-tile__value">{Math.floor(company.goodsStock)}</div>
-        </div>
+        {!industry.contractOnly && (
+          <div className="cc-stat-tile">
+            <div className="cc-stat-tile__label">{OUTPUT_LABELS[industry.outputResource]} stock</div>
+            <div className="cc-stat-tile__value">{Math.floor(company.goodsStock)}</div>
+          </div>
+        )}
         <div className="cc-stat-tile">
           <div className="cc-stat-tile__label">Lifetime profit</div>
           <div className="cc-stat-tile__value" style={{ color: netProfit >= 0 ? "var(--success)" : "var(--critical)" }}>
@@ -406,6 +417,7 @@ function WorkforceTab({ company }: { company: MyCompany }) {
   const queryClient = useQueryClient();
   const { data: gameState } = useGameState();
   const [error, setError] = useState<string | null>(null);
+  const industry = COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
   const staffedFraction = company.maxWorkers > 0 ? company.workersAssigned / company.maxWorkers : 0;
   const isIdle = company.maxWorkers > 0 && company.workersAssigned === 0;
 
@@ -452,8 +464,9 @@ function WorkforceTab({ company }: { company: MyCompany }) {
         <p className="suggestion">No available population to hire — everyone's already assigned to a building or company.</p>
       )}
       <p className="suggestion">
-        Each worker produces {(company.rates.goodsPerHour / Math.max(1, company.workersAssigned)).toFixed(2)}{" "}
-        {OUTPUT_LABELS[COMPANY_INDUSTRIES[company.industry as CompanyIndustryId].outputResource].toLowerCase()}/hr on average.
+        {industry.contractOnly
+          ? "Workers keep this company staffed and ready to fulfill government zone commissions."
+          : `Each worker produces ${(company.rates.goodsPerHour / Math.max(1, company.workersAssigned)).toFixed(2)} ${OUTPUT_LABELS[industry.outputResource].toLowerCase()}/hr on average.`}
       </p>
     </div>
   );
@@ -902,8 +915,16 @@ function SupplyContractForm({ presetCounterpartyId }: { presetCounterpartyId: st
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const companies = myCompanies?.companies ?? [];
-  const world = allCompanies?.companies ?? [];
+  // Contract-only companies (Construction) don't produce or buy anything —
+  // they earn revenue exclusively through government zone commissions, not
+  // supply contracts — so they're excluded from "my company" entirely,
+  // not just left to fall through to "no eligible counterparties."
+  const companies = (myCompanies?.companies ?? []).filter(
+    (c) => !COMPANY_INDUSTRIES[c.industry as CompanyIndustryId].contractOnly,
+  );
+  const world = (allCompanies?.companies ?? []).filter(
+    (c) => !COMPANY_INDUSTRIES[c.industry as CompanyIndustryId].contractOnly,
+  );
   const myCompanyIds = new Set(companies.map((c) => c.id));
 
   const mine = companies.find((c) => c.id === myCompanyId);

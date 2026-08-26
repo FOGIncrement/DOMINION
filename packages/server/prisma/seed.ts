@@ -39,13 +39,10 @@ const NPC_COMPANIES: {
   { name: "Riverbend Timber", industry: "sawmill", cash: 210, inputStock: 10, workersAssigned: 2 },
   { name: "Ironvein Stoneworks", industry: "stoneworks", cash: 460, inputStock: 20, workersAssigned: 3, ipo: true },
   { name: "Graystone Masonry", industry: "stoneworks", cash: 190, inputStock: 10, workersAssigned: 1 },
-  // Seeded with extra cash and workers relative to the others — a
-  // construction company needs to accumulate goodsStock well past the
-  // ordinary NPC_COMPANY_TUNING.goodsSellBuffer before it can fulfill a
-  // real zone commission (see CompanyIndustryDef.goodsSellBuffer), so it's
-  // given a head start rather than waiting on many ticks of organic growth.
-  { name: "Ashford Construction Co.", industry: "construction", cash: 600, inputStock: 30, workersAssigned: 4, ipo: true },
-  { name: "Millbrook Builders Guild", industry: "construction", cash: 300, inputStock: 15, workersAssigned: 2 },
+  // contractOnly — no input to seed, its cash is what actually funds
+  // fulfilling government zone commissions.
+  { name: "Ashford Construction Co.", industry: "construction", cash: 600, workersAssigned: 4, ipo: true },
+  { name: "Millbrook Builders Guild", industry: "construction", cash: 300, workersAssigned: 2 },
 ];
 
 const NPC_INVESTORS: { name: string; archetype: InvestorArchetype; cash: number }[] = [

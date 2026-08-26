@@ -26,7 +26,6 @@ function ZoneCommissionForm() {
   const [zoneType, setZoneType] = useState("");
   const [constructionCompanyId, setConstructionCompanyId] = useState("");
   const [treasuryCost, setTreasuryCost] = useState(0);
-  const [goodsCost, setGoodsCost] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -34,17 +33,16 @@ function ZoneCommissionForm() {
   const selectedZone = zoneList.find((z) => z.id === zoneType);
 
   // Terms are a proposal the government makes, not a catalog lookup — the
-  // suggested numbers just pre-fill the fields so most commissions don't
-  // require typing anything, but either can be edited before sending.
+  // suggested number just pre-fills the field so most commissions don't
+  // require typing anything, but it can still be edited before sending.
   useEffect(() => {
     if (selectedZone) {
       setTreasuryCost(selectedZone.suggestedTreasuryCost);
-      setGoodsCost(selectedZone.suggestedGoodsCost);
     }
   }, [selectedZone]);
 
   const commission = useMutation({
-    mutationFn: () => api.commissionZone(constructionCompanyId, zoneType, treasuryCost, goodsCost),
+    mutationFn: () => api.commissionZone(constructionCompanyId, zoneType, treasuryCost),
     onSuccess: (res) => {
       setError(null);
       setMessage(res.pending ? "Commission sent — awaiting the construction company's acceptance." : "Commissioned — zone under construction.");
@@ -107,20 +105,9 @@ function ZoneCommissionForm() {
             />
             g
           </label>
-          <label className="suggestion" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            Goods required
-            <input
-              type="number"
-              min={0}
-              step={5}
-              value={goodsCost}
-              onChange={(e) => setGoodsCost(Math.max(0, Number(e.target.value) || 0))}
-              style={{ width: 90 }}
-            />
-          </label>
           <button
             className="btn btn--accent"
-            disabled={!zoneType || !constructionCompanyId || treasuryCost <= 0 || goodsCost <= 0 || commission.isPending}
+            disabled={!zoneType || !constructionCompanyId || treasuryCost <= 0 || commission.isPending}
             onClick={() => commission.mutate()}
           >
             Commission
@@ -129,9 +116,9 @@ function ZoneCommissionForm() {
       )}
       {selectedZone && (
         <p className="suggestion" style={{ marginTop: 8 }}>
-          {selectedZone.description} Suggested terms are {selectedZone.suggestedGoodsCost}g worth of goods stock from
-          the construction company plus {selectedZone.suggestedTreasuryCost}g from your treasury — edit either
-          above to propose different terms. Takes {selectedZone.buildTimeHours}h to build once accepted, and grants
+          {selectedZone.description} Suggested treasury payment is {selectedZone.suggestedTreasuryCost}g — edit above
+          to propose a different amount. Funded entirely from your treasury; the construction company doesn't need
+          to stockpile any materials first. Takes {selectedZone.buildTimeHours}h to build once accepted, and grants
           +{selectedZone.slotsGranted} founding capacity for {selectedZone.industries.join(", ")} companies once
           complete. If the company isn't yours, they'll need to accept the offer first.
         </p>
@@ -196,7 +183,7 @@ function MyZoneProjectsList() {
             <tr key={p.id}>
               <td>{p.zoneType}</td>
               <td>{p.constructionCompanyName}</td>
-              <td>{p.goodsCost}g goods, {p.treasuryCost}g treasury</td>
+              <td>{p.treasuryCost}g</td>
               <td>{ZONE_STATUS_LABELS[p.status] ?? p.status}</td>
               <td>
                 {p.status === "pending" && p.constructionCompanyIsMine && (

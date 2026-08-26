@@ -68,7 +68,6 @@ infrastructureRouter.get("/mine", async (req: AuthedRequest, res) => {
       constructionCompanyName: p.constructionCompany.name,
       constructionCompanyIsMine: p.constructionCompany.ownerId === req.playerId,
       governmentIsMine: p.government.playerId === req.playerId,
-      goodsCost: p.goodsCost,
       treasuryCost: p.treasuryCost,
       buildTimeHours: p.buildTimeHours,
       createdAt: p.createdAt,
@@ -85,7 +84,6 @@ const commissionSchema = z.object({
   constructionCompanyId: z.string(),
   zoneType: z.enum(ZONE_TYPE_IDS),
   treasuryCost: z.number().positive(),
-  goodsCost: z.number().positive(),
 });
 
 // Unlike Contract (either company's controller may propose), commissioning
@@ -115,7 +113,7 @@ infrastructureRouter.post("/", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const { treasuryCost, goodsCost } = parsed.data;
+  const { treasuryCost } = parsed.data;
 
   const government = await getOrCreateGovernment(req.playerId!);
   if (government.treasury < treasuryCost) {
@@ -136,12 +134,6 @@ infrastructureRouter.post("/", async (req: AuthedRequest, res) => {
     res.status(400).json({ error: `${company.name} isn't a construction company` });
     return;
   }
-  if (company.goodsStock < goodsCost) {
-    res.status(400).json({
-      error: `${company.name} only has ${company.goodsStock.toFixed(1)} goods on hand — this commission needs ${goodsCost}`,
-    });
-    return;
-  }
 
   const needsOffer = company.ownerId !== null && company.ownerId !== req.playerId;
   const now = new Date();
@@ -153,7 +145,6 @@ infrastructureRouter.post("/", async (req: AuthedRequest, res) => {
         constructionCompanyId: company.id,
         settlementId: settlement.id,
         zoneType: def.id,
-        goodsCost,
         treasuryCost,
         buildTimeHours: def.buildTimeHours,
       },
@@ -170,7 +161,6 @@ infrastructureRouter.post("/", async (req: AuthedRequest, res) => {
         constructionCompanyId: company.id,
         settlementId: settlement.id,
         zoneType: def.id,
-        goodsCost,
         treasuryCost,
         buildTimeHours: def.buildTimeHours,
         acceptedAt: now,
@@ -181,7 +171,6 @@ infrastructureRouter.post("/", async (req: AuthedRequest, res) => {
     prisma.company.update({
       where: { id: company.id },
       data: {
-        goodsStock: { decrement: goodsCost },
         cash: { increment: treasuryCost },
         totalRevenue: { increment: treasuryCost },
       },
@@ -223,10 +212,6 @@ infrastructureRouter.post("/:id/accept", async (req: AuthedRequest, res) => {
     res.status(400).json({ error: "The commissioning government's treasury can no longer cover this" });
     return;
   }
-  if (project.constructionCompany.goodsStock < project.goodsCost) {
-    res.status(400).json({ error: "Your company's goods stock can no longer cover this commission" });
-    return;
-  }
 
   const now = new Date();
   const completesAt = new Date(now.getTime() + project.buildTimeHours * 60 * 60 * 1000);
@@ -236,7 +221,6 @@ infrastructureRouter.post("/:id/accept", async (req: AuthedRequest, res) => {
     prisma.company.update({
       where: { id: project.constructionCompanyId },
       data: {
-        goodsStock: { decrement: project.goodsCost },
         cash: { increment: project.treasuryCost },
         totalRevenue: { increment: project.treasuryCost },
       },

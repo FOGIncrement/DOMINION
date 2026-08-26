@@ -4,7 +4,6 @@ import {
   COMPANY_INDUSTRIES,
   COMPANY_INDUSTRY_IDS,
   STOCK_TUNING,
-  TUTORIAL_KIT,
   ZONE_BASELINE_FREE_SLOTS,
   ZONE_TYPES,
   computeCompanyHourlyRates,
@@ -147,16 +146,6 @@ companiesRouter.post("/", async (req: AuthedRequest, res) => {
     return;
   }
 
-  // A brand-new construction company's goodsStock starts at 0 and only
-  // accumulates via real production ticks — nowhere near enough for even a
-  // modest zone commission within the tutorial's timescale. This one-time
-  // kit is scoped tightly: only construction, only while the player is
-  // still on the found_company tutorial step (checked directly, not just
-  // "is this their first company," so it can never be re-triggered by
-  // founding a second construction company later).
-  const player = await prisma.player.findUnique({ where: { id: req.playerId! }, select: { tutorialStep: true } });
-  const grantsTutorialKit = parsed.data.industry === "construction" && player?.tutorialStep === "found_company";
-
   const [, company] = await prisma.$transaction([
     prisma.settlement.update({
       where: { id: settlement.id },
@@ -168,7 +157,6 @@ companiesRouter.post("/", async (req: AuthedRequest, res) => {
         name: parsed.data.name,
         industry: parsed.data.industry,
         cash: totalCost,
-        goodsStock: grantsTutorialKit ? TUTORIAL_KIT.constructionGoodsStockBonus : 0,
       },
     }),
   ]);
@@ -286,6 +274,13 @@ companiesRouter.post("/:id/trade", async (req: AuthedRequest, res) => {
 
   const industry = COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
   const { side, quantity } = parsed.data;
+
+  if (industry.contractOnly) {
+    res.status(400).json({
+      error: `${industry.name} companies don't trade goods — they earn revenue by fulfilling government zone commissions instead`,
+    });
+    return;
+  }
 
   if (side === "buy") {
     if (!industry.inputResource) {

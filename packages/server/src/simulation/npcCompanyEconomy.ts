@@ -43,13 +43,11 @@ export async function settleNpcCompanyTrading(
     }
   }
 
-  // A construction company's real customer is a one-off zone commission,
-  // not steady market demand — it needs a much higher buffer than the flat
-  // default or it sells itself back down every tick and can never
-  // accumulate enough stock to fulfill a real commission (see
-  // CompanyIndustryDef.goodsSellBuffer).
+  // contractOnly (Construction) never produces goods, so this whole
+  // sell-off never applies — its revenue is one-off government zone
+  // commissions instead of market sales.
   const goodsSellBuffer = industry.goodsSellBuffer ?? NPC_COMPANY_TUNING.goodsSellBuffer;
-  if (state.goodsStock > goodsSellBuffer) {
+  if (!industry.contractOnly && state.goodsStock > goodsSellBuffer) {
     const excess = state.goodsStock - goodsSellBuffer;
     state.goodsStock -= excess;
     revenue = excess * prices[industry.outputResource];

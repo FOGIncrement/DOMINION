@@ -116,6 +116,8 @@ export interface CompanyIndustryDef {
   // otherwise whichever raw resource this industry extracts. The field name
   // stays goodsPerWorkerPerHour even for extraction industries to avoid a
   // wider rename; it always means "output rate," not literally goods.
+  // Meaningless for a contractOnly industry — required only to satisfy the
+  // type, never actually read once contractOnly is true.
   outputResource: MarketResourceType;
   goodsPerWorkerPerHour: number;
   wagePerWorkerPerHour: number;
@@ -127,6 +129,13 @@ export interface CompanyIndustryDef {
   // tick and never accumulate enough to fulfill one. Only construction sets
   // this today; every other industry falls back to the flat constant.
   goodsSellBuffer?: number;
+  // True for a "contract only" industry (Construction) — it doesn't produce
+  // or sell anything on the open market at all; every gold it earns comes
+  // from one-off government zone commissions instead. Gates goods
+  // production, market-flow tracking, the buy/sell trade route, supply
+  // contract eligibility, and the corresponding client UI. Every other
+  // industry omits this and behaves as a normal goods producer.
+  contractOnly?: boolean;
 }
 
 export interface ZoneDef {
@@ -134,11 +143,11 @@ export interface ZoneDef {
   name: string;
   description: string;
   industries: CompanyIndustryId[];
-  // Advisory only — the client pre-fills the commission form with these,
-  // but the actual price is a negotiated term the commissioning government
+  // Advisory only — the client pre-fills the commission form with this, but
+  // the actual price is a negotiated term the commissioning government
   // proposes per-commission (see routes/infrastructure.ts), not an
-  // enforced catalog value.
-  suggestedGoodsCost: number;
+  // enforced catalog value. Purely treasury-funded — a zone commission
+  // never requires the construction company to have pre-accumulated goods.
   suggestedTreasuryCost: number;
   buildTimeHours: number;
   slotsGranted: number;

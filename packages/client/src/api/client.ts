@@ -181,10 +181,10 @@ export const api = {
 
   zones: () => request<{ zones: ZoneCatalogEntry[] }>("/infrastructure"),
   myZoneProjects: () => request<{ projects: MyZoneProject[] }>("/infrastructure/mine"),
-  commissionZone: (constructionCompanyId: string, zoneType: string, treasuryCost: number, goodsCost: number) =>
+  commissionZone: (constructionCompanyId: string, zoneType: string, treasuryCost: number) =>
     request<{ ok: true; projectId: string; pending: boolean }>("/infrastructure", {
       method: "POST",
-      body: JSON.stringify({ constructionCompanyId, zoneType, treasuryCost, goodsCost }),
+      body: JSON.stringify({ constructionCompanyId, zoneType, treasuryCost }),
     }),
   acceptZoneProject: (projectId: string) =>
     request<{ ok: true }>(`/infrastructure/${projectId}/accept`, { method: "POST" }),
@@ -490,7 +490,6 @@ export interface ZoneCatalogEntry {
   name: string;
   description: string;
   industries: string[];
-  suggestedGoodsCost: number;
   suggestedTreasuryCost: number;
   buildTimeHours: number;
   slotsGranted: number;
@@ -509,7 +508,6 @@ export interface MyZoneProject {
   constructionCompanyName: string;
   constructionCompanyIsMine: boolean;
   governmentIsMine: boolean;
-  goodsCost: number;
   treasuryCost: number;
   buildTimeHours: number;
   createdAt: string;

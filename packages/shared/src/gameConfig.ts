@@ -30,20 +30,6 @@ export const STARTING_SETTLEMENT = {
 // player first).
 export const STARTING_TREASURY = 250;
 
-export const TUTORIAL_KIT = {
-  // A freshly-hired construction company's goodsStock starts at 0 and only
-  // accumulates via real production ticks — nowhere near enough for even a
-  // modest zone commission within a tutorial's timescale. This one-time
-  // bonus is granted only to a brand-new player's first company, only when
-  // it's "construction" and only while still on the found_company tutorial
-  // step (see routes/companies.ts) — a tutorial-scoped starter kit, not a
-  // change to normal founding economics. Sized above ZONE_TYPES.industrial's
-  // suggestedGoodsCost (150) with a small buffer, so a first-time player who
-  // commissions using the government's own suggested terms (unedited) can
-  // actually afford it — the whole point of the tutorial's final step.
-  constructionGoodsStockBonus: 160,
-};
-
 export const BUILDING_TYPES: Record<BuildingTypeId, BuildingTypeDef> = {
   house: {
     id: "house",
@@ -189,24 +175,23 @@ export const COMPANY_INDUSTRIES: Record<CompanyIndustryId, CompanyIndustryDef> =
     maxWorkers: 4,
     foundingCost: 150,
   },
-  // Its real customer is a one-off government zone commission (see
-  // ZONE_TYPES / routes/infrastructure.ts), not steady market demand, so it
-  // needs a much higher goodsSellBuffer than the flat NPC_COMPANY_TUNING
-  // default — otherwise an NPC-run construction company sells itself back
-  // down to the ordinary buffer every tick and can never accumulate enough
-  // stock to fulfill a real commission.
+  // A "contract only" industry — see CompanyIndustryDef.contractOnly. It
+  // doesn't buy input or sell goods on the open market at all; its whole
+  // revenue is one-off government zone commissions, paid directly from the
+  // treasury with no goods stockpile required. outputResource/
+  // goodsPerWorkerPerHour are required-but-unused placeholders — every real
+  // read site is gated on contractOnly first.
   construction: {
     id: "construction",
     name: "Construction Co.",
-    description: "Buys stone and builds toward government zone commissions — can also sell surplus goods on the open market.",
-    inputResource: "stone",
-    inputPerWorkerPerHour: 2,
+    description: "A contract-only company — hire workers, then fulfill government zone commissions for a treasury payment.",
+    inputPerWorkerPerHour: 0,
     outputResource: "goods",
-    goodsPerWorkerPerHour: 1,
+    goodsPerWorkerPerHour: 0,
     wagePerWorkerPerHour: 1.5,
     maxWorkers: 4,
     foundingCost: 150,
-    goodsSellBuffer: 250,
+    contractOnly: true,
   },
 };
 
@@ -223,7 +208,6 @@ export const ZONE_TYPES: Record<ZoneTypeId, ZoneDef> = {
     name: "Industrial Zone",
     description: "Opens capacity to found production and extraction companies — farms, quarries, sawmills, and more.",
     industries: ["farming", "logging", "quarrying", "bakery", "sawmill", "stoneworks", "construction"],
-    suggestedGoodsCost: 150,
     suggestedTreasuryCost: 200,
     buildTimeHours: 4,
     slotsGranted: 2,
@@ -233,7 +217,6 @@ export const ZONE_TYPES: Record<ZoneTypeId, ZoneDef> = {
     name: "Retail Zone",
     description: "Opens capacity to found retail companies that sell directly to your population.",
     industries: ["retail"],
-    suggestedGoodsCost: 100,
     suggestedTreasuryCost: 150,
     buildTimeHours: 3,
     slotsGranted: 2,

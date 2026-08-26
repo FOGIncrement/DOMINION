@@ -299,7 +299,9 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     if (industry.inputResource) {
       flows[industry.inputResource].demand += result.inputConsumed;
     }
-    flows[industry.outputResource].supply += result.goodsProduced;
+    if (!industry.contractOnly) {
+      flows[industry.outputResource].supply += result.goodsProduced;
+    }
 
     const state: MutableCompanyState = {
       cash: result.cash,

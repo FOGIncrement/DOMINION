@@ -130,6 +130,14 @@ contractsRouter.post("/", async (req: AuthedRequest, res) => {
 
   const sellerIndustry = COMPANY_INDUSTRIES[seller.industry as CompanyIndustryId];
   const buyerIndustry = COMPANY_INDUSTRIES[buyer.industry as CompanyIndustryId];
+  if (sellerIndustry.contractOnly) {
+    res.status(400).json({ error: `${sellerIndustry.name} companies don't produce anything to sell under contract` });
+    return;
+  }
+  if (buyerIndustry.contractOnly) {
+    res.status(400).json({ error: `${buyerIndustry.name} companies don't buy any input to contract for` });
+    return;
+  }
   if (buyerIndustry.inputResource !== sellerIndustry.outputResource) {
     res.status(400).json({
       error: `${buyerIndustry.name} doesn't use ${sellerIndustry.outputResource} as input — can't contract these two`,

@@ -29,7 +29,10 @@ export function tickCompany(company: CompanySnapshot, elapsedHours: number): Com
   const actualInput = industry.inputResource ? Math.min(desiredInput, company.inputStock) : 0;
   const fulfillment = !industry.inputResource ? 1 : desiredInput > 0 ? actualInput / desiredInput : 0;
 
-  const goodsProduced = rates.goodsPerHour * elapsedHours * fulfillment;
+  // contractOnly (Construction) produces nothing at all, regardless of
+  // whatever goodsPerWorkerPerHour happens to be set to — its revenue is
+  // one-off government zone commissions, not market goods.
+  const goodsProduced = industry.contractOnly ? 0 : rates.goodsPerHour * elapsedHours * fulfillment;
   const wagesPaid = rates.wagePerHour * elapsedHours;
 
   return {
