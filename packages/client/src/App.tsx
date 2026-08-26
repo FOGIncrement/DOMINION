@@ -3,6 +3,7 @@ import CheatMenu from "./components/CheatMenu.js";
 import NavBar from "./components/NavBar.js";
 import OfflineSummaryModal from "./components/OfflineSummaryModal.js";
 import TopBar from "./components/TopBar.js";
+import TutorialOverlay from "./components/TutorialOverlay.js";
 import { useMe } from "./api/hooks.js";
 import Login from "./pages/Login.js";
 import Dashboard from "./pages/Dashboard.js";
@@ -48,6 +49,7 @@ export default function App() {
       </Routes>
       <OfflineSummaryModal />
       <CheatMenu />
+      <TutorialOverlay />
     </div>
   );
 }

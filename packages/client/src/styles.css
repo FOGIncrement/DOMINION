@@ -1784,6 +1784,107 @@ a {
   color: var(--accent);
 }
 
+/* --- Tutorial --- */
+
+.tutorial-spotlight {
+  position: fixed;
+  border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  z-index: 45;
+  transition: top 0.25s ease, left 0.25s ease, width 0.25s ease, height 0.25s ease;
+}
+
+.tutorial-panel {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface-1);
+  border: var(--card-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border-radius: var(--radius-card);
+  padding: 16px;
+  z-index: 46;
+}
+
+.tutorial-panel__title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.tutorial-panel__body {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.tutorial-panel__skip {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.tutorial-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.tutorial-progress__fill {
+  height: 100%;
+  width: 40%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: tutorial-progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes tutorial-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+
+.nav-link--pulse {
+  border-radius: 4px;
+  animation: tutorial-nav-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes tutorial-nav-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tutorial-spotlight {
+    transition: none;
+  }
+  .tutorial-progress__fill,
+  .nav-link--pulse {
+    animation: none;
+  }
+}
+
 /* --- Cheat menu (dev/testing only) --- */
 
 .cheat-menu {

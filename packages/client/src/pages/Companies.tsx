@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   COMPANY_INDUSTRIES,
   COMPANY_INDUSTRY_IDS,
@@ -19,6 +19,7 @@ import {
   useMarket,
   useMyCompanies,
   useMyContracts,
+  useTutorial,
   useWorldContracts,
   useZones,
 } from "../api/hooks.js";
@@ -793,10 +794,22 @@ function FoundCompanyForm() {
   const queryClient = useQueryClient();
   const { data: gameState } = useGameState();
   const { data: zones } = useZones();
+  const { data: tutorial } = useTutorial();
   const [name, setName] = useState("");
   const [industry, setIndustry] = useState<CompanyIndustryId>("bakery");
   const [seedMoney, setSeedMoney] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  // Nudges a first-time player toward the company the tutorial actually
+  // needs, without hard-restricting the dropdown — applied once, so it never
+  // fights a selection the player already made.
+  const appliedTutorialDefault = useRef(false);
+  useEffect(() => {
+    if (!appliedTutorialDefault.current && tutorial?.step === "found_company") {
+      appliedTutorialDefault.current = true;
+      setIndustry("construction");
+    }
+  }, [tutorial?.step]);
 
   const found = useMutation({
     mutationFn: () =>
@@ -809,6 +822,9 @@ function FoundCompanyForm() {
       queryClient.invalidateQueries({ queryKey: ["gameState"] });
       queryClient.invalidateQueries({ queryKey: ["allCompanies"] });
       queryClient.invalidateQueries({ queryKey: ["zones"] });
+      if (tutorial?.step === "found_company" && industry === "construction") {
+        api.tutorialAdvance("found_company").then(() => queryClient.invalidateQueries({ queryKey: ["tutorial"] }));
+      }
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "Couldn't found company"),
   });
@@ -852,6 +868,7 @@ function FoundCompanyForm() {
         </label>
         <button
           className="btn btn--accent"
+          data-tutorial="tutorial-found-company-submit"
           disabled={!canAfford || atCapacity || found.isPending}
           onClick={() => found.mutate()}
         >

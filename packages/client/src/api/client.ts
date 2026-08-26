@@ -1,4 +1,4 @@
-import type { MarketResourceType } from "@dominion/shared";
+import type { MarketResourceType, TutorialStep } from "@dominion/shared";
 
 const BASE = "/api";
 
@@ -181,15 +181,20 @@ export const api = {
 
   zones: () => request<{ zones: ZoneCatalogEntry[] }>("/infrastructure"),
   myZoneProjects: () => request<{ projects: MyZoneProject[] }>("/infrastructure/mine"),
-  commissionZone: (constructionCompanyId: string, zoneType: string) =>
+  commissionZone: (constructionCompanyId: string, zoneType: string, treasuryCost: number, goodsCost: number) =>
     request<{ ok: true; projectId: string; pending: boolean }>("/infrastructure", {
       method: "POST",
-      body: JSON.stringify({ constructionCompanyId, zoneType }),
+      body: JSON.stringify({ constructionCompanyId, zoneType, treasuryCost, goodsCost }),
     }),
   acceptZoneProject: (projectId: string) =>
     request<{ ok: true }>(`/infrastructure/${projectId}/accept`, { method: "POST" }),
   cancelZoneProject: (projectId: string) =>
     request<{ ok: true }>(`/infrastructure/${projectId}/cancel`, { method: "POST" }),
+
+  tutorial: () => request<TutorialInfo>("/tutorial"),
+  tutorialAdvance: (step: TutorialStep) =>
+    request<{ ok: true; step: TutorialStep }>("/tutorial/advance", { method: "POST", body: JSON.stringify({ step }) }),
+  tutorialSkip: () => request<{ ok: true; step: TutorialStep }>("/tutorial/skip", { method: "POST" }),
 };
 
 export interface OfflineSummary {
@@ -485,12 +490,16 @@ export interface ZoneCatalogEntry {
   name: string;
   description: string;
   industries: string[];
-  goodsCost: number;
-  treasuryCost: number;
+  suggestedGoodsCost: number;
+  suggestedTreasuryCost: number;
   buildTimeHours: number;
   slotsGranted: number;
   used: number;
   available: number;
+}
+
+export interface TutorialInfo {
+  step: TutorialStep;
 }
 
 export interface MyZoneProject {

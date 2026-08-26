@@ -134,8 +134,15 @@ export interface ZoneDef {
   name: string;
   description: string;
   industries: CompanyIndustryId[];
-  goodsCost: number;
-  treasuryCost: number;
+  // Advisory only — the client pre-fills the commission form with these,
+  // but the actual price is a negotiated term the commissioning government
+  // proposes per-commission (see routes/infrastructure.ts), not an
+  // enforced catalog value.
+  suggestedGoodsCost: number;
+  suggestedTreasuryCost: number;
   buildTimeHours: number;
   slotsGranted: number;
 }
+
+export const TUTORIAL_STEPS = ["found_company", "hiring", "government_unlock", "commission_zone", "completed"] as const;
+export type TutorialStep = (typeof TUTORIAL_STEPS)[number];

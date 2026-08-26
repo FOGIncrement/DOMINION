@@ -19,8 +19,29 @@ export const STARTING_SETTLEMENT = {
   food: 140,
   wood: 80,
   stone: 40,
-  gold: 25,
+  gold: 300,
   storageCap: 500,
+};
+
+// Government.treasury otherwise defaults to 0 (the schema default) — without
+// a real starting seed here, a brand-new government can't afford to
+// commission anything at all, since it has no organic income yet (tax
+// collection and bond issuance both need real trade activity or another
+// player first).
+export const STARTING_TREASURY = 250;
+
+export const TUTORIAL_KIT = {
+  // A freshly-hired construction company's goodsStock starts at 0 and only
+  // accumulates via real production ticks — nowhere near enough for even a
+  // modest zone commission within a tutorial's timescale. This one-time
+  // bonus is granted only to a brand-new player's first company, only when
+  // it's "construction" and only while still on the found_company tutorial
+  // step (see routes/companies.ts) — a tutorial-scoped starter kit, not a
+  // change to normal founding economics. Sized above ZONE_TYPES.industrial's
+  // suggestedGoodsCost (150) with a small buffer, so a first-time player who
+  // commissions using the government's own suggested terms (unedited) can
+  // actually afford it — the whole point of the tutorial's final step.
+  constructionGoodsStockBonus: 160,
 };
 
 export const BUILDING_TYPES: Record<BuildingTypeId, BuildingTypeDef> = {
@@ -202,8 +223,8 @@ export const ZONE_TYPES: Record<ZoneTypeId, ZoneDef> = {
     name: "Industrial Zone",
     description: "Opens capacity to found production and extraction companies — farms, quarries, sawmills, and more.",
     industries: ["farming", "logging", "quarrying", "bakery", "sawmill", "stoneworks", "construction"],
-    goodsCost: 150,
-    treasuryCost: 200,
+    suggestedGoodsCost: 150,
+    suggestedTreasuryCost: 200,
     buildTimeHours: 4,
     slotsGranted: 2,
   },
@@ -212,8 +233,8 @@ export const ZONE_TYPES: Record<ZoneTypeId, ZoneDef> = {
     name: "Retail Zone",
     description: "Opens capacity to found retail companies that sell directly to your population.",
     industries: ["retail"],
-    goodsCost: 100,
-    treasuryCost: 150,
+    suggestedGoodsCost: 100,
+    suggestedTreasuryCost: 150,
     buildTimeHours: 3,
     slotsGranted: 2,
   },

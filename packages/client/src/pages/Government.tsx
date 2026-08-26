@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api/client.js";
-import { useAllCompanies, useGovernment, useMyCompanies, useMyZoneProjects, useZones } from "../api/hooks.js";
+import { useAllCompanies, useGovernment, useMyCompanies, useMyZoneProjects, useTutorial, useZones } from "../api/hooks.js";
 
 function invalidateGovernment(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ["government"] });
@@ -22,24 +22,44 @@ function ZoneCommissionForm() {
   const queryClient = useQueryClient();
   const { data: zones } = useZones();
   const { data: allCompanies } = useAllCompanies();
+  const { data: tutorial } = useTutorial();
   const [zoneType, setZoneType] = useState("");
   const [constructionCompanyId, setConstructionCompanyId] = useState("");
+  const [treasuryCost, setTreasuryCost] = useState(0);
+  const [goodsCost, setGoodsCost] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
+  const zoneList = zones?.zones ?? [];
+  const selectedZone = zoneList.find((z) => z.id === zoneType);
+
+  // Terms are a proposal the government makes, not a catalog lookup — the
+  // suggested numbers just pre-fill the fields so most commissions don't
+  // require typing anything, but either can be edited before sending.
+  useEffect(() => {
+    if (selectedZone) {
+      setTreasuryCost(selectedZone.suggestedTreasuryCost);
+      setGoodsCost(selectedZone.suggestedGoodsCost);
+    }
+  }, [selectedZone]);
+
   const commission = useMutation({
-    mutationFn: () => api.commissionZone(constructionCompanyId, zoneType),
+    mutationFn: () => api.commissionZone(constructionCompanyId, zoneType, treasuryCost, goodsCost),
     onSuccess: (res) => {
       setError(null);
       setMessage(res.pending ? "Commission sent — awaiting the construction company's acceptance." : "Commissioned — zone under construction.");
       invalidateGovernment(queryClient);
+      if (tutorial?.step === "government_unlock") {
+        api
+          .tutorialAdvance("government_unlock")
+          .then(() => api.tutorialAdvance("commission_zone"))
+          .then(() => queryClient.invalidateQueries({ queryKey: ["tutorial"] }));
+      }
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "Commission failed"),
   });
 
   const constructionCompanies = (allCompanies?.companies ?? []).filter((c) => c.industry === "construction");
-  const zoneList = zones?.zones ?? [];
-  const selectedZone = zoneList.find((z) => z.id === zoneType);
 
   if (zoneList.length === 0) {
     return (
@@ -51,7 +71,7 @@ function ZoneCommissionForm() {
   }
 
   return (
-    <div className="card">
+    <div className="card" data-tutorial="tutorial-zone-form">
       <h2 className="card__title">Commission a Zone</h2>
       {error && <div className="auth-error">{error}</div>}
       {message && !error && <div className="suggestion">{message}</div>}
@@ -72,20 +92,48 @@ function ZoneCommissionForm() {
             </option>
           ))}
         </select>
-        <button
-          className="btn btn--accent"
-          disabled={!zoneType || !constructionCompanyId || commission.isPending}
-          onClick={() => commission.mutate()}
-        >
-          Commission
-        </button>
       </div>
       {selectedZone && (
+        <div className="trade-row" style={{ flexWrap: "wrap", marginTop: 8 }}>
+          <label className="suggestion" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            Treasury offer
+            <input
+              type="number"
+              min={0}
+              step={5}
+              value={treasuryCost}
+              onChange={(e) => setTreasuryCost(Math.max(0, Number(e.target.value) || 0))}
+              style={{ width: 90 }}
+            />
+            g
+          </label>
+          <label className="suggestion" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            Goods required
+            <input
+              type="number"
+              min={0}
+              step={5}
+              value={goodsCost}
+              onChange={(e) => setGoodsCost(Math.max(0, Number(e.target.value) || 0))}
+              style={{ width: 90 }}
+            />
+          </label>
+          <button
+            className="btn btn--accent"
+            disabled={!zoneType || !constructionCompanyId || treasuryCost <= 0 || goodsCost <= 0 || commission.isPending}
+            onClick={() => commission.mutate()}
+          >
+            Commission
+          </button>
+        </div>
+      )}
+      {selectedZone && (
         <p className="suggestion" style={{ marginTop: 8 }}>
-          {selectedZone.description} Costs {selectedZone.goodsCost}g worth of goods stock from the construction
-          company plus {selectedZone.treasuryCost}g from your treasury, takes {selectedZone.buildTimeHours}h to
-          build, and grants +{selectedZone.slotsGranted} founding capacity for {selectedZone.industries.join(", ")}{" "}
-          companies once complete. If the company isn't yours, they'll need to accept the offer first.
+          {selectedZone.description} Suggested terms are {selectedZone.suggestedGoodsCost}g worth of goods stock from
+          the construction company plus {selectedZone.suggestedTreasuryCost}g from your treasury — edit either
+          above to propose different terms. Takes {selectedZone.buildTimeHours}h to build once accepted, and grants
+          +{selectedZone.slotsGranted} founding capacity for {selectedZone.industries.join(", ")} companies once
+          complete. If the company isn't yours, they'll need to accept the offer first.
         </p>
       )}
       {constructionCompanies.length === 0 && (

@@ -18,6 +18,11 @@ model Player {
   createdAt        DateTime @default(now())
   lastSeenAt       DateTime @default(now())
   lastSeenSnapshot String? // JSON-serialized {food,wood,stone,gold,population} baseline for offline-progression diffing
+  // Every player that existed before this column was added gets backfilled
+  // to "completed" in the migration itself (a raw UPDATE, not left to this
+  // default) — the column default only governs brand-new registrations
+  // going forward. See routes/tutorial.ts and shared's TUTORIAL_STEPS.
+  tutorialStep     String   @default("found_company")
 
   settlement Settlement?
   companies  Company[]

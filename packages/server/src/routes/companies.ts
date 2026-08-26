@@ -4,6 +4,7 @@ import {
   COMPANY_INDUSTRIES,
   COMPANY_INDUSTRY_IDS,
   STOCK_TUNING,
+  TUTORIAL_KIT,
   ZONE_BASELINE_FREE_SLOTS,
   ZONE_TYPES,
   computeCompanyHourlyRates,
@@ -146,6 +147,16 @@ companiesRouter.post("/", async (req: AuthedRequest, res) => {
     return;
   }
 
+  // A brand-new construction company's goodsStock starts at 0 and only
+  // accumulates via real production ticks — nowhere near enough for even a
+  // modest zone commission within the tutorial's timescale. This one-time
+  // kit is scoped tightly: only construction, only while the player is
+  // still on the found_company tutorial step (checked directly, not just
+  // "is this their first company," so it can never be re-triggered by
+  // founding a second construction company later).
+  const player = await prisma.player.findUnique({ where: { id: req.playerId! }, select: { tutorialStep: true } });
+  const grantsTutorialKit = parsed.data.industry === "construction" && player?.tutorialStep === "found_company";
+
   const [, company] = await prisma.$transaction([
     prisma.settlement.update({
       where: { id: settlement.id },
@@ -157,6 +168,7 @@ companiesRouter.post("/", async (req: AuthedRequest, res) => {
         name: parsed.data.name,
         industry: parsed.data.industry,
         cash: totalCost,
+        goodsStock: grantsTutorialKit ? TUTORIAL_KIT.constructionGoodsStockBonus : 0,
       },
     }),
   ]);
@@ -426,8 +438,18 @@ companiesRouter.post("/:id/close", async (req: AuthedRequest, res) => {
     return;
   }
   if (company.isPublic) {
-    res.status(400).json({ error: "Can't close a public company while it has outside shareholders" });
-    return;
+    // "Public" alone isn't the real blocker — a company that IPO'd but where
+    // the founder still holds every share (nobody ever bought in, or they
+    // bought the float back) has nothing outside to protect. Only block when
+    // shares are actually held by someone other than the founder.
+    const outsideShares = await prisma.shareholding.aggregate({
+      where: { companyId: company.id, NOT: { playerId: company.ownerId } },
+      _sum: { shares: true },
+    });
+    if ((outsideShares._sum.shares ?? 0) > 0.0001) {
+      res.status(400).json({ error: "Can't close a public company while it has outside shareholders" });
+      return;
+    }
   }
 
   const settlement = await prisma.settlement.findUnique({ where: { playerId: req.playerId! } });
@@ -448,6 +470,12 @@ companiesRouter.post("/:id/close", async (req: AuthedRequest, res) => {
       where: { id: company.id },
       data: { closedAt: new Date(), workersAssigned: 0, cash: 0 },
     }),
+    // Shares in a closed company are worthless — same idiom as zeroing cash
+    // above. Only ever reaches here holding the founder's own IPO shares
+    // (the check above already rejected any real outside holding), but
+    // clearing unconditionally avoids leaving a stale positive balance in
+    // the founder's own portfolio for a company that no longer trades.
+    prisma.shareholding.deleteMany({ where: { companyId: company.id } }),
     prisma.loan.updateMany({
       where: { companyId: company.id, defaultedAt: null },
       data: { defaultedAt: new Date() },

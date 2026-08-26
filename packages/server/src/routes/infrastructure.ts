@@ -84,6 +84,8 @@ infrastructureRouter.get("/mine", async (req: AuthedRequest, res) => {
 const commissionSchema = z.object({
   constructionCompanyId: z.string(),
   zoneType: z.enum(ZONE_TYPE_IDS),
+  treasuryCost: z.number().positive(),
+  goodsCost: z.number().positive(),
 });
 
 // Unlike Contract (either company's controller may propose), commissioning
@@ -113,8 +115,10 @@ infrastructureRouter.post("/", async (req: AuthedRequest, res) => {
     return;
   }
 
+  const { treasuryCost, goodsCost } = parsed.data;
+
   const government = await getOrCreateGovernment(req.playerId!);
-  if (government.treasury < def.treasuryCost) {
+  if (government.treasury < treasuryCost) {
     res.status(400).json({ error: "Not enough treasury funds" });
     return;
   }
@@ -132,9 +136,9 @@ infrastructureRouter.post("/", async (req: AuthedRequest, res) => {
     res.status(400).json({ error: `${company.name} isn't a construction company` });
     return;
   }
-  if (company.goodsStock < def.goodsCost) {
+  if (company.goodsStock < goodsCost) {
     res.status(400).json({
-      error: `${company.name} only has ${company.goodsStock.toFixed(1)} goods on hand — this commission needs ${def.goodsCost}`,
+      error: `${company.name} only has ${company.goodsStock.toFixed(1)} goods on hand — this commission needs ${goodsCost}`,
     });
     return;
   }
@@ -149,8 +153,8 @@ infrastructureRouter.post("/", async (req: AuthedRequest, res) => {
         constructionCompanyId: company.id,
         settlementId: settlement.id,
         zoneType: def.id,
-        goodsCost: def.goodsCost,
-        treasuryCost: def.treasuryCost,
+        goodsCost,
+        treasuryCost,
         buildTimeHours: def.buildTimeHours,
       },
     });
@@ -166,20 +170,20 @@ infrastructureRouter.post("/", async (req: AuthedRequest, res) => {
         constructionCompanyId: company.id,
         settlementId: settlement.id,
         zoneType: def.id,
-        goodsCost: def.goodsCost,
-        treasuryCost: def.treasuryCost,
+        goodsCost,
+        treasuryCost,
         buildTimeHours: def.buildTimeHours,
         acceptedAt: now,
         completesAt,
       },
     }),
-    prisma.government.update({ where: { id: government.id }, data: { treasury: { decrement: def.treasuryCost } } }),
+    prisma.government.update({ where: { id: government.id }, data: { treasury: { decrement: treasuryCost } } }),
     prisma.company.update({
       where: { id: company.id },
       data: {
-        goodsStock: { decrement: def.goodsCost },
-        cash: { increment: def.treasuryCost },
-        totalRevenue: { increment: def.treasuryCost },
+        goodsStock: { decrement: goodsCost },
+        cash: { increment: treasuryCost },
+        totalRevenue: { increment: treasuryCost },
       },
     }),
   ]);

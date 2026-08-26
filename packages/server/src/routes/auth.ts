@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { STARTING_TREASURY } from "@dominion/shared";
 import { prisma } from "../db.js";
 import {
   clearSessionCookie,
@@ -37,7 +38,7 @@ authRouter.post("/register", async (req, res) => {
   const passwordHash = await hashPassword(password);
   const player = await prisma.player.create({ data: { email, passwordHash } });
   await createPlayerSettlement(player.id, settlementName?.trim() || "New Settlement");
-  await prisma.government.create({ data: { playerId: player.id } });
+  await prisma.government.create({ data: { playerId: player.id, treasury: STARTING_TREASURY } });
 
   const token = signSession({ playerId: player.id });
   setSessionCookie(res, token);

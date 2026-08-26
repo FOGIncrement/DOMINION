@@ -21,6 +21,7 @@ import { marketRouter } from "./routes/market.js";
 import { newsRouter } from "./routes/news.js";
 import { stocksRouter } from "./routes/stocks.js";
 import { techRouter } from "./routes/tech.js";
+import { tutorialRouter } from "./routes/tutorial.js";
 import { worldRouter } from "./routes/world.js";
 import { startScheduler } from "./scheduler.js";
 
@@ -48,6 +49,7 @@ app.use("/api/infrastructure", infrastructureRouter);
 app.use("/api/world", worldRouter);
 app.use("/api/news", newsRouter);
 app.use("/api/tech", techRouter);
+app.use("/api/tutorial", tutorialRouter);
 app.use("/api/cheats", cheatsRouter);
 
 // Serves the built client (packages/client/dist) when present, so one

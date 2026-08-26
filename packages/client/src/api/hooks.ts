@@ -112,3 +112,10 @@ export function useZones() {
 export function useMyZoneProjects() {
   return useQuery({ queryKey: ["myZoneProjects"], queryFn: api.myZoneProjects, refetchInterval: POLL_MS });
 }
+
+// No refetchInterval — the tutorial only ever moves forward in response to
+// the player's own actions in this session, each of which already
+// invalidates ["tutorial"] itself, so polling would just be wasted requests.
+export function useTutorial() {
+  return useQuery({ queryKey: ["tutorial"], queryFn: api.tutorial });
+}
