@@ -5,12 +5,12 @@ import { api, ApiError, type ZoneRect } from "../api/client.js";
 import { useAllCompanies, useGovernment, useMyCompanies, useMyZoneProjects, useTutorial, useWorldMap, useZones } from "../api/hooks.js";
 
 // A modest default footprint for players commissioning straight from this
-// form instead of dragging on the Map page — 25 cells, roughly what the
-// old flat "+2 slots per commission" used to grant at today's
-// CELLS_PER_ZONE_SLOT. The Map page's drag interaction is the primary way
-// to size a zone deliberately; this is just a reasonable non-zero fallback
-// so the form still works without ever visiting the map.
-const DEFAULT_ZONE_SIZE = 5;
+// form instead of dragging on the Map page — 4 cells (2x2), matching
+// CELLS_PER_ZONE_SLOT = 1 (each cell is one company's founding capacity).
+// The Map page's drag interaction is the primary way to size a zone
+// deliberately; this is just a reasonable non-zero fallback so the form
+// still works without ever visiting the map.
+const DEFAULT_ZONE_SIZE = 2;
 
 function rectsOverlap(a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }): boolean {
   return !(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y);

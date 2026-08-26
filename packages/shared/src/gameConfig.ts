@@ -42,11 +42,11 @@ export const WORLD_PLOT_ROWS = 8;
 export const PLOT_ZONING_SIZE = 10;
 
 // A dragged zone's founding-capacity grant is its area divided by this —
-// sized so a modest zone (roughly a third of a settlement's land) grants
-// about what today's flat "+2 slots per commission" already does. A
-// first-pass number, not carefully balanced, same as every other
-// zone/economy constant introduced this session.
-export const CELLS_PER_ZONE_SLOT = 10;
+// kept at 1 so each individual grid square on the zone tool grants exactly
+// one company's founding capacity, a direct and legible relationship
+// rather than a hidden ratio. Left as a named constant (not inlined) so
+// this can still be retuned later without touching every call site.
+export const CELLS_PER_ZONE_SLOT = 1;
 
 export const BUILDING_TYPES: Record<BuildingTypeId, BuildingTypeDef> = {
   house: {
