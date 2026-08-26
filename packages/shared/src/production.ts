@@ -1,17 +1,14 @@
-import { BUILDING_TYPES, TECHS } from "./gameConfig.js";
+import { BUILDING_TYPES, BUILDING_UPGRADE_TUNING, TECHS } from "./gameConfig.js";
 import type { BuildingTypeDef, BuildingTypeId, ResourceBundle, ResourceType, TechId } from "./types.js";
 
-// Same idiom as COMPANY_UPGRADE_TUNING — a level directly multiplies output
-// (see computeHourlyProduction below), so this just prices that multiplier.
-export const BUILDING_UPGRADE_TUNING = {
-  maxLevel: 5,
-  costMultiplierPerLevel: 1.8, // upgrade cost = building's founding cost * multiplier^currentLevel
-};
-
 /** Resource cost to go from `level` to `level + 1`, or null once maxLevel is reached. */
-export function computeBuildingUpgradeCost(def: BuildingTypeDef, level: number): ResourceBundle | null {
-  if (level >= BUILDING_UPGRADE_TUNING.maxLevel) return null;
-  const multiplier = BUILDING_UPGRADE_TUNING.costMultiplierPerLevel ** level;
+export function computeBuildingUpgradeCost(
+  def: BuildingTypeDef,
+  level: number,
+  tuning: typeof BUILDING_UPGRADE_TUNING = BUILDING_UPGRADE_TUNING,
+): ResourceBundle | null {
+  if (level >= tuning.maxLevel) return null;
+  const multiplier = tuning.costMultiplierPerLevel ** level;
   const cost: ResourceBundle = {};
   for (const [resource, amount] of Object.entries(def.cost)) {
     cost[resource as ResourceType] = (amount ?? 0) * multiplier;
@@ -34,6 +31,7 @@ export interface ProducingBuilding {
 export function computeHourlyProduction(
   buildings: ProducingBuilding[],
   techIds: string[],
+  buildingTypes: typeof BUILDING_TYPES = BUILDING_TYPES,
 ): Record<ResourceType, number> {
   const totals: Record<ResourceType, number> = { food: 0, wood: 0, stone: 0, gold: 0 };
 
@@ -50,7 +48,7 @@ export function computeHourlyProduction(
   }
 
   for (const building of buildings) {
-    const def = BUILDING_TYPES[building.type];
+    const def = buildingTypes[building.type];
     if (!def.producesResource || !def.productionPerWorkerPerHour) continue;
     if (building.workersAssigned <= 0) continue;
 

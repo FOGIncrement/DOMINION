@@ -1,4 +1,4 @@
-import { LUXURY_GOODS_TUNING, RETAIL_TUNING } from "@dominion/shared";
+import { getConfig } from "../gameConfigStore.js";
 import { applyTradeImpact, type TradeableResource } from "./market.js";
 import { STOCK_BUFFER, type MutableResources } from "./npcEconomy.js";
 import type { CompanySnapshot, SettlementSnapshot } from "./types.js";
@@ -63,7 +63,7 @@ export function maybeBuyFromOwnedRetail(
   const need = STOCK_BUFFER.food - state.food;
   if (need <= 0.01) return null;
 
-  const price = prices.food * RETAIL_TUNING.markup;
+  const price = prices.food * getConfig().RETAIL_TUNING.markup;
   const sale = buyFromOwnedCompany(retailCompanies, need, state.gold, price);
   if (sale) {
     state.food += sale.quantity;
@@ -89,11 +89,12 @@ export async function applyLuxuryGoodsPurchase(
   bakeryCompanies: CompanySnapshot[],
   elapsedHours: number,
 ): Promise<{ happinessBoost: number; sale: DirectSaleResult | null }> {
-  const desired = settlement.population.count * LUXURY_GOODS_TUNING.goodsWantedPerCapitaPerHour * elapsedHours;
+  const luxuryTuning = getConfig().LUXURY_GOODS_TUNING;
+  const desired = settlement.population.count * luxuryTuning.goodsWantedPerCapitaPerHour * elapsedHours;
   if (desired <= 0.01 || state.gold <= 0) return { happinessBoost: 0, sale: null };
 
-  const goldBudget = state.gold * LUXURY_GOODS_TUNING.maxGoldSpendFraction;
-  const price = prices.goods * LUXURY_GOODS_TUNING.markup;
+  const goldBudget = state.gold * luxuryTuning.maxGoldSpendFraction;
+  const price = prices.goods * luxuryTuning.markup;
 
   const sale = buyFromOwnedCompany(bakeryCompanies, desired, goldBudget, price);
   let fulfilled = sale?.quantity ?? 0;
@@ -111,6 +112,6 @@ export async function applyLuxuryGoodsPurchase(
   }
 
   state.gold -= spent;
-  const happinessBoost = LUXURY_GOODS_TUNING.happinessBoostPerHour * (fulfilled / desired) * elapsedHours;
+  const happinessBoost = luxuryTuning.happinessBoostPerHour * (fulfilled / desired) * elapsedHours;
   return { happinessBoost, sale };
 }

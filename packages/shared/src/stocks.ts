@@ -24,9 +24,13 @@ export interface ValuationInputs extends ProfitInputs {
 }
 
 /** A "P/E"-like multiple of profit rate plus a book-value (cash/share) component. */
-export function computeTargetSharePrice(company: ValuationInputs, now: Date = new Date()): number {
+export function computeTargetSharePrice(
+  company: ValuationInputs,
+  now: Date = new Date(),
+  stockTuning: typeof STOCK_TUNING = STOCK_TUNING,
+): number {
   if (company.sharesOutstanding <= 0) return 0;
   const profitRate = computeProfitRatePerHour(company, now);
-  const valuation = profitRate * STOCK_TUNING.profitMultiplier + company.cash * STOCK_TUNING.bookValueWeight;
-  return Math.max(STOCK_TUNING.minSharePrice, valuation / company.sharesOutstanding);
+  const valuation = profitRate * stockTuning.profitMultiplier + company.cash * stockTuning.bookValueWeight;
+  return Math.max(stockTuning.minSharePrice, valuation / company.sharesOutstanding);
 }

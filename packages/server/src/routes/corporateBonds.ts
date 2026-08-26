@@ -3,12 +3,14 @@ import { z } from "zod";
 import { BOND_TERM_OPTIONS, computeBondRedemptionValue, computeCorporateBondRate, computeMaxLoanAmount } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
+import { getConfig } from "../gameConfigStore.js";
 import { getControllingPlayerId } from "../simulation/control.js";
 
 export const corporateBondsRouter = Router();
 corporateBondsRouter.use(requireAuth);
 
 corporateBondsRouter.get("/companies", async (req: AuthedRequest, res) => {
+  const bankTuning = getConfig().BANK_TUNING;
   const companies = await prisma.company.findMany({ where: { closedAt: null } });
   const withControl = await Promise.all(
     companies.map(async (c) => ({
@@ -16,7 +18,7 @@ corporateBondsRouter.get("/companies", async (req: AuthedRequest, res) => {
       name: c.name,
       industry: c.industry,
       cash: c.cash,
-      maxIssuance: computeMaxLoanAmount(c.cash),
+      maxIssuance: computeMaxLoanAmount(c.cash, bankTuning),
       controlledByMe: (await getControllingPlayerId(c)) === req.playerId,
     })),
   );
@@ -61,12 +63,14 @@ corporateBondsRouter.post("/", async (req: AuthedRequest, res) => {
     return;
   }
 
+  const config = getConfig();
+
   // Same credit-limit idiom as a bank loan (computeMaxLoanAmount, 5x cash) —
   // a company can't raise arbitrarily large debt regardless of size. Like
   // loans, this doesn't account for other debt already outstanding on the
   // company (existing loans or bonds) — matching that existing simplification
   // rather than introducing a stricter, inconsistent cap just for bonds.
-  const maxIssuance = computeMaxLoanAmount(company.cash);
+  const maxIssuance = computeMaxLoanAmount(company.cash, config.BANK_TUNING);
   if (parsed.data.amount > maxIssuance) {
     res.status(400).json({
       error: `This company can only raise up to ${maxIssuance.toFixed(0)} gold in bonds right now (5x its cash)`,
@@ -84,7 +88,11 @@ corporateBondsRouter.post("/", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const interestRatePerHour = computeCorporateBondRate(termOption.hours, parsed.data.amount, company.cash);
+  const interestRatePerHour = computeCorporateBondRate(termOption.hours, parsed.data.amount, company.cash, {
+    bond: config.BOND_TUNING,
+    corporateBond: config.CORPORATE_BOND_TUNING,
+    bank: config.BANK_TUNING,
+  });
   const now = new Date();
   const maturesAt = new Date(now.getTime() + termOption.hours * 60 * 60 * 1000);
 

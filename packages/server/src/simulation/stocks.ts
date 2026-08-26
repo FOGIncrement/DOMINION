@@ -10,13 +10,14 @@ export function driftSharePrice(
   currentPrice: number,
   targetPrice: number,
   elapsedHours: number = REFERENCE_TICK_HOURS,
+  stockTuning: typeof STOCK_TUNING = STOCK_TUNING,
 ): number {
   const stepMultiplier = Math.max(1, elapsedHours / REFERENCE_TICK_HOURS);
-  const base = Math.max(currentPrice, STOCK_TUNING.minSharePrice);
-  const maxStep = base * STOCK_TUNING.maxPriceStepPerTick * stepMultiplier;
+  const base = Math.max(currentPrice, stockTuning.minSharePrice);
+  const maxStep = base * stockTuning.maxPriceStepPerTick * stepMultiplier;
   const direction = Math.sign(targetPrice - currentPrice);
   const step = Math.min(Math.abs(targetPrice - currentPrice), maxStep);
-  return Math.max(STOCK_TUNING.minSharePrice, currentPrice + direction * step);
+  return Math.max(stockTuning.minSharePrice, currentPrice + direction * step);
 }
 
 /**
@@ -39,10 +40,11 @@ export async function applyShareTradeImpact(
   side: "buy" | "sell",
   shares: number,
   currentPrice: number,
+  stockTuning: typeof STOCK_TUNING = STOCK_TUNING,
 ): Promise<number> {
   const direction = side === "buy" ? 1 : -1;
-  const impact = currentPrice * STOCK_TUNING.tradeImpact * shares * direction;
-  const newPrice = Math.max(STOCK_TUNING.minSharePrice, currentPrice + impact);
+  const impact = currentPrice * stockTuning.tradeImpact * shares * direction;
+  const newPrice = Math.max(stockTuning.minSharePrice, currentPrice + impact);
   await prisma.company.update({ where: { id: companyId }, data: { sharePrice: newPrice } });
   return newPrice;
 }
@@ -52,12 +54,15 @@ export async function applyShareTradeImpact(
  * split pro-rata across every shareholder (player settlement gold or NPC
  * investor cash, whichever applies).
  */
-export async function maybeDividend(company: { id: string; cash: number; sharesOutstanding: number }): Promise<void> {
-  if (company.cash < DIVIDEND_TUNING.cashThreshold) return;
+export async function maybeDividend(
+  company: { id: string; cash: number; sharesOutstanding: number },
+  dividendTuning: typeof DIVIDEND_TUNING = DIVIDEND_TUNING,
+): Promise<void> {
+  if (company.cash < dividendTuning.cashThreshold) return;
   if (company.sharesOutstanding <= 0) return;
-  if (Math.random() > DIVIDEND_TUNING.chancePerTick) return;
+  if (Math.random() > dividendTuning.chancePerTick) return;
 
-  const payout = company.cash * DIVIDEND_TUNING.payoutFraction;
+  const payout = company.cash * dividendTuning.payoutFraction;
   if (payout <= 0) return;
 
   const holdings = await prisma.shareholding.findMany({ where: { companyId: company.id } });

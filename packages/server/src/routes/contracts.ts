@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
-import { COMPANY_INDUSTRIES, CONTRACT_TERM_HOURS_OPTIONS, type CompanyIndustryId } from "@dominion/shared";
+import { CONTRACT_TERM_HOURS_OPTIONS, type CompanyIndustryId } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
+import { getConfig } from "../gameConfigStore.js";
 
 export const contractsRouter = Router();
 contractsRouter.use(requireAuth);
@@ -128,8 +129,9 @@ contractsRouter.post("/", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const sellerIndustry = COMPANY_INDUSTRIES[seller.industry as CompanyIndustryId];
-  const buyerIndustry = COMPANY_INDUSTRIES[buyer.industry as CompanyIndustryId];
+  const config = getConfig();
+  const sellerIndustry = config.COMPANY_INDUSTRIES[seller.industry as CompanyIndustryId];
+  const buyerIndustry = config.COMPANY_INDUSTRIES[buyer.industry as CompanyIndustryId];
   if (sellerIndustry.contractOnly) {
     res.status(400).json({ error: `${sellerIndustry.name} companies don't produce anything to sell under contract` });
     return;

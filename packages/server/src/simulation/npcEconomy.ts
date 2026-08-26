@@ -1,5 +1,5 @@
-import { BUILDING_TYPES, NPC_GROWTH_TUNING } from "@dominion/shared";
 import { prisma } from "../db.js";
+import { getConfig } from "../gameConfigStore.js";
 import { applyTradeImpact, type TradeableResource } from "./market.js";
 import type { SettlementSnapshot } from "./types.js";
 
@@ -115,14 +115,15 @@ export async function maybeExpand(
   settlement: SettlementSnapshot,
   state: MutableResources,
 ): Promise<string | null> {
-  if (state.gold < NPC_GROWTH_TUNING.minGoldToExpand) return null;
-  if (Math.random() > NPC_GROWTH_TUNING.expandChancePerTick) return null;
+  const config = getConfig();
+  if (state.gold < config.NPC_GROWTH_TUNING.minGoldToExpand) return null;
+  if (Math.random() > config.NPC_GROWTH_TUNING.expandChancePerTick) return null;
 
-  const producing = settlement.buildings.filter((b) => BUILDING_TYPES[b.type].producesResource);
+  const producing = settlement.buildings.filter((b) => config.BUILDING_TYPES[b.type].producesResource);
   if (producing.length === 0) return null;
 
   const choice = producing[Math.floor(Math.random() * producing.length)];
-  const def = BUILDING_TYPES[choice.type];
+  const def = config.BUILDING_TYPES[choice.type];
   const costWood = def.cost.wood ?? 0;
   const costStone = def.cost.stone ?? 0;
   if (state.wood < costWood || state.stone < costStone) return null;
@@ -163,23 +164,24 @@ export async function maybeAssignIdleWorkers(
   newPopulationCount: number,
   wellFed: boolean,
 ): Promise<void> {
+  const buildingTypes = getConfig().BUILDING_TYPES;
   const totalAssigned = [...currentAssignments.values()].reduce((sum, n) => sum + n, 0);
   let idle = Math.floor(newPopulationCount) - totalAssigned;
   if (idle <= 0) return;
 
-  const producing = settlement.buildings.filter((b) => BUILDING_TYPES[b.type].producesResource);
+  const producing = settlement.buildings.filter((b) => buildingTypes[b.type].producesResource);
   if (producing.length === 0) return;
 
   const priority = wellFed ? PRODUCE_PRIORITY_WHEN_FED : PRODUCE_PRIORITY_WHEN_HUNGRY;
   const ordered = [...producing].sort(
     (a, b) =>
-      (priority[BUILDING_TYPES[a.type].producesResource!] ?? 3) -
-      (priority[BUILDING_TYPES[b.type].producesResource!] ?? 3),
+      (priority[buildingTypes[a.type].producesResource!] ?? 3) -
+      (priority[buildingTypes[b.type].producesResource!] ?? 3),
   );
 
   for (const building of ordered) {
     if (idle <= 0) break;
-    const maxWorkers = BUILDING_TYPES[building.type].maxWorkers;
+    const maxWorkers = buildingTypes[building.type].maxWorkers;
     const current = currentAssignments.get(building.id) ?? building.workersAssigned;
     const room = maxWorkers - current;
     if (room <= 0) continue;

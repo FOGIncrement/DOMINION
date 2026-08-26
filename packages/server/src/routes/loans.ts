@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
-import { BANK_TUNING } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
+import { getConfig } from "../gameConfigStore.js";
 
 export const loansRouter = Router();
 loansRouter.use(requireAuth);
@@ -24,8 +24,9 @@ function defaultRisk(
     return "low";
   }
   const ratio = outstandingBalance / principal;
-  if (ratio > BANK_TUNING.defaultMultiplier * 0.8) return "high";
-  if (ratio > BANK_TUNING.defaultMultiplier * 0.5) return "medium";
+  const defaultMultiplier = getConfig().BANK_TUNING.defaultMultiplier;
+  if (ratio > defaultMultiplier * 0.8) return "high";
+  if (ratio > defaultMultiplier * 0.5) return "medium";
   return "low";
 }
 

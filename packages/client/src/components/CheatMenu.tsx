@@ -1,7 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client.js";
-import { useCheatsEnabled, useMyCompanies } from "../api/hooks.js";
+import { useCheatsEnabled, useMe, useMyCompanies } from "../api/hooks.js";
 
 function invalidateEverything(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries();
@@ -9,6 +10,7 @@ function invalidateEverything(queryClient: ReturnType<typeof useQueryClient>) {
 
 export default function CheatMenu() {
   const { data: status } = useCheatsEnabled();
+  const { data: me } = useMe();
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +78,13 @@ export default function CheatMenu() {
       {open && (
         <div className="cheat-menu__panel">
           <div className="cheat-menu__title">Dev Cheat Menu</div>
+          {me?.isAdmin && (
+            <div className="cheat-menu__section">
+              <Link className="btn btn--accent" to="/admin/config">
+                Balance Config →
+              </Link>
+            </div>
+          )}
           {error && <div className="auth-error">{error}</div>}
           {message && !error && <div className="suggestion">{message}</div>}
 

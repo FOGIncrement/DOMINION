@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
 import {
-  BUILDING_TYPES,
   BUILDING_TYPE_IDS,
   RESOURCE_TYPES,
   TECHS,
@@ -12,6 +11,7 @@ import {
 } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
+import { getConfig } from "../gameConfigStore.js";
 import { housingCapacity } from "../simulation/consumption.js";
 import { computeOfflineSummaryAndAdvance } from "../offlineSummary.js";
 import type { SettlementSnapshot } from "../simulation/types.js";
@@ -61,6 +61,7 @@ gameRouter.get("/state", async (req: AuthedRequest, res) => {
     res.status(404).json({ error: "No settlement found for this player" });
     return;
   }
+  const config = getConfig();
   const snapshot = toSnapshot(settlement);
 
   const offlineSummary = await computeOfflineSummaryAndAdvance(req.playerId!, settlement.id, {
@@ -105,7 +106,11 @@ gameRouter.get("/state", async (req: AuthedRequest, res) => {
       type: b.type,
       level: b.level,
       workersAssigned: b.workersAssigned,
-      upgradeCost: computeBuildingUpgradeCost(BUILDING_TYPES[b.type as BuildingTypeId], b.level),
+      upgradeCost: computeBuildingUpgradeCost(
+        config.BUILDING_TYPES[b.type as BuildingTypeId],
+        b.level,
+        config.BUILDING_UPGRADE_TUNING,
+      ),
     })),
     techIds: settlement.techs.map((t) => t.techId),
     offlineSummary,
@@ -127,7 +132,7 @@ gameRouter.post("/buildings", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const def = BUILDING_TYPES[parsed.data.type];
+  const def = getConfig().BUILDING_TYPES[parsed.data.type];
   if (def.retiredForConstruction) {
     res.status(400).json({
       error: `${def.name} is no longer buildable directly — found a company in that industry instead. Any ${def.name} you already have keeps working.`,
@@ -185,7 +190,7 @@ gameRouter.post("/workers", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const def = BUILDING_TYPES[building.type as BuildingTypeId];
+  const def = getConfig().BUILDING_TYPES[building.type as BuildingTypeId];
   const desired = Math.min(parsed.data.workersAssigned, def.maxWorkers);
 
   // Only the population cap for *increasing* workers on this building —
@@ -234,8 +239,9 @@ gameRouter.post("/buildings/:id/upgrade", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const def = BUILDING_TYPES[building.type as BuildingTypeId];
-  const cost = computeBuildingUpgradeCost(def, building.level);
+  const config = getConfig();
+  const def = config.BUILDING_TYPES[building.type as BuildingTypeId];
+  const cost = computeBuildingUpgradeCost(def, building.level, config.BUILDING_UPGRADE_TUNING);
   if (cost === null) {
     res.status(400).json({ error: "Already at max level" });
     return;

@@ -1,10 +1,7 @@
 import {
-  BASE_PRICES,
   CELLS_PER_ZONE_SLOT,
-  COMPANY_INDUSTRIES,
   MAX_CATCHUP_HOURS,
   REFERENCE_TICK_HOURS,
-  WORLD_DEMAND_TUNING,
   ZONE_TYPES,
   computeBondRedemptionValue,
   computeCompanyMaxWorkers,
@@ -16,6 +13,7 @@ import {
   type ZoneTypeId,
 } from "@dominion/shared";
 import { prisma } from "../db.js";
+import { getConfig } from "../gameConfigStore.js";
 import { accrueDepositInterest, accrueLoanInterest, isLoanDefaulted, maybeBorrow, maybeRepayLoan } from "./banks.js";
 import { tickCompany } from "./companies.js";
 import { autoCloseCompany, shouldAutoClose, shouldForceLayoff } from "./companyFailure.js";
@@ -153,9 +151,10 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
   // company's own update" idiom the loan/deposit ledgers further down use.
   const ownedSaleRevenueByCompanyId = new Map<string, number>();
 
+  const config = getConfig();
   const marketRows = await prisma.marketResource.findMany();
   const prices = Object.fromEntries(
-    TRADEABLE_RESOURCES.map((r) => [r, marketRows.find((m) => m.resourceType === r)?.price ?? BASE_PRICES[r]]),
+    TRADEABLE_RESOURCES.map((r) => [r, marketRows.find((m) => m.resourceType === r)?.price ?? config.BASE_PRICES[r]]),
   ) as Record<TradeableResource, number>;
 
   const flows = Object.fromEntries(
@@ -182,7 +181,7 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     const elapsedHours = Math.max(0, Math.min(MAX_CATCHUP_HOURS, rawElapsedHours));
     if (elapsedHours <= 0) continue;
 
-    const production = computeProduction(settlement, elapsedHours);
+    const production = computeProduction(settlement, elapsedHours, config.BUILDING_TYPES);
 
     flows.food.supply += production.food;
     flows.wood.supply += production.wood;
@@ -214,11 +213,11 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
 
     flows.food.demand += consumption.foodConsumed;
     flows.wood.demand +=
-      settlement.population.count * WORLD_DEMAND_TUNING.woodDemandPerCapitaPerHour * elapsedHours;
+      settlement.population.count * config.WORLD_DEMAND_TUNING.woodDemandPerCapitaPerHour * elapsedHours;
     flows.stone.demand +=
-      settlement.population.count * WORLD_DEMAND_TUNING.stoneDemandPerCapitaPerHour * elapsedHours;
+      settlement.population.count * config.WORLD_DEMAND_TUNING.stoneDemandPerCapitaPerHour * elapsedHours;
     flows.goods.demand +=
-      settlement.population.count * WORLD_DEMAND_TUNING.goodsDemandPerCapitaPerHour * elapsedHours;
+      settlement.population.count * config.WORLD_DEMAND_TUNING.goodsDemandPerCapitaPerHour * elapsedHours;
 
     // Every settlement, not just NPCs — maybeExpand/settleNpcSurplus (below)
     // stay NPC-only since nothing player-side acts on materials this way,
@@ -287,8 +286,8 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
         for (const company of ownedCompanies) {
           if (idleForHiring <= 0) break;
           if (!company.autoStaff) continue;
-          const industry = COMPANY_INDUSTRIES[company.industry];
-          const room = computeCompanyMaxWorkers(industry, company.level) - company.workersAssigned;
+          const industry = config.COMPANY_INDUSTRIES[company.industry];
+          const room = computeCompanyMaxWorkers(industry, company.level, config.COMPANY_UPGRADE_TUNING) - company.workersAssigned;
           if (room <= 0) continue;
           const toAssign = Math.min(room, idleForHiring);
           company.workersAssigned += toAssign;
@@ -339,8 +338,8 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     const elapsedHours = Math.max(0, Math.min(MAX_CATCHUP_HOURS, rawElapsedHours));
     if (elapsedHours <= 0) continue;
 
-    const result = tickCompany(company, elapsedHours);
-    const industry = COMPANY_INDUSTRIES[company.industry];
+    const industry = config.COMPANY_INDUSTRIES[company.industry];
+    const result = tickCompany(company, elapsedHours, industry, config.COMPANY_UPGRADE_TUNING);
 
     if (industry.inputResource) {
       flows[industry.inputResource].demand += result.inputConsumed;
@@ -378,7 +377,7 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     // off of.
     revenue += ownedSaleRevenueByCompanyId.get(company.id) ?? 0;
 
-    if (shouldAutoClose(industry, state.cash, company.isPublic)) {
+    if (shouldAutoClose(industry, state.cash, company.isPublic, config.COMPANY_FAILURE_TUNING)) {
       await autoCloseCompany(company.id, state.cash);
       continue;
     }
@@ -415,7 +414,7 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     // ratio-based check — the discount it got at creation (see banks.ts) was
     // priced on the certainty of repayment by this date, not on balance growth.
     const pastMaturity = loan.maturityAt !== null && now >= loan.maturityAt && newBalance > 0;
-    const defaulted = pastMaturity || isLoanDefaulted({ ...loan, outstandingBalance: newBalance });
+    const defaulted = pastMaturity || isLoanDefaulted({ ...loan, outstandingBalance: newBalance }, config.BANK_TUNING);
 
     await prisma.loan.update({
       where: { id: loan.id },
@@ -600,8 +599,8 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
   const investingSnapshot: PublicCompanyForInvesting[] = [];
 
   for (const company of publicCompanies) {
-    const targetPrice = computeTargetSharePrice(company, now);
-    const newPrice = driftSharePrice(company.sharePrice, targetPrice, worldElapsedHours);
+    const targetPrice = computeTargetSharePrice(company, now, config.STOCK_TUNING);
+    const newPrice = driftSharePrice(company.sharePrice, targetPrice, worldElapsedHours, config.STOCK_TUNING);
 
     await prisma.company.update({ where: { id: company.id }, data: { sharePrice: newPrice } });
     await prisma.sharePriceHistoryPoint.create({ data: { companyId: company.id, price: newPrice } });
@@ -624,7 +623,7 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
   await runNpcInvestorTick(investingSnapshot);
 
   for (const company of publicCompanies) {
-    await maybeDividend(company);
+    await maybeDividend(company, config.DIVIDEND_TUNING);
   }
 
   await tickMarket(flows, worldElapsedHours);

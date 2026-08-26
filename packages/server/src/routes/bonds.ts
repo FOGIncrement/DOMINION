@@ -3,6 +3,7 @@ import { z } from "zod";
 import { BOND_TERM_OPTIONS, computeBondRate, computeBondRedemptionValue } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
+import { getConfig } from "../gameConfigStore.js";
 
 export const bondsRouter = Router();
 bondsRouter.use(requireAuth);
@@ -67,7 +68,7 @@ bondsRouter.post("/", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const interestRatePerHour = computeBondRate(termOption.hours);
+  const interestRatePerHour = computeBondRate(termOption.hours, getConfig().BOND_TUNING);
   const now = new Date();
   const maturesAt = new Date(now.getTime() + termOption.hours * 60 * 60 * 1000);
 

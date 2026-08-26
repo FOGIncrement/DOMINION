@@ -1,5 +1,6 @@
-import { NPC_INVESTOR_TUNING, computeProfitRatePerHour } from "@dominion/shared";
+import { computeProfitRatePerHour } from "@dominion/shared";
 import { prisma } from "../db.js";
+import { getConfig } from "../gameConfigStore.js";
 import { announceControlChangeIfAny, getControllingPlayerId } from "./control.js";
 import { applyShareTradeImpact, availableShareFloat } from "./stocks.js";
 
@@ -29,7 +30,8 @@ async function investorHolding(investorId: string, companyId: string) {
 }
 
 async function buyShares(investor: InvestorLike, company: PublicCompanyForInvesting): Promise<void> {
-  const budget = investor.cash * NPC_INVESTOR_TUNING.buySpendFraction;
+  const config = getConfig();
+  const budget = investor.cash * config.NPC_INVESTOR_TUNING.buySpendFraction;
   if (budget < 1 || company.sharePrice <= 0) return;
 
   const float = await availableShareFloat(company.id, company.sharesOutstanding);
@@ -45,21 +47,22 @@ async function buyShares(investor: InvestorLike, company: PublicCompanyForInvest
     await prisma.shareholding.create({ data: { companyId: company.id, npcInvestorId: investor.id, shares } });
   }
   await prisma.npcInvestor.update({ where: { id: investor.id }, data: { cash: { decrement: budget } } });
-  await applyShareTradeImpact(company.id, "buy", shares, company.sharePrice);
+  await applyShareTradeImpact(company.id, "buy", shares, company.sharePrice, config.STOCK_TUNING);
   await announceControlChangeIfAny(company, beforeControllerId);
 }
 
 async function sellShares(investorId: string, company: PublicCompanyForInvesting): Promise<void> {
+  const config = getConfig();
   const holding = await investorHolding(investorId, company.id);
   if (!holding || holding.shares <= 0) return;
-  const sharesToSell = holding.shares * NPC_INVESTOR_TUNING.sellFraction;
+  const sharesToSell = holding.shares * config.NPC_INVESTOR_TUNING.sellFraction;
   const proceeds = sharesToSell * company.sharePrice;
 
   const beforeControllerId = await getControllingPlayerId(company);
 
   await prisma.shareholding.update({ where: { id: holding.id }, data: { shares: holding.shares - sharesToSell } });
   await prisma.npcInvestor.update({ where: { id: investorId }, data: { cash: { increment: proceeds } } });
-  await applyShareTradeImpact(company.id, "sell", sharesToSell, company.sharePrice);
+  await applyShareTradeImpact(company.id, "sell", sharesToSell, company.sharePrice, config.STOCK_TUNING);
   await announceControlChangeIfAny(company, beforeControllerId);
 }
 
@@ -70,7 +73,7 @@ async function actConservative(investor: InvestorLike, companies: PublicCompanyF
     .filter((c) => computeProfitRatePerHour(c, now) >= 0)
     .sort((a, b) => b.cash - a.cash)[0];
 
-  if (best && investor.cash > NPC_INVESTOR_TUNING.minCashToAct) {
+  if (best && investor.cash > getConfig().NPC_INVESTOR_TUNING.minCashToAct) {
     await buyShares(investor, best);
     return;
   }
@@ -89,7 +92,7 @@ async function actGrowth(investor: InvestorLike, companies: PublicCompanyForInve
   );
   const best = ranked[0];
 
-  if (best && investor.cash > NPC_INVESTOR_TUNING.minCashToAct) {
+  if (best && investor.cash > getConfig().NPC_INVESTOR_TUNING.minCashToAct) {
     await buyShares(investor, best);
   }
   for (const company of companies) {
@@ -105,7 +108,7 @@ async function actSpeculator(investor: InvestorLike, companies: PublicCompanyFor
   const best = ranked[0];
   const worst = ranked[ranked.length - 1];
 
-  if (best && best.priceDeltaThisTick > 0 && investor.cash > NPC_INVESTOR_TUNING.minCashToAct) {
+  if (best && best.priceDeltaThisTick > 0 && investor.cash > getConfig().NPC_INVESTOR_TUNING.minCashToAct) {
     await buyShares(investor, best);
   }
   if (worst && worst.priceDeltaThisTick < 0) {
@@ -118,7 +121,7 @@ export async function runNpcInvestorTick(companies: PublicCompanyForInvesting[])
 
   const investors = await prisma.npcInvestor.findMany();
   for (const investor of investors) {
-    if (Math.random() > NPC_INVESTOR_TUNING.actChancePerTick) continue;
+    if (Math.random() > getConfig().NPC_INVESTOR_TUNING.actChancePerTick) continue;
 
     if (investor.archetype === "conservative") await actConservative(investor, companies);
     else if (investor.archetype === "growth") await actGrowth(investor, companies);

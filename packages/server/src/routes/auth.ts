@@ -75,5 +75,5 @@ authRouter.get("/me", requireAuth, async (req: AuthedRequest, res) => {
     res.status(404).json({ error: "Player not found" });
     return;
   }
-  res.json({ playerId: player.id, email: player.email });
+  res.json({ playerId: player.id, email: player.email, isAdmin: player.isAdmin });
 });

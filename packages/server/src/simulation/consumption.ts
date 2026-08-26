@@ -1,4 +1,5 @@
-import { BASE_HOUSING_CAPACITY, BUILDING_TYPES, POPULATION_TUNING } from "@dominion/shared";
+import { BASE_HOUSING_CAPACITY } from "@dominion/shared";
+import { getConfig } from "../gameConfigStore.js";
 import type { SettlementSnapshot } from "./types.js";
 
 export interface ConsumptionResult {
@@ -9,9 +10,10 @@ export interface ConsumptionResult {
 }
 
 export function housingCapacity(settlement: SettlementSnapshot): number {
+  const buildingTypes = getConfig().BUILDING_TYPES;
   let capacity = BASE_HOUSING_CAPACITY;
   for (const building of settlement.buildings) {
-    const def = BUILDING_TYPES[building.type];
+    const def = buildingTypes[building.type];
     if (def.populationCapacity) {
       capacity += def.populationCapacity * building.level;
     }
@@ -24,8 +26,9 @@ export function computeConsumption(
   foodAvailableAfterProduction: number,
   elapsedHours: number,
 ): ConsumptionResult {
+  const populationTuning = getConfig().POPULATION_TUNING;
   const { count, happiness } = settlement.population;
-  const foodNeeded = count * POPULATION_TUNING.foodConsumptionPerCapitaPerHour * elapsedHours;
+  const foodNeeded = count * populationTuning.foodConsumptionPerCapitaPerHour * elapsedHours;
   const wellFed = foodAvailableAfterProduction >= foodNeeded;
   const capacity = housingCapacity(settlement);
 
@@ -34,16 +37,16 @@ export function computeConsumption(
 
   if (wellFed) {
     if (count < capacity) {
-      const growth = count * POPULATION_TUNING.growthRatePerHourWhenFed * elapsedHours;
+      const growth = count * populationTuning.growthRatePerHourWhenFed * elapsedHours;
       newPopulationCount = Math.min(capacity, count + growth);
     }
-    newHappiness = Math.min(1, happiness + POPULATION_TUNING.happinessRecoveryPerHour * elapsedHours);
+    newHappiness = Math.min(1, happiness + populationTuning.happinessRecoveryPerHour * elapsedHours);
   } else {
-    const shrink = count * POPULATION_TUNING.starvationShrinkPerHourWhenHungry * elapsedHours;
+    const shrink = count * populationTuning.starvationShrinkPerHourWhenHungry * elapsedHours;
     newPopulationCount = Math.max(1, count - shrink);
     newHappiness = Math.max(
       0,
-      happiness - POPULATION_TUNING.happinessDeclinePerHourWhenHungry * elapsedHours,
+      happiness - populationTuning.happinessDeclinePerHourWhenHungry * elapsedHours,
     );
   }
 

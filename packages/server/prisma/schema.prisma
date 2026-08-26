@@ -23,6 +23,10 @@ model Player {
   // default) — the column default only governs brand-new registrations
   // going forward. See routes/tutorial.ts and shared's TUTORIAL_STEPS.
   tutorialStep     String   @default("found_company")
+  // Bootstrapped at server boot from ADMIN_EMAIL, not settable via any
+  // route — see index.ts. Gates the balance-config panel and (combined
+  // with the separate ENABLE_CHEATS env kill-switch) the disposable cheats.
+  isAdmin          Boolean  @default(false)
 
   settlement Settlement?
   companies  Company[]
@@ -428,4 +432,17 @@ model Event {
 model WorldState {
   id         Int      @id @default(1)
   lastTickAt DateTime @default(now())
+}
+
+// Singleton row, same shape idiom as WorldState. `data` holds only the
+// DELTA an admin has actually changed (a JSON-serialized deep-partial of
+// the tuning-group shape in gameConfigStore.ts), not a full frozen copy of
+// every default — so a future change to a gameConfig.ts default isn't
+// silently overridden by an old, unrelated edit. Hand-rolled JSON string
+// (not Prisma's Json type) matches the existing Player.lastSeenSnapshot
+// idiom already in this schema.
+model GameConfigOverride {
+  id        Int      @id @default(1)
+  data      String   @default("{}")
+  updatedAt DateTime @updatedAt
 }

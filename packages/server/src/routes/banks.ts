@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
-import { BANK_TUNING, DEPOSIT_TUNING, LOAN_TERM_OPTIONS, computeLoanRate, computeMaxLoanAmount } from "@dominion/shared";
+import { LOAN_TERM_OPTIONS, computeLoanRate, computeMaxLoanAmount } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
+import { getConfig } from "../gameConfigStore.js";
 import { getControllingPlayerId } from "../simulation/control.js";
 
 export const banksRouter = Router();
@@ -37,21 +38,22 @@ banksRouter.post("/", async (req: AuthedRequest, res) => {
     res.status(404).json({ error: "No settlement found for this player" });
     return;
   }
-  if (settlement.gold < BANK_TUNING.foundingCost) {
-    res.status(400).json({ error: `Need ${BANK_TUNING.foundingCost} gold to found a bank` });
+  const bankTuning = getConfig().BANK_TUNING;
+  if (settlement.gold < bankTuning.foundingCost) {
+    res.status(400).json({ error: `Need ${bankTuning.foundingCost} gold to found a bank` });
     return;
   }
 
   const [, bank] = await prisma.$transaction([
     prisma.settlement.update({
       where: { id: settlement.id },
-      data: { gold: settlement.gold - BANK_TUNING.foundingCost },
+      data: { gold: settlement.gold - bankTuning.foundingCost },
     }),
     prisma.bank.create({
       data: {
         ownerId: req.playerId!,
         name: parsed.data.name,
-        cash: BANK_TUNING.foundingCost,
+        cash: bankTuning.foundingCost,
         interestRatePerHour: 0.002,
       },
     }),
@@ -130,15 +132,16 @@ banksRouter.post("/:bankId/loans", async (req: AuthedRequest, res) => {
     return;
   }
 
+  const bankTuning = getConfig().BANK_TUNING;
   const { amount } = parsed.data;
   if (amount > bank.cash) {
     res.status(400).json({ error: "This bank doesn't have enough reserve cash for that loan" });
     return;
   }
-  const maxLoan = computeMaxLoanAmount(company.cash);
+  const maxLoan = computeMaxLoanAmount(company.cash, bankTuning);
   if (amount > maxLoan) {
     res.status(400).json({
-      error: `Credit check failed — this company can borrow at most ${maxLoan.toFixed(0)} gold (${BANK_TUNING.maxLoanToCashRatio}x its cash)`,
+      error: `Credit check failed — this company can borrow at most ${maxLoan.toFixed(0)} gold (${bankTuning.maxLoanToCashRatio}x its cash)`,
     });
     return;
   }
@@ -152,6 +155,7 @@ banksRouter.post("/:bankId/loans", async (req: AuthedRequest, res) => {
     amount,
     company.cash,
     termOption?.rateDiscount,
+    bankTuning,
   );
   const maturityAt = termOption ? new Date(Date.now() + termOption.hours * 60 * 60 * 1000) : null;
 
@@ -204,7 +208,7 @@ banksRouter.post("/:bankId/deposits", async (req: AuthedRequest, res) => {
   // capacity, unlike a loan's outstandingBalance which is a pure ledger
   // figure. Rate is a fixed fraction of the bank's current lending rate,
   // locked in at deposit time (matches how a loan's rate is locked in too).
-  const interestRatePerHour = bank.interestRatePerHour * DEPOSIT_TUNING.rateFraction;
+  const interestRatePerHour = bank.interestRatePerHour * getConfig().DEPOSIT_TUNING.rateFraction;
 
   const [, deposit] = await prisma.$transaction([
     prisma.settlement.update({ where: { id: settlement.id }, data: { gold: settlement.gold - amount } }),

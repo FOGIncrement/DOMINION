@@ -1,8 +1,7 @@
 import { EVENT_TEMPLATES, RESOURCE_TYPES, type EventTemplateDef, type ResourceType } from "@dominion/shared";
 import { prisma } from "../db.js";
+import { getConfig } from "../gameConfigStore.js";
 import type { SettlementSnapshot } from "./types.js";
-
-const EVENT_CHANCE_PER_TICK = 0.15;
 
 function weightedPick(items: EventTemplateDef[]): EventTemplateDef {
   const total = items.reduce((sum, i) => sum + i.weight, 0);
@@ -15,7 +14,7 @@ function weightedPick(items: EventTemplateDef[]): EventTemplateDef {
 }
 
 export async function maybeRollEvent(settlements: SettlementSnapshot[]): Promise<void> {
-  if (settlements.length === 0 || Math.random() > EVENT_CHANCE_PER_TICK) return;
+  if (settlements.length === 0 || Math.random() > getConfig().EVENT_TUNING.chancePerTick) return;
 
   const template = weightedPick(EVENT_TEMPLATES);
 

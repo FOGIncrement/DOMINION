@@ -1,12 +1,11 @@
 import {
-  COMPANY_INDUSTRIES,
   COMPANY_INDUSTRY_IDS,
-  NPC_COMPANY_TUNING,
   computeCompanyMaxWorkers,
   computeCompanyUpgradeCost,
   type CompanyIndustryId,
 } from "@dominion/shared";
 import { prisma } from "../db.js";
+import { getConfig } from "../gameConfigStore.js";
 import { applyTradeImpact, type TradeableResource } from "./market.js";
 import type { CompanySnapshot } from "./types.js";
 
@@ -28,12 +27,13 @@ export async function settleNpcCompanyTrading(
   state: MutableCompanyState,
   prices: Record<TradeableResource, number>,
 ): Promise<number> {
-  const industry = COMPANY_INDUSTRIES[company.industry];
+  const config = getConfig();
+  const industry = config.COMPANY_INDUSTRIES[company.industry];
   let revenue = 0;
 
-  if (industry.inputResource && state.inputStock < NPC_COMPANY_TUNING.inputBuffer && state.cash > 0) {
+  if (industry.inputResource && state.inputStock < config.NPC_COMPANY_TUNING.inputBuffer && state.cash > 0) {
     const inputPrice = prices[industry.inputResource];
-    const need = NPC_COMPANY_TUNING.inputBuffer - state.inputStock;
+    const need = config.NPC_COMPANY_TUNING.inputBuffer - state.inputStock;
     const affordable = state.cash / inputPrice;
     const toBuy = Math.max(0, Math.min(need, affordable));
     if (toBuy > 0.01) {
@@ -46,7 +46,7 @@ export async function settleNpcCompanyTrading(
   // contractOnly (Construction) never produces goods, so this whole
   // sell-off never applies — its revenue is one-off government zone
   // commissions instead of market sales.
-  const goodsSellBuffer = industry.goodsSellBuffer ?? NPC_COMPANY_TUNING.goodsSellBuffer;
+  const goodsSellBuffer = industry.goodsSellBuffer ?? config.NPC_COMPANY_TUNING.goodsSellBuffer;
   if (!industry.contractOnly && state.goodsStock > goodsSellBuffer) {
     const excess = state.goodsStock - goodsSellBuffer;
     state.goodsStock -= excess;
@@ -60,10 +60,11 @@ export async function settleNpcCompanyTrading(
 
 /** Small chance for a cash-rich NPC company to hire another worker, mirroring maybeExpand for settlements. */
 export async function maybeHire(company: CompanySnapshot, state: MutableCompanyState): Promise<void> {
-  const industry = COMPANY_INDUSTRIES[company.industry];
-  if (company.workersAssigned >= computeCompanyMaxWorkers(industry, company.level)) return;
-  if (state.cash < NPC_COMPANY_TUNING.minCashToHire) return;
-  if (Math.random() > NPC_COMPANY_TUNING.hireChancePerTick) return;
+  const config = getConfig();
+  const industry = config.COMPANY_INDUSTRIES[company.industry];
+  if (company.workersAssigned >= computeCompanyMaxWorkers(industry, company.level, config.COMPANY_UPGRADE_TUNING)) return;
+  if (state.cash < config.NPC_COMPANY_TUNING.minCashToHire) return;
+  if (Math.random() > config.NPC_COMPANY_TUNING.hireChancePerTick) return;
 
   await prisma.company.update({
     where: { id: company.id },
@@ -78,12 +79,13 @@ export async function maybeHire(company: CompanySnapshot, state: MutableCompanyS
  * competition — NPCs need the same reinvestment lever.
  */
 export async function maybeUpgradeCompany(company: CompanySnapshot, state: MutableCompanyState): Promise<void> {
-  const industry = COMPANY_INDUSTRIES[company.industry];
-  const cost = computeCompanyUpgradeCost(industry, company.level);
+  const config = getConfig();
+  const industry = config.COMPANY_INDUSTRIES[company.industry];
+  const cost = computeCompanyUpgradeCost(industry, company.level, config.COMPANY_UPGRADE_TUNING);
   if (cost === null) return; // already at maxLevel
-  if (state.cash < NPC_COMPANY_TUNING.minCashToUpgrade) return;
+  if (state.cash < config.NPC_COMPANY_TUNING.minCashToUpgrade) return;
   if (state.cash < cost) return;
-  if (Math.random() > NPC_COMPANY_TUNING.upgradeChancePerTick) return;
+  if (Math.random() > config.NPC_COMPANY_TUNING.upgradeChancePerTick) return;
 
   state.cash -= cost;
   await prisma.company.update({
@@ -133,13 +135,14 @@ function generateNpcCompanyName(industry: CompanyIndustryId): string {
  * unboundedly forever.
  */
 export async function maybeFoundNpcCompany(settlementCount: number): Promise<void> {
-  if (Math.random() > NPC_COMPANY_TUNING.foundChancePerTick) return;
+  const config = getConfig();
+  if (Math.random() > config.NPC_COMPANY_TUNING.foundChancePerTick) return;
 
   const openNpcCompanyCount = await prisma.company.count({ where: { ownerId: null, closedAt: null } });
-  if (openNpcCompanyCount >= settlementCount * NPC_COMPANY_TUNING.maxCompaniesPerSettlement) return;
+  if (openNpcCompanyCount >= settlementCount * config.NPC_COMPANY_TUNING.maxCompaniesPerSettlement) return;
 
   const industryId = COMPANY_INDUSTRY_IDS[Math.floor(Math.random() * COMPANY_INDUSTRY_IDS.length)];
-  const industry = COMPANY_INDUSTRIES[industryId];
+  const industry = config.COMPANY_INDUSTRIES[industryId];
 
   await prisma.company.create({
     data: {

@@ -30,7 +30,7 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
-  me: () => request<{ playerId: string; email: string }>("/auth/me"),
+  me: () => request<{ playerId: string; email: string; isAdmin: boolean }>("/auth/me"),
 
   gameState: () => request<GameStateResponse>("/game/state"),
   build: (type: string) => request<{ ok: true }>("/game/buildings", { method: "POST", body: JSON.stringify({ type }) }),
@@ -206,6 +206,26 @@ export const api = {
   tutorialAdvance: (step: TutorialStep) =>
     request<{ ok: true; step: TutorialStep }>("/tutorial/advance", { method: "POST", body: JSON.stringify({ step }) }),
   tutorialSkip: () => request<{ ok: true; step: TutorialStep }>("/tutorial/skip", { method: "POST" }),
+
+  adminConfig: () => request<AdminConfigResponse>("/admin/config"),
+  adminSetFlat: (group: string, patch: Record<string, number>) =>
+    request<{ ok: true; config: AdminConfigResponse["config"] }>(`/admin/config/flat/${group}`, {
+      method: "POST",
+      body: JSON.stringify(patch),
+    }),
+  adminResetFlat: (group: string) =>
+    request<{ ok: true; config: AdminConfigResponse["config"] }>(`/admin/config/flat/${group}/reset`, { method: "POST" }),
+  adminSetRecord: (group: "COMPANY_INDUSTRIES" | "BUILDING_TYPES", entryId: string, patch: Record<string, number>) =>
+    request<{ ok: true; config: AdminConfigResponse["config"] }>(`/admin/config/record/${group}/${entryId}`, {
+      method: "POST",
+      body: JSON.stringify(patch),
+    }),
+  adminResetRecord: (group: "COMPANY_INDUSTRIES" | "BUILDING_TYPES", entryId: string) =>
+    request<{ ok: true; config: AdminConfigResponse["config"] }>(`/admin/config/record/${group}/${entryId}/reset`, {
+      method: "POST",
+    }),
+  adminResetAll: () =>
+    request<{ ok: true; config: AdminConfigResponse["config"] }>("/admin/config/reset-all", { method: "POST" }),
 };
 
 export interface OfflineSummary {
@@ -558,4 +578,20 @@ export interface WorldMapResponse {
   rows: number;
   settlements: WorldMapSettlement[];
   myZones: ZoneRect[];
+}
+
+// Loosely typed on purpose — this mirrors the server's runtime tuning
+// registry (packages/server/src/gameConfigStore.ts), whose group/field
+// shape is generic by design so new tuning groups don't need a matching
+// type update here. Flat groups are Record<string, number>; COMPANY_INDUSTRIES
+// and BUILDING_TYPES are Record<id, fullDefWithOverridesApplied> — the
+// editable numeric fields are named in meta, everything else is read-only
+// context (name, description, structural fields).
+export interface AdminConfigResponse {
+  config: Record<string, Record<string, unknown>>;
+  meta: {
+    flatGroups: Record<string, string[]>;
+    companyIndustryFields: string[];
+    buildingTypeFields: string[];
+  };
 }

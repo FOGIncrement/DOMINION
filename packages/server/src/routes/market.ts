@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
-import { TRADE_FEE } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
+import { getConfig } from "../gameConfigStore.js";
 import { applyTradeImpact } from "../simulation/market.js";
 
 export const marketRouter = Router();
@@ -56,7 +56,8 @@ marketRouter.post("/trade", async (req: AuthedRequest, res) => {
   }
 
   const hasMarketplace = settlement.buildings.some((b) => b.type === "marketplace");
-  const fee = hasMarketplace ? TRADE_FEE.withMarketplace : TRADE_FEE.base;
+  const tradeFee = getConfig().TRADE_FEE;
+  const fee = hasMarketplace ? tradeFee.withMarketplace : tradeFee.base;
 
   if (side === "sell") {
     if (settlement[resourceType] < quantity) {

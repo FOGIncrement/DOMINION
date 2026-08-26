@@ -541,6 +541,19 @@ export const CORPORATE_BOND_TUNING = {
   maxRiskPremium: 1.2, // rate multiplier added at 100% issuance-to-capacity utilization
 };
 
+// Same idiom as COMPANY_UPGRADE_TUNING — a level directly multiplies output
+// (see computeHourlyProduction in production.ts), so this just prices that
+// multiplier. Lives here (not production.ts) so it's reachable from the
+// same tuning-group registry as everything else.
+export const BUILDING_UPGRADE_TUNING = {
+  maxLevel: 5,
+  costMultiplierPerLevel: 1.8, // upgrade cost = building's founding cost * multiplier^currentLevel
+};
+
+export const EVENT_TUNING = {
+  chancePerTick: 0.15,
+};
+
 export const RESOURCE_LABELS: Record<ResourceType, string> = {
   food: "Food",
   wood: "Wood",

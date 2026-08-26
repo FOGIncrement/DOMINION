@@ -1,4 +1,4 @@
-import { COMPANY_INDUSTRIES, computeCompanyHourlyRates } from "@dominion/shared";
+import { COMPANY_UPGRADE_TUNING, computeCompanyHourlyRates, type CompanyIndustryDef } from "@dominion/shared";
 import type { CompanySnapshot } from "./types.js";
 
 export interface CompanyTickResult {
@@ -17,9 +17,13 @@ export interface CompanyTickResult {
  * production happened (cash can go negative; no forced layoffs/bankruptcy
  * in this pass, see Stage 2 plan).
  */
-export function tickCompany(company: CompanySnapshot, elapsedHours: number): CompanyTickResult {
-  const industry = COMPANY_INDUSTRIES[company.industry];
-  const rates = computeCompanyHourlyRates(industry, company.workersAssigned, company.level);
+export function tickCompany(
+  company: CompanySnapshot,
+  elapsedHours: number,
+  industry: CompanyIndustryDef,
+  upgradeTuning: typeof COMPANY_UPGRADE_TUNING = COMPANY_UPGRADE_TUNING,
+): CompanyTickResult {
+  const rates = computeCompanyHourlyRates(industry, company.workersAssigned, company.level, upgradeTuning);
 
   // An extraction industry (no inputResource at all) is never stock-gated —
   // it produces straight from labor. Only a processing industry that's

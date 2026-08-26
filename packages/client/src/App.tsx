@@ -16,6 +16,7 @@ import Market from "./pages/Market.js";
 import StockMarket from "./pages/StockMarket.js";
 import World from "./pages/World.js";
 import News from "./pages/News.js";
+import AdminConfig from "./pages/AdminConfig.js";
 
 export default function App() {
   const { data: me, isLoading, isError } = useMe();
@@ -47,6 +48,7 @@ export default function App() {
         <Route path="/map" element={<Map />} />
         <Route path="/world" element={<World />} />
         <Route path="/news" element={<News />} />
+        {me.isAdmin && <Route path="/admin/config" element={<AdminConfig />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <OfflineSummaryModal />

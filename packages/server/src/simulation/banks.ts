@@ -1,5 +1,6 @@
-import { BANK_TUNING, NPC_BANKING_TUNING, computeLoanRate } from "@dominion/shared";
+import { BANK_TUNING, computeLoanRate } from "@dominion/shared";
 import { prisma } from "../db.js";
+import { getConfig } from "../gameConfigStore.js";
 
 export interface LoanLike {
   principal: number;
@@ -12,8 +13,8 @@ export function accrueLoanInterest(loan: LoanLike, elapsedHours: number): number
   return loan.outstandingBalance * (1 + loan.interestRatePerHour * elapsedHours);
 }
 
-export function isLoanDefaulted(loan: LoanLike): boolean {
-  return loan.outstandingBalance > loan.principal * BANK_TUNING.defaultMultiplier;
+export function isLoanDefaulted(loan: LoanLike, bankTuning: typeof BANK_TUNING = BANK_TUNING): boolean {
+  return loan.outstandingBalance > loan.principal * bankTuning.defaultMultiplier;
 }
 
 export interface DepositLike {
@@ -39,16 +40,17 @@ interface MutableCash {
 
 /** Cash-poor NPC company borrows a modest amount from whichever bank has capacity. */
 export async function maybeBorrow(companyId: string, state: MutableCash): Promise<void> {
-  if (state.cash > NPC_BANKING_TUNING.minCashToConsiderBorrow) return;
-  if (Math.random() > NPC_BANKING_TUNING.borrowChancePerTick) return;
+  const config = getConfig();
+  if (state.cash > config.NPC_BANKING_TUNING.minCashToConsiderBorrow) return;
+  if (Math.random() > config.NPC_BANKING_TUNING.borrowChancePerTick) return;
 
   const banks = await prisma.bank.findMany({ orderBy: { cash: "desc" } });
   const bank = banks.find((b) => b.cash > 20);
   if (!bank) return;
 
   const preLoanCash = state.cash;
-  const maxLoan = Math.max(10, preLoanCash * BANK_TUNING.maxLoanToCashRatio);
-  const amount = Math.min(bank.cash, maxLoan) * NPC_BANKING_TUNING.borrowAmountFraction;
+  const maxLoan = Math.max(10, preLoanCash * config.BANK_TUNING.maxLoanToCashRatio);
+  const amount = Math.min(bank.cash, maxLoan) * config.NPC_BANKING_TUNING.borrowAmountFraction;
   if (amount < 5) return;
 
   state.cash += amount;
@@ -59,7 +61,7 @@ export async function maybeBorrow(companyId: string, state: MutableCash): Promis
       companyId,
       principal: amount,
       outstandingBalance: amount,
-      interestRatePerHour: computeLoanRate(bank.interestRatePerHour, amount, preLoanCash),
+      interestRatePerHour: computeLoanRate(bank.interestRatePerHour, amount, preLoanCash, 0, config.BANK_TUNING),
     },
   });
 }
@@ -67,7 +69,7 @@ export async function maybeBorrow(companyId: string, state: MutableCash): Promis
 /** Cash-healthy NPC company pays down its largest outstanding loan. */
 export async function maybeRepayLoan(companyId: string, state: MutableCash): Promise<void> {
   if (state.cash < 50) return;
-  if (Math.random() > NPC_BANKING_TUNING.repayChancePerTick) return;
+  if (Math.random() > getConfig().NPC_BANKING_TUNING.repayChancePerTick) return;
 
   const loan = await prisma.loan.findFirst({
     where: { companyId, defaultedAt: null },
@@ -75,7 +77,7 @@ export async function maybeRepayLoan(companyId: string, state: MutableCash): Pro
   });
   if (!loan) return;
 
-  const payment = Math.min(state.cash * 0.5, loan.outstandingBalance * NPC_BANKING_TUNING.repayFraction);
+  const payment = Math.min(state.cash * 0.5, loan.outstandingBalance * getConfig().NPC_BANKING_TUNING.repayFraction);
   if (payment < 1) return;
 
   state.cash -= payment;

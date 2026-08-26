@@ -8,8 +8,8 @@ import { BANK_TUNING } from "./gameConfig.js";
  * and the client (which quotes it before the player commits), so the quote
  * always matches what actually gets charged.
  */
-export function computeMaxLoanAmount(companyCash: number): number {
-  return companyCash * BANK_TUNING.maxLoanToCashRatio;
+export function computeMaxLoanAmount(companyCash: number, bankTuning: typeof BANK_TUNING = BANK_TUNING): number {
+  return companyCash * bankTuning.maxLoanToCashRatio;
 }
 
 /**
@@ -24,10 +24,11 @@ export function computeLoanRate(
   requestedAmount: number,
   companyCash: number,
   termDiscount = 0,
+  bankTuning: typeof BANK_TUNING = BANK_TUNING,
 ): number {
-  const maxLoan = computeMaxLoanAmount(companyCash);
+  const maxLoan = computeMaxLoanAmount(companyCash, bankTuning);
   const utilization = maxLoan > 0 ? Math.min(1, requestedAmount / maxLoan) : 1;
-  const riskRate = baseRatePerHour * (1 + utilization * BANK_TUNING.maxRiskPremium);
+  const riskRate = baseRatePerHour * (1 + utilization * bankTuning.maxRiskPremium);
   return riskRate * (1 - termDiscount);
 }
 

@@ -123,3 +123,10 @@ export function useMyZoneProjects() {
 export function useTutorial() {
   return useQuery({ queryKey: ["tutorial"], queryFn: api.tutorial });
 }
+
+// No refetchInterval — only the admin editing it changes this, and every
+// save/reset mutation already updates the query cache directly from the
+// response instead of relying on a refetch.
+export function useAdminConfig() {
+  return useQuery({ queryKey: ["adminConfig"], queryFn: api.adminConfig, retry: false });
+}

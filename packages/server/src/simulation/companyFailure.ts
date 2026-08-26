@@ -20,9 +20,14 @@ export function shouldForceLayoff(cash: number, workersAssigned: number): boolea
  * exempt — same unresolved shareholder-fairness question that already
  * scopes the manual /close route away from public companies.
  */
-export function shouldAutoClose(industry: CompanyIndustryDef, cash: number, isPublic: boolean): boolean {
+export function shouldAutoClose(
+  industry: CompanyIndustryDef,
+  cash: number,
+  isPublic: boolean,
+  failureTuning: typeof COMPANY_FAILURE_TUNING = COMPANY_FAILURE_TUNING,
+): boolean {
   if (isPublic) return false;
-  return -cash > industry.foundingCost * COMPANY_FAILURE_TUNING.autoCloseDebtMultiplier;
+  return -cash > industry.foundingCost * failureTuning.autoCloseDebtMultiplier;
 }
 
 /**

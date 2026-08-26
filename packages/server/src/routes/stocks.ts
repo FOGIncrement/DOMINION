@@ -3,6 +3,7 @@ import { z } from "zod";
 import { computeProfitRatePerHour } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
+import { getConfig } from "../gameConfigStore.js";
 import { announceControlChangeIfAny, getControllerLabel, getControllingPlayerId } from "../simulation/control.js";
 import { applyShareTradeImpact, availableShareFloat } from "../simulation/stocks.js";
 
@@ -133,7 +134,7 @@ stocksRouter.post("/:companyId/trade", async (req: AuthedRequest, res) => {
     } else {
       await prisma.shareholding.create({ data: { companyId: company.id, playerId: req.playerId!, shares } });
     }
-    const newPrice = await applyShareTradeImpact(company.id, "buy", shares, company.sharePrice);
+    const newPrice = await applyShareTradeImpact(company.id, "buy", shares, company.sharePrice, getConfig().STOCK_TUNING);
     await announceControlChangeIfAny(company, beforeControllerId);
     res.json({ ok: true, cost, newPrice });
     return;
@@ -150,7 +151,7 @@ stocksRouter.post("/:companyId/trade", async (req: AuthedRequest, res) => {
   const proceeds = shares * company.sharePrice;
   await prisma.shareholding.update({ where: { id: holding.id }, data: { shares: holding.shares - shares } });
   await prisma.settlement.update({ where: { id: settlement.id }, data: { gold: settlement.gold + proceeds } });
-  const newPrice = await applyShareTradeImpact(company.id, "sell", shares, company.sharePrice);
+  const newPrice = await applyShareTradeImpact(company.id, "sell", shares, company.sharePrice, getConfig().STOCK_TUNING);
   await announceControlChangeIfAny(company, beforeControllerId);
   res.json({ ok: true, proceeds, newPrice });
 });

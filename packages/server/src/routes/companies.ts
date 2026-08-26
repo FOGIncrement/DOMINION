@@ -1,9 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import {
-  COMPANY_INDUSTRIES,
   COMPANY_INDUSTRY_IDS,
-  STOCK_TUNING,
   ZONE_BASELINE_FREE_SLOTS,
   ZONE_TYPES,
   computeCompanyHourlyRates,
@@ -15,6 +13,7 @@ import {
 } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
+import { getConfig } from "../gameConfigStore.js";
 import { applyTradeImpact } from "../simulation/market.js";
 import { getControllerLabel, getControllingPlayerId } from "../simulation/control.js";
 import { buildCorporateBondClosureOps } from "../simulation/corporateBonds.js";
@@ -22,13 +21,14 @@ import { buildCorporateBondClosureOps } from "../simulation/corporateBonds.js";
 export const companiesRouter = Router();
 
 companiesRouter.get("/", async (_req, res) => {
+  const config = getConfig();
   const companies = await prisma.company.findMany({ where: { closedAt: null }, orderBy: { foundedAt: "asc" } });
   res.json({
     companies: companies.map((c) => ({
       id: c.id,
       name: c.name,
       industry: c.industry,
-      industryName: COMPANY_INDUSTRIES[c.industry as CompanyIndustryId]?.name ?? c.industry,
+      industryName: config.COMPANY_INDUSTRIES[c.industry as CompanyIndustryId]?.name ?? c.industry,
       isPlayerOwned: c.ownerId !== null,
       workersAssigned: c.workersAssigned,
       level: c.level,
@@ -44,6 +44,7 @@ companiesRouter.use(requireAuth);
 
 companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
   const playerId = req.playerId!;
+  const config = getConfig();
 
   // "Mine" means founder OR controller — a company acquired by buying a
   // majority stake belongs here just as much as one you founded, and a
@@ -62,7 +63,7 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
 
   const withControl = await Promise.all(
     companies.map(async (c) => {
-      const industry = COMPANY_INDUSTRIES[c.industry as CompanyIndustryId];
+      const industry = config.COMPANY_INDUSTRIES[c.industry as CompanyIndustryId];
       const controllerId = await getControllingPlayerId(c);
       const controlledByMe = controllerId === playerId;
       return {
@@ -74,13 +75,13 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
         goodsStock: c.goodsStock,
         workersAssigned: c.workersAssigned,
         autoStaff: c.autoStaff,
-        maxWorkers: computeCompanyMaxWorkers(industry, c.level),
+        maxWorkers: computeCompanyMaxWorkers(industry, c.level, config.COMPANY_UPGRADE_TUNING),
         level: c.level,
-        upgradeCost: computeCompanyUpgradeCost(industry, c.level),
+        upgradeCost: computeCompanyUpgradeCost(industry, c.level, config.COMPANY_UPGRADE_TUNING),
         totalRevenue: c.totalRevenue,
         totalExpenses: c.totalExpenses,
         foundedAt: c.foundedAt,
-        rates: computeCompanyHourlyRates(industry, c.workersAssigned, c.level),
+        rates: computeCompanyHourlyRates(industry, c.workersAssigned, c.level, config.COMPANY_UPGRADE_TUNING),
         isPublic: c.isPublic,
         sharePrice: c.sharePrice,
         sharesOutstanding: c.sharesOutstanding,
@@ -117,7 +118,7 @@ companiesRouter.post("/", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const industry = COMPANY_INDUSTRIES[parsed.data.industry];
+  const industry = getConfig().COMPANY_INDUSTRIES[parsed.data.industry];
 
   // Founding capacity is shared per zone category (industrial vs. retail),
   // not per individual industry — a baseline free allowance plus whatever
@@ -201,8 +202,12 @@ companiesRouter.post("/:id/workers", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const industry = COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
-  const workersAssigned = Math.min(parsed.data.workersAssigned, computeCompanyMaxWorkers(industry, company.level));
+  const config = getConfig();
+  const industry = config.COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
+  const workersAssigned = Math.min(
+    parsed.data.workersAssigned,
+    computeCompanyMaxWorkers(industry, company.level, config.COMPANY_UPGRADE_TUNING),
+  );
 
   // Same population cap /game/workers enforces on the building side, and
   // the same "decreasing is always allowed" exception. Drawn from the
@@ -264,8 +269,9 @@ companiesRouter.post("/:id/upgrade", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const industry = COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
-  const cost = computeCompanyUpgradeCost(industry, company.level);
+  const config = getConfig();
+  const industry = config.COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
+  const cost = computeCompanyUpgradeCost(industry, company.level, config.COMPANY_UPGRADE_TUNING);
   if (cost === null) {
     res.status(400).json({ error: "Already at max level" });
     return;
@@ -295,7 +301,7 @@ companiesRouter.post("/:id/trade", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const industry = COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
+  const industry = getConfig().COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
   const { side, quantity } = parsed.data;
 
   if (industry.contractOnly) {
@@ -515,16 +521,17 @@ companiesRouter.post("/:id/ipo", async (req: AuthedRequest, res) => {
     return;
   }
 
+  const stockTuning = getConfig().STOCK_TUNING;
   const profit = company.totalRevenue - company.totalExpenses;
-  if (profit < STOCK_TUNING.minProfitToIPO) {
+  if (profit < stockTuning.minProfitToIPO) {
     res.status(400).json({
-      error: `Needs at least ${STOCK_TUNING.minProfitToIPO} gold of lifetime profit to IPO (currently ${profit.toFixed(0)})`,
+      error: `Needs at least ${stockTuning.minProfitToIPO} gold of lifetime profit to IPO (currently ${profit.toFixed(0)})`,
     });
     return;
   }
 
-  const sharesOutstanding = STOCK_TUNING.sharesOutstandingAtIPO;
-  const sharePrice = computeTargetSharePrice({ ...company, sharesOutstanding });
+  const sharesOutstanding = stockTuning.sharesOutstandingAtIPO;
+  const sharePrice = computeTargetSharePrice({ ...company, sharesOutstanding }, new Date(), stockTuning);
 
   await prisma.$transaction([
     prisma.company.update({

@@ -1,9 +1,10 @@
 import { NavLink } from "react-router-dom";
-import { useTutorial } from "../api/hooks.js";
+import { useMe, useTutorial } from "../api/hooks.js";
 
 const LOCKED = ["Diplomacy"];
 
 export default function NavBar() {
+  const { data: me } = useMe();
   const { data: tutorial } = useTutorial();
   const step = tutorial?.step ?? "completed";
   const governmentLocked = step === "found_company" || step === "hiring";
@@ -56,6 +57,11 @@ export default function NavBar() {
           {name} 🔒
         </span>
       ))}
+      {me?.isAdmin && (
+        <NavLink to="/admin/config" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+          🛠 Balance Config
+        </NavLink>
+      )}
     </nav>
   );
 }

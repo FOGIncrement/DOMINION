@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
+import { adminConfigRouter } from "./routes/adminConfig.js";
 import { authRouter } from "./routes/auth.js";
 import { banksRouter } from "./routes/banks.js";
 import { bondsRouter } from "./routes/bonds.js";
@@ -13,9 +14,11 @@ import { companiesRouter } from "./routes/companies.js";
 import { contractsRouter } from "./routes/contracts.js";
 import { corporateBondsRouter } from "./routes/corporateBonds.js";
 import { depositsRouter } from "./routes/deposits.js";
+import { prisma } from "./db.js";
 import { gameRouter } from "./routes/game.js";
 import { governmentRouter } from "./routes/government.js";
 import { infrastructureRouter } from "./routes/infrastructure.js";
+import { initGameConfigStore } from "./gameConfigStore.js";
 import { loansRouter } from "./routes/loans.js";
 import { marketRouter } from "./routes/market.js";
 import { newsRouter } from "./routes/news.js";
@@ -51,6 +54,7 @@ app.use("/api/news", newsRouter);
 app.use("/api/tech", techRouter);
 app.use("/api/tutorial", tutorialRouter);
 app.use("/api/cheats", cheatsRouter);
+app.use("/api/admin/config", adminConfigRouter);
 
 // Serves the built client (packages/client/dist) when present, so one
 // process can be the whole production deployment — no separate static file
@@ -69,7 +73,19 @@ if (fs.existsSync(clientDist)) {
   });
 }
 
-app.listen(port, () => {
+// Idempotent — safe to run on every boot. isAdmin has no route that can
+// set it; this env var is the only way an account becomes admin.
+async function bootstrapAdmin() {
+  if (!process.env.ADMIN_EMAIL) return;
+  await prisma.player.updateMany({
+    where: { email: process.env.ADMIN_EMAIL },
+    data: { isAdmin: true },
+  });
+}
+
+app.listen(port, async () => {
   console.log(`[server] listening on http://localhost:${port}`);
+  await bootstrapAdmin();
+  await initGameConfigStore();
   startScheduler();
 });

@@ -1,4 +1,4 @@
-import { BOND_TUNING, CORPORATE_BOND_TUNING } from "./gameConfig.js";
+import { BANK_TUNING, BOND_TUNING, CORPORATE_BOND_TUNING } from "./gameConfig.js";
 import { computeMaxLoanAmount } from "./loans.js";
 
 export interface BondTermOption {
@@ -17,9 +17,9 @@ export const BOND_TERM_OPTIONS: BondTermOption[] = [
   { hours: 720, label: "30-day term", rateBonus: 0.001 },
 ];
 
-export function computeBondRate(termHours: number): number {
+export function computeBondRate(termHours: number, bondTuning: typeof BOND_TUNING = BOND_TUNING): number {
   const term = BOND_TERM_OPTIONS.find((t) => t.hours === termHours);
-  return BOND_TUNING.baseRatePerHour + (term?.rateBonus ?? 0);
+  return bondTuning.baseRatePerHour + (term?.rateBonus ?? 0);
 }
 
 export function computeBondRedemptionValue(principal: number, interestRatePerHour: number, termHours: number): number {
@@ -35,9 +35,14 @@ export function computeBondRedemptionValue(principal: number, interestRatePerHou
  * premium (same computeMaxLoanAmount "5x cash" capacity idea), just applied
  * to bond issuance instead of loan borrowing.
  */
-export function computeCorporateBondRate(termHours: number, issuedAmount: number, companyCash: number): number {
-  const baseRate = computeBondRate(termHours);
-  const maxCapacity = computeMaxLoanAmount(companyCash);
+export function computeCorporateBondRate(
+  termHours: number,
+  issuedAmount: number,
+  companyCash: number,
+  tuning: { bond?: typeof BOND_TUNING; corporateBond?: typeof CORPORATE_BOND_TUNING; bank?: typeof BANK_TUNING } = {},
+): number {
+  const baseRate = computeBondRate(termHours, tuning.bond ?? BOND_TUNING);
+  const maxCapacity = computeMaxLoanAmount(companyCash, tuning.bank ?? BANK_TUNING);
   const utilization = maxCapacity > 0 ? Math.min(1, issuedAmount / maxCapacity) : 1;
-  return baseRate * (1 + utilization * CORPORATE_BOND_TUNING.maxRiskPremium);
+  return baseRate * (1 + utilization * (tuning.corporateBond ?? CORPORATE_BOND_TUNING).maxRiskPremium);
 }
