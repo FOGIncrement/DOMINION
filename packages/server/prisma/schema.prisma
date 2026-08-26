@@ -39,7 +39,8 @@ model Government {
   welfareRatePerUnemployedPerHour Float    @default(0.5)
   createdAt                       DateTime @default(now())
 
-  bondsIssued Bond[]
+  bondsIssued  Bond[]
+  zoneProjects ZoneProject[]
 }
 
 // Government debt, distinct from a bank Deposit: the borrower is a
@@ -80,11 +81,13 @@ model Settlement {
   lastTickAt  DateTime @default(now())
   foundedAt   DateTime @default(now())
 
-  population Population?
-  buildings  Building[]
-  techs      SettlementTech[]
-  events     Event[]
-  trades     MarketTrade[]
+  population   Population?
+  buildings    Building[]
+  techs        SettlementTech[]
+  events       Event[]
+  trades       MarketTrade[]
+  zones        SettlementZone[]
+  zoneProjects ZoneProject[]
 }
 
 model Population {
@@ -115,6 +118,48 @@ model SettlementTech {
   researchedAt DateTime   @default(now())
 
   @@unique([settlementId, techId])
+}
+
+// Like SettlementTech, but repeatable — a settlement can commission the
+// same zone type multiple times to keep scaling founding capacity, so
+// there's deliberately no unique([settlementId, type]) constraint here.
+model SettlementZone {
+  id           String     @id @default(cuid())
+  settlementId String
+  settlement   Settlement @relation(fields: [settlementId], references: [id])
+  type         String
+  slotsGranted Int
+  completedAt  DateTime   @default(now())
+
+  @@index([settlementId])
+}
+
+// A government's commission of a construction company to build a zone —
+// one-time delivery (funds + goods move once, at accept), not a recurring
+// resource flow like Contract. settlementId is stored directly rather than
+// derived through government.playerId -> Settlement.playerId, same "store
+// the concrete party" idiom Contract already uses for seller/buyer.
+model ZoneProject {
+  id                     String     @id @default(cuid())
+  governmentId           String
+  government             Government @relation(fields: [governmentId], references: [id])
+  constructionCompanyId  String
+  constructionCompany    Company    @relation(fields: [constructionCompanyId], references: [id])
+  settlementId           String
+  settlement             Settlement @relation(fields: [settlementId], references: [id])
+  zoneType               String
+  goodsCost              Float
+  treasuryCost           Float
+  buildTimeHours         Int
+  createdAt              DateTime   @default(now())
+  acceptedAt             DateTime?
+  completesAt            DateTime?
+  completedAt            DateTime?
+  cancelledAt            DateTime?
+
+  @@index([governmentId])
+  @@index([constructionCompanyId])
+  @@index([settlementId])
 }
 
 model MarketResource {
@@ -176,6 +221,7 @@ model Company {
   bondsIssued       CorporateBond[]
   contractsAsSeller Contract[] @relation("ContractSeller")
   contractsAsBuyer  Contract[] @relation("ContractBuyer")
+  zoneProjects      ZoneProject[]
 
   @@index([ownerId])
 }

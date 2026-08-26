@@ -104,3 +104,11 @@ export function useCheatsEnabled() {
 export function useGovernment() {
   return useQuery({ queryKey: ["government"], queryFn: api.government, refetchInterval: POLL_MS });
 }
+
+export function useZones() {
+  return useQuery({ queryKey: ["zones"], queryFn: api.zones, refetchInterval: POLL_MS });
+}
+
+export function useMyZoneProjects() {
+  return useQuery({ queryKey: ["myZoneProjects"], queryFn: api.myZoneProjects, refetchInterval: POLL_MS });
+}

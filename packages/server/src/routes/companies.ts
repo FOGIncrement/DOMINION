@@ -4,10 +4,13 @@ import {
   COMPANY_INDUSTRIES,
   COMPANY_INDUSTRY_IDS,
   STOCK_TUNING,
+  ZONE_BASELINE_FREE_SLOTS,
+  ZONE_TYPES,
   computeCompanyHourlyRates,
   computeCompanyMaxWorkers,
   computeCompanyUpgradeCost,
   computeTargetSharePrice,
+  zoneCategoryForIndustry,
   type CompanyIndustryId,
 } from "@dominion/shared";
 import { prisma } from "../db.js";
@@ -114,6 +117,29 @@ companiesRouter.post("/", async (req: AuthedRequest, res) => {
   }
 
   const industry = COMPANY_INDUSTRIES[parsed.data.industry];
+
+  // Founding capacity is shared per zone category (industrial vs. retail),
+  // not per individual industry — a baseline free allowance plus whatever
+  // zones this settlement has completed. Only gates NEW foundings; existing
+  // companies (including any founded before this cap existed) are never
+  // retroactively touched. NPC founding (routes elsewhere) is unaffected —
+  // NPC settlements have no Government to commission a zone through.
+  const zoneType = zoneCategoryForIndustry(industry.id);
+  const zoneDef = ZONE_TYPES[zoneType];
+  const [usedInCategory, zones] = await Promise.all([
+    prisma.company.count({
+      where: { ownerId: req.playerId!, closedAt: null, industry: { in: zoneDef.industries } },
+    }),
+    prisma.settlementZone.findMany({ where: { settlementId: settlement.id, type: zoneType } }),
+  ]);
+  const capacity = ZONE_BASELINE_FREE_SLOTS[zoneType] + zones.reduce((sum, z) => sum + z.slotsGranted, 0);
+  if (usedInCategory >= capacity) {
+    res.status(400).json({
+      error: `Not enough ${zoneDef.name} capacity (${usedInCategory}/${capacity} used) — commission a ${zoneDef.name} from your government to found more.`,
+    });
+    return;
+  }
+
   const totalCost = industry.foundingCost + parsed.data.seedMoney;
   if (settlement.gold < totalCost) {
     res.status(400).json({ error: `Need ${totalCost} gold to found a ${industry.name} with that much seed money` });

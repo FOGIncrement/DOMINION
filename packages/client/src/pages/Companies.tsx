@@ -6,13 +6,22 @@ import {
   CONTRACT_TERM_HOURS_OPTIONS,
   RESOURCE_LABELS,
   STOCK_TUNING,
+  zoneCategoryForIndustry,
   type CompanyIndustryDef,
   type CompanyIndustryId,
   type MarketResourceType,
   type ResourceType,
 } from "@dominion/shared";
 import { api, ApiError, type MyCompany, type MyContract, type PublicCompany } from "../api/client.js";
-import { useAllCompanies, useGameState, useMarket, useMyCompanies, useMyContracts, useWorldContracts } from "../api/hooks.js";
+import {
+  useAllCompanies,
+  useGameState,
+  useMarket,
+  useMyCompanies,
+  useMyContracts,
+  useWorldContracts,
+  useZones,
+} from "../api/hooks.js";
 import { CompanyAvatar, INDUSTRY_META } from "../industryMeta.js";
 
 // RESOURCE_LABELS covers settlement-holdable resources only — "goods" is a
@@ -783,6 +792,7 @@ function CommandCenter({ onProposeTo, jumpToId, onJumpHandled }: CommandCenterPr
 function FoundCompanyForm() {
   const queryClient = useQueryClient();
   const { data: gameState } = useGameState();
+  const { data: zones } = useZones();
   const [name, setName] = useState("");
   const [industry, setIndustry] = useState<CompanyIndustryId>("bakery");
   const [seedMoney, setSeedMoney] = useState(0);
@@ -798,6 +808,7 @@ function FoundCompanyForm() {
       queryClient.invalidateQueries({ queryKey: ["myCompanies"] });
       queryClient.invalidateQueries({ queryKey: ["gameState"] });
       queryClient.invalidateQueries({ queryKey: ["allCompanies"] });
+      queryClient.invalidateQueries({ queryKey: ["zones"] });
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "Couldn't found company"),
   });
@@ -805,6 +816,9 @@ function FoundCompanyForm() {
   const def = COMPANY_INDUSTRIES[industry];
   const totalCost = def.foundingCost + seedMoney;
   const canAfford = (gameState?.settlement.gold ?? 0) >= totalCost;
+  const zoneType = zoneCategoryForIndustry(industry);
+  const zoneCapacity = zones?.zones.find((z) => z.id === zoneType);
+  const atCapacity = zoneCapacity ? zoneCapacity.used >= zoneCapacity.available : false;
 
   return (
     <div className="card">
@@ -836,7 +850,11 @@ function FoundCompanyForm() {
             style={{ width: 90 }}
           />
         </label>
-        <button className="btn btn--accent" disabled={!canAfford || found.isPending} onClick={() => found.mutate()}>
+        <button
+          className="btn btn--accent"
+          disabled={!canAfford || atCapacity || found.isPending}
+          onClick={() => found.mutate()}
+        >
           Found ({totalCost}g)
         </button>
       </div>
@@ -844,6 +862,12 @@ function FoundCompanyForm() {
         {def.description} Seed money is extra starting cash beyond the {def.foundingCost}g founding
         cost — a cushion against payroll going negative. {!canAfford && "Not enough gold yet."}
       </p>
+      {zoneCapacity && (
+        <p className="suggestion" style={{ marginTop: 4, color: atCapacity ? "var(--critical)" : undefined }}>
+          {zoneCapacity.name} capacity: {zoneCapacity.used}/{zoneCapacity.available} used
+          {atCapacity && " — commission another zone from Government to found more"}.
+        </p>
+      )}
     </div>
   );
 }

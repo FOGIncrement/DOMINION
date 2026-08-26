@@ -17,7 +17,7 @@ const MAX_WELFARE_RATE = 5;
  * otherwise 404 forever with no way to recover — upsert makes every route
  * here self-healing instead of relying on a one-time migration script.
  */
-function getOrCreateGovernment(playerId: string) {
+export function getOrCreateGovernment(playerId: string) {
   return prisma.government.upsert({ where: { playerId }, update: {}, create: { playerId } });
 }
 

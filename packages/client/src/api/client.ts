@@ -178,6 +178,18 @@ export const api = {
   }) => request<{ ok: true }>("/government/rates", { method: "POST", body: JSON.stringify(rates) }),
   subsidize: (companyId: string, amount: number) =>
     request<{ ok: true }>("/government/subsidize", { method: "POST", body: JSON.stringify({ companyId, amount }) }),
+
+  zones: () => request<{ zones: ZoneCatalogEntry[] }>("/infrastructure"),
+  myZoneProjects: () => request<{ projects: MyZoneProject[] }>("/infrastructure/mine"),
+  commissionZone: (constructionCompanyId: string, zoneType: string) =>
+    request<{ ok: true; projectId: string; pending: boolean }>("/infrastructure", {
+      method: "POST",
+      body: JSON.stringify({ constructionCompanyId, zoneType }),
+    }),
+  acceptZoneProject: (projectId: string) =>
+    request<{ ok: true }>(`/infrastructure/${projectId}/accept`, { method: "POST" }),
+  cancelZoneProject: (projectId: string) =>
+    request<{ ok: true }>(`/infrastructure/${projectId}/cancel`, { method: "POST" }),
 };
 
 export interface OfflineSummary {
@@ -466,4 +478,35 @@ export interface GovernmentInfo {
   employedCount: number;
   unemployedCount: number;
   welfareCostPerHour: number;
+}
+
+export interface ZoneCatalogEntry {
+  id: string;
+  name: string;
+  description: string;
+  industries: string[];
+  goodsCost: number;
+  treasuryCost: number;
+  buildTimeHours: number;
+  slotsGranted: number;
+  used: number;
+  available: number;
+}
+
+export interface MyZoneProject {
+  id: string;
+  zoneType: string;
+  constructionCompanyId: string;
+  constructionCompanyName: string;
+  constructionCompanyIsMine: boolean;
+  governmentIsMine: boolean;
+  goodsCost: number;
+  treasuryCost: number;
+  buildTimeHours: number;
+  createdAt: string;
+  acceptedAt: string | null;
+  completesAt: string | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  status: "pending" | "cancelled" | "building" | "completed";
 }

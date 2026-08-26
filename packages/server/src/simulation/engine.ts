@@ -4,12 +4,14 @@ import {
   MAX_CATCHUP_HOURS,
   REFERENCE_TICK_HOURS,
   WORLD_DEMAND_TUNING,
+  ZONE_TYPES,
   computeBondRedemptionValue,
   computeTargetSharePrice,
   computeUnemployment,
   computeWelfareCostPerHour,
   type BuildingTypeId,
   type CompanyIndustryId,
+  type ZoneTypeId,
 } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { accrueDepositInterest, accrueLoanInterest, isLoanDefaulted, maybeBorrow, maybeRepayLoan } from "./banks.js";
@@ -438,6 +440,34 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
       prisma.settlement.update({ where: { playerId: bond.holderId }, data: { gold: { increment: payout } } }),
       prisma.corporateBond.update({ where: { id: bond.id }, data: { redeemedAt: now } }),
     ]);
+  }
+
+  // Zone projects: a one-time commission maturing into permanent founding
+  // capacity, closer in shape to a Bond's one-time maturity payout (above)
+  // than to Contract's per-tick settlement (below) — money and goods
+  // already changed hands at acceptance (routes/infrastructure.ts).
+  // Completion just records the SettlementZone row; nothing consults it
+  // per-tick the way techs aren't "applied" either — capacity is read live
+  // whenever POST /companies checks it.
+  const dueZoneProjects = await prisma.zoneProject.findMany({
+    where: { acceptedAt: { not: null }, completedAt: null, cancelledAt: null, completesAt: { lte: now } },
+  });
+  for (const project of dueZoneProjects) {
+    const zoneDef = ZONE_TYPES[project.zoneType as ZoneTypeId];
+    await prisma.$transaction([
+      prisma.settlementZone.create({
+        data: { settlementId: project.settlementId, type: project.zoneType, slotsGranted: zoneDef.slotsGranted },
+      }),
+      prisma.zoneProject.update({ where: { id: project.id }, data: { completedAt: now } }),
+    ]);
+    await prisma.event.create({
+      data: {
+        settlementId: project.settlementId,
+        type: "zone_completed",
+        title: `${zoneDef.name} Completed`,
+        description: `${zoneDef.name} construction has finished — founding capacity for ${zoneDef.industries.length > 1 ? "matching industries" : "retail companies"} has increased by ${zoneDef.slotsGranted}.`,
+      },
+    });
   }
 
   // Contracts: settle standing supply agreements between companies, capped

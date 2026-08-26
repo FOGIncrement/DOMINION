@@ -43,8 +43,14 @@ export async function settleNpcCompanyTrading(
     }
   }
 
-  if (state.goodsStock > NPC_COMPANY_TUNING.goodsSellBuffer) {
-    const excess = state.goodsStock - NPC_COMPANY_TUNING.goodsSellBuffer;
+  // A construction company's real customer is a one-off zone commission,
+  // not steady market demand — it needs a much higher buffer than the flat
+  // default or it sells itself back down every tick and can never
+  // accumulate enough stock to fulfill a real commission (see
+  // CompanyIndustryDef.goodsSellBuffer).
+  const goodsSellBuffer = industry.goodsSellBuffer ?? NPC_COMPANY_TUNING.goodsSellBuffer;
+  if (state.goodsStock > goodsSellBuffer) {
+    const excess = state.goodsStock - goodsSellBuffer;
     state.goodsStock -= excess;
     revenue = excess * prices[industry.outputResource];
     state.cash += revenue;
@@ -111,6 +117,7 @@ const NPC_COMPANY_NAME_SUFFIXES: Record<CompanyIndustryId, string[]> = {
   logging: ["Logging Camp", "Timber Camp", "Woodcutters"],
   quarrying: ["Quarry", "Stone Pit", "Extraction Co."],
   retail: ["Retail Co.", "General Store", "Trading Post"],
+  construction: ["Construction Co.", "Builders Guild", "Masonry Works"],
 };
 
 function generateNpcCompanyName(industry: CompanyIndustryId): string {

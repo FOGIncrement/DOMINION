@@ -39,8 +39,12 @@ export const COMPANY_INDUSTRY_IDS = [
   "logging",
   "quarrying",
   "retail",
+  "construction",
 ] as const;
 export type CompanyIndustryId = (typeof COMPANY_INDUSTRY_IDS)[number];
+
+export const ZONE_TYPE_IDS = ["industrial", "retail"] as const;
+export type ZoneTypeId = (typeof ZONE_TYPE_IDS)[number];
 
 export const INVESTOR_ARCHETYPES = ["conservative", "growth", "speculator"] as const;
 export type InvestorArchetype = (typeof INVESTOR_ARCHETYPES)[number];
@@ -117,4 +121,21 @@ export interface CompanyIndustryDef {
   wagePerWorkerPerHour: number;
   maxWorkers: number;
   foundingCost: number;
+  // NPC_COMPANY_TUNING.goodsSellBuffer (15) is too low for a company whose
+  // real customer is a one-off zone commission rather than steady market
+  // demand — an NPC-run construction company would sell down to 15 every
+  // tick and never accumulate enough to fulfill one. Only construction sets
+  // this today; every other industry falls back to the flat constant.
+  goodsSellBuffer?: number;
+}
+
+export interface ZoneDef {
+  id: ZoneTypeId;
+  name: string;
+  description: string;
+  industries: CompanyIndustryId[];
+  goodsCost: number;
+  treasuryCost: number;
+  buildTimeHours: number;
+  slotsGranted: number;
 }

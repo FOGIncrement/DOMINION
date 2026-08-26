@@ -10,6 +10,8 @@ import type {
   ResourceType,
   TechDef,
   TechId,
+  ZoneDef,
+  ZoneTypeId,
 } from "./types.js";
 
 export const STARTING_SETTLEMENT = {
@@ -166,7 +168,73 @@ export const COMPANY_INDUSTRIES: Record<CompanyIndustryId, CompanyIndustryDef> =
     maxWorkers: 4,
     foundingCost: 150,
   },
+  // Its real customer is a one-off government zone commission (see
+  // ZONE_TYPES / routes/infrastructure.ts), not steady market demand, so it
+  // needs a much higher goodsSellBuffer than the flat NPC_COMPANY_TUNING
+  // default — otherwise an NPC-run construction company sells itself back
+  // down to the ordinary buffer every tick and can never accumulate enough
+  // stock to fulfill a real commission.
+  construction: {
+    id: "construction",
+    name: "Construction Co.",
+    description: "Buys stone and builds toward government zone commissions — can also sell surplus goods on the open market.",
+    inputResource: "stone",
+    inputPerWorkerPerHour: 2,
+    outputResource: "goods",
+    goodsPerWorkerPerHour: 1,
+    wagePerWorkerPerHour: 1.5,
+    maxWorkers: 4,
+    foundingCost: 150,
+    goodsSellBuffer: 250,
+  },
 };
+
+// A settlement can commission a construction company to build a zone,
+// which grants founding capacity for a category of company industries —
+// see ZONE_BASELINE_FREE_SLOTS and the capacity check in routes/companies.ts.
+// Deliberately just two categories mirroring the user's own framing:
+// "industrial zone for the production companies and then retail zones etc
+// for buyers to come along" — retail is the one industry whose customer is
+// the settlement's own population, everything else lives in industrial.
+export const ZONE_TYPES: Record<ZoneTypeId, ZoneDef> = {
+  industrial: {
+    id: "industrial",
+    name: "Industrial Zone",
+    description: "Opens capacity to found production and extraction companies — farms, quarries, sawmills, and more.",
+    industries: ["farming", "logging", "quarrying", "bakery", "sawmill", "stoneworks", "construction"],
+    goodsCost: 150,
+    treasuryCost: 200,
+    buildTimeHours: 4,
+    slotsGranted: 2,
+  },
+  retail: {
+    id: "retail",
+    name: "Retail Zone",
+    description: "Opens capacity to found retail companies that sell directly to your population.",
+    industries: ["retail"],
+    goodsCost: 100,
+    treasuryCost: 150,
+    buildTimeHours: 3,
+    slotsGranted: 2,
+  },
+};
+
+// A new player can found a couple of companies per category before ever
+// touching zoning — no cold-start wall — then needs to commission zones to
+// keep scaling past this.
+export const ZONE_BASELINE_FREE_SLOTS: Record<ZoneTypeId, number> = {
+  industrial: 2,
+  retail: 2,
+};
+
+export function zoneCategoryForIndustry(industry: CompanyIndustryId): ZoneTypeId {
+  const entry = (Object.values(ZONE_TYPES) as ZoneDef[]).find((z) => z.industries.includes(industry));
+  // Every CompanyIndustryId is assigned to exactly one zone category above —
+  // this can only throw if a new industry is added to COMPANY_INDUSTRIES
+  // without also adding it to some ZONE_TYPES.industries list.
+  if (!entry) throw new Error(`No zone category defined for industry "${industry}"`);
+  return entry.id;
+}
 
 export const TECHS: Record<TechId, TechDef> = {
   masonry: {

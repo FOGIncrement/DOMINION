@@ -1,12 +1,173 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api/client.js";
-import { useGovernment, useMyCompanies } from "../api/hooks.js";
+import { useAllCompanies, useGovernment, useMyCompanies, useMyZoneProjects, useZones } from "../api/hooks.js";
 
 function invalidateGovernment(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ["government"] });
   queryClient.invalidateQueries({ queryKey: ["myCompanies"] });
   queryClient.invalidateQueries({ queryKey: ["gameState"] });
+  queryClient.invalidateQueries({ queryKey: ["zones"] });
+  queryClient.invalidateQueries({ queryKey: ["myZoneProjects"] });
+}
+
+const ZONE_STATUS_LABELS: Record<string, string> = {
+  pending: "Awaiting acceptance",
+  building: "Building",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+function ZoneCommissionForm() {
+  const queryClient = useQueryClient();
+  const { data: zones } = useZones();
+  const { data: allCompanies } = useAllCompanies();
+  const [zoneType, setZoneType] = useState("");
+  const [constructionCompanyId, setConstructionCompanyId] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const commission = useMutation({
+    mutationFn: () => api.commissionZone(constructionCompanyId, zoneType),
+    onSuccess: (res) => {
+      setError(null);
+      setMessage(res.pending ? "Commission sent — awaiting the construction company's acceptance." : "Commissioned — zone under construction.");
+      invalidateGovernment(queryClient);
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Commission failed"),
+  });
+
+  const constructionCompanies = (allCompanies?.companies ?? []).filter((c) => c.industry === "construction");
+  const zoneList = zones?.zones ?? [];
+  const selectedZone = zoneList.find((z) => z.id === zoneType);
+
+  if (zoneList.length === 0) {
+    return (
+      <div className="card">
+        <h2 className="card__title">Commission a Zone</h2>
+        <div className="loading">Loading zone catalog...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Commission a Zone</h2>
+      {error && <div className="auth-error">{error}</div>}
+      {message && !error && <div className="suggestion">{message}</div>}
+      <div className="trade-row" style={{ flexWrap: "wrap" }}>
+        <select value={zoneType} onChange={(e) => setZoneType(e.target.value)}>
+          <option value="">Zone type...</option>
+          {zoneList.map((z) => (
+            <option key={z.id} value={z.id}>
+              {z.name} ({z.used}/{z.available} capacity used)
+            </option>
+          ))}
+        </select>
+        <select value={constructionCompanyId} onChange={(e) => setConstructionCompanyId(e.target.value)}>
+          <option value="">Construction company...</option>
+          {constructionCompanies.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} {c.isPlayerOwned ? "" : "(NPC/other player)"}
+            </option>
+          ))}
+        </select>
+        <button
+          className="btn btn--accent"
+          disabled={!zoneType || !constructionCompanyId || commission.isPending}
+          onClick={() => commission.mutate()}
+        >
+          Commission
+        </button>
+      </div>
+      {selectedZone && (
+        <p className="suggestion" style={{ marginTop: 8 }}>
+          {selectedZone.description} Costs {selectedZone.goodsCost}g worth of goods stock from the construction
+          company plus {selectedZone.treasuryCost}g from your treasury, takes {selectedZone.buildTimeHours}h to
+          build, and grants +{selectedZone.slotsGranted} founding capacity for {selectedZone.industries.join(", ")}{" "}
+          companies once complete. If the company isn't yours, they'll need to accept the offer first.
+        </p>
+      )}
+      {constructionCompanies.length === 0 && (
+        <p className="suggestion" style={{ marginTop: 8 }}>
+          No construction companies exist yet — found one on the Companies page, or wait for an NPC to found one.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function MyZoneProjectsList() {
+  const queryClient = useQueryClient();
+  const { data } = useMyZoneProjects();
+  const [error, setError] = useState<string | null>(null);
+
+  const accept = useMutation({
+    mutationFn: (id: string) => api.acceptZoneProject(id),
+    onSuccess: () => {
+      setError(null);
+      invalidateGovernment(queryClient);
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Couldn't accept"),
+  });
+
+  const cancel = useMutation({
+    mutationFn: (id: string) => api.cancelZoneProject(id),
+    onSuccess: () => {
+      setError(null);
+      invalidateGovernment(queryClient);
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Couldn't cancel"),
+  });
+
+  if (!data || data.projects.length === 0) {
+    return (
+      <div className="card">
+        <h2 className="card__title">Zone Projects</h2>
+        <div className="empty-state">No zone commissions yet.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Zone Projects</h2>
+      {error && <div className="auth-error">{error}</div>}
+      <table className="settlement-table">
+        <thead>
+          <tr>
+            <th>Zone</th>
+            <th>Construction Co.</th>
+            <th>Cost</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.projects.map((p) => (
+            <tr key={p.id}>
+              <td>{p.zoneType}</td>
+              <td>{p.constructionCompanyName}</td>
+              <td>{p.goodsCost}g goods, {p.treasuryCost}g treasury</td>
+              <td>{ZONE_STATUS_LABELS[p.status] ?? p.status}</td>
+              <td>
+                {p.status === "pending" && p.constructionCompanyIsMine && (
+                  <button className="btn" disabled={accept.isPending} onClick={() => accept.mutate(p.id)}>
+                    Accept
+                  </button>
+                )}
+                {p.status === "pending" && (p.governmentIsMine || p.constructionCompanyIsMine) && (
+                  <button className="btn btn--danger" disabled={cancel.isPending} onClick={() => cancel.mutate(p.id)}>
+                    Cancel
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function TaxRatesForm() {
@@ -204,6 +365,8 @@ export default function Government() {
 
       <TaxRatesForm />
       <SubsidyForm />
+      <ZoneCommissionForm />
+      <MyZoneProjectsList />
     </div>
   );
 }
