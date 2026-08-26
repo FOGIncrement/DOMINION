@@ -30,6 +30,24 @@ export const STARTING_SETTLEMENT = {
 // player first).
 export const STARTING_TREASURY = 250;
 
+// Two-level grid for the shared territory map: every settlement (player or
+// NPC) claims exactly one same-sized slot on the shared WORLD_PLOT grid
+// (see settlementFactory.ts's assignSettlementPlot), and within its own
+// slot has a fixed local PLOT_ZONING grid a player drags rectangles on to
+// place zones. Prototype-scale numbers — not tuned for a real player base,
+// just large enough to hold today's ~16 NPC settlements plus real players
+// without crowding immediately.
+export const WORLD_PLOT_COLS = 12;
+export const WORLD_PLOT_ROWS = 8;
+export const PLOT_ZONING_SIZE = 10;
+
+// A dragged zone's founding-capacity grant is its area divided by this —
+// sized so a modest zone (roughly a third of a settlement's land) grants
+// about what today's flat "+2 slots per commission" already does. A
+// first-pass number, not carefully balanced, same as every other
+// zone/economy constant introduced this session.
+export const CELLS_PER_ZONE_SLOT = 10;
+
 export const BUILDING_TYPES: Record<BuildingTypeId, BuildingTypeDef> = {
   house: {
     id: "house",

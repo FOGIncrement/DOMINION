@@ -19,6 +19,10 @@ export function useWorldSettlements() {
   return useQuery({ queryKey: ["worldSettlements"], queryFn: api.worldSettlements, refetchInterval: POLL_MS });
 }
 
+export function useWorldMap() {
+  return useQuery({ queryKey: ["worldMap"], queryFn: api.worldMap, refetchInterval: POLL_MS });
+}
+
 export function useNews() {
   return useQuery({ queryKey: ["news"], queryFn: api.news, refetchInterval: POLL_MS });
 }

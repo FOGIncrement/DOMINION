@@ -6,3 +6,4 @@ export * from "./stocks.js";
 export * from "./employment.js";
 export * from "./loans.js";
 export * from "./bonds.js";
+export * from "./worldTerrain.js";

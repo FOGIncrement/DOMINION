@@ -42,6 +42,9 @@ export default function NavBar() {
       <NavLink to="/market" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
         Market
       </NavLink>
+      <NavLink to="/map" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+        Map
+      </NavLink>
       <NavLink to="/world" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
         World
       </NavLink>

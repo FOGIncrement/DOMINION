@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { ZONE_BASELINE_FREE_SLOTS, ZONE_TYPES, ZONE_TYPE_IDS, type ZoneTypeId } from "@dominion/shared";
+import { PLOT_ZONING_SIZE, ZONE_BASELINE_FREE_SLOTS, ZONE_TYPES, ZONE_TYPE_IDS, type ZoneTypeId } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
 import { getOrCreateGovernment } from "./government.js";
@@ -13,6 +13,58 @@ function statusOf(p: { cancelledAt: Date | null; acceptedAt: Date | null; comple
   if (!p.acceptedAt) return "pending";
   if (p.completedAt) return "completed";
   return "building";
+}
+
+export interface ZoneRect {
+  zoneType: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  status: "completed" | "pending" | "building";
+}
+
+// Every placed rectangle on a settlement's local zoning grid — completed
+// zones plus anything still pending/building (an in-flight commission's
+// footprint is reserved the moment it's proposed, not just once accepted,
+// so two commissions can't race to claim overlapping land). Rows from
+// before zone placement existed have null coordinates and are skipped
+// rather than rendered/validated against. Shared by the commission route's
+// overlap check below and the world map's plot-rendering route.
+export async function getSettlementZoneRects(settlementId: string): Promise<ZoneRect[]> {
+  const [completed, projects] = await Promise.all([
+    prisma.settlementZone.findMany({ where: { settlementId, zoneX: { not: null } } }),
+    prisma.zoneProject.findMany({
+      where: { settlementId, cancelledAt: null, completedAt: null, zoneX: { not: null } },
+    }),
+  ]);
+
+  const rects: ZoneRect[] = completed.map((z) => ({
+    zoneType: z.type,
+    x: z.zoneX!,
+    y: z.zoneY!,
+    width: z.zoneWidth!,
+    height: z.zoneHeight!,
+    status: "completed",
+  }));
+  for (const p of projects) {
+    rects.push({
+      zoneType: p.zoneType,
+      x: p.zoneX!,
+      y: p.zoneY!,
+      width: p.zoneWidth!,
+      height: p.zoneHeight!,
+      status: p.acceptedAt ? "building" : "pending",
+    });
+  }
+  return rects;
+}
+
+function rectsOverlap(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+): boolean {
+  return !(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y);
 }
 
 // Capacity used is every non-closed company this player owns in the
@@ -69,6 +121,10 @@ infrastructureRouter.get("/mine", async (req: AuthedRequest, res) => {
       constructionCompanyIsMine: p.constructionCompany.ownerId === req.playerId,
       governmentIsMine: p.government.playerId === req.playerId,
       treasuryCost: p.treasuryCost,
+      zoneX: p.zoneX,
+      zoneY: p.zoneY,
+      zoneWidth: p.zoneWidth,
+      zoneHeight: p.zoneHeight,
       buildTimeHours: p.buildTimeHours,
       createdAt: p.createdAt,
       acceptedAt: p.acceptedAt,
@@ -84,6 +140,10 @@ const commissionSchema = z.object({
   constructionCompanyId: z.string(),
   zoneType: z.enum(ZONE_TYPE_IDS),
   treasuryCost: z.number().positive(),
+  zoneX: z.number().int().min(0),
+  zoneY: z.number().int().min(0),
+  zoneWidth: z.number().int().positive(),
+  zoneHeight: z.number().int().positive(),
 });
 
 // Unlike Contract (either company's controller may propose), commissioning
@@ -104,16 +164,19 @@ infrastructureRouter.post("/", async (req: AuthedRequest, res) => {
   }
 
   const def = ZONE_TYPES[parsed.data.zoneType];
+  const { treasuryCost, zoneX, zoneY, zoneWidth, zoneHeight } = parsed.data;
 
-  const inFlight = await prisma.zoneProject.findFirst({
-    where: { settlementId: settlement.id, zoneType: def.id, cancelledAt: null, completedAt: null },
-  });
-  if (inFlight) {
-    res.status(400).json({ error: `A ${def.name} is already commissioned for this settlement` });
+  if (zoneX + zoneWidth > PLOT_ZONING_SIZE || zoneY + zoneHeight > PLOT_ZONING_SIZE) {
+    res.status(400).json({ error: `That rectangle falls outside your ${PLOT_ZONING_SIZE}x${PLOT_ZONING_SIZE} plot` });
     return;
   }
 
-  const { treasuryCost } = parsed.data;
+  const existingRects = await getSettlementZoneRects(settlement.id);
+  const newRect = { x: zoneX, y: zoneY, width: zoneWidth, height: zoneHeight };
+  if (existingRects.some((r) => rectsOverlap(r, newRect))) {
+    res.status(400).json({ error: "That rectangle overlaps a zone you've already placed or commissioned" });
+    return;
+  }
 
   const government = await getOrCreateGovernment(req.playerId!);
   if (government.treasury < treasuryCost) {
@@ -147,6 +210,10 @@ infrastructureRouter.post("/", async (req: AuthedRequest, res) => {
         zoneType: def.id,
         treasuryCost,
         buildTimeHours: def.buildTimeHours,
+        zoneX,
+        zoneY,
+        zoneWidth,
+        zoneHeight,
       },
     });
     res.status(201).json({ ok: true, projectId: project.id, pending: true });
@@ -165,6 +232,10 @@ infrastructureRouter.post("/", async (req: AuthedRequest, res) => {
         buildTimeHours: def.buildTimeHours,
         acceptedAt: now,
         completesAt,
+        zoneX,
+        zoneY,
+        zoneWidth,
+        zoneHeight,
       },
     }),
     prisma.government.update({ where: { id: government.id }, data: { treasury: { decrement: treasuryCost } } }),

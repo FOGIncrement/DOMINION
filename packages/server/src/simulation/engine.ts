@@ -1,5 +1,6 @@
 import {
   BASE_PRICES,
+  CELLS_PER_ZONE_SLOT,
   COMPANY_INDUSTRIES,
   MAX_CATCHUP_HOURS,
   REFERENCE_TICK_HOURS,
@@ -501,9 +502,23 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
   });
   for (const project of dueZoneProjects) {
     const zoneDef = ZONE_TYPES[project.zoneType as ZoneTypeId];
+    // Capacity granted comes from the placed rectangle's actual area, not
+    // ZONE_TYPES' flat suggestion — that field is advisory-only now (see
+    // ZoneDef.slotsGranted). Legacy projects from before placement existed
+    // have null dimensions and fall back to 0 rather than crashing.
+    const area = (project.zoneWidth ?? 0) * (project.zoneHeight ?? 0);
+    const slotsGranted = Math.floor(area / CELLS_PER_ZONE_SLOT);
     await prisma.$transaction([
       prisma.settlementZone.create({
-        data: { settlementId: project.settlementId, type: project.zoneType, slotsGranted: zoneDef.slotsGranted },
+        data: {
+          settlementId: project.settlementId,
+          type: project.zoneType,
+          slotsGranted,
+          zoneX: project.zoneX,
+          zoneY: project.zoneY,
+          zoneWidth: project.zoneWidth,
+          zoneHeight: project.zoneHeight,
+        },
       }),
       prisma.zoneProject.update({ where: { id: project.id }, data: { completedAt: now } }),
     ]);
@@ -512,7 +527,7 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
         settlementId: project.settlementId,
         type: "zone_completed",
         title: `${zoneDef.name} Completed`,
-        description: `${zoneDef.name} construction has finished — founding capacity for ${zoneDef.industries.length > 1 ? "matching industries" : "retail companies"} has increased by ${zoneDef.slotsGranted}.`,
+        description: `${zoneDef.name} construction has finished — founding capacity for ${zoneDef.industries.length > 1 ? "matching industries" : "retail companies"} has increased by ${slotsGranted}.`,
       },
     });
   }

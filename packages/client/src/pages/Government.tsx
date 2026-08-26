@@ -1,7 +1,32 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { api, ApiError } from "../api/client.js";
-import { useAllCompanies, useGovernment, useMyCompanies, useMyZoneProjects, useTutorial, useZones } from "../api/hooks.js";
+import { PLOT_ZONING_SIZE } from "@dominion/shared";
+import { api, ApiError, type ZoneRect } from "../api/client.js";
+import { useAllCompanies, useGovernment, useMyCompanies, useMyZoneProjects, useTutorial, useWorldMap, useZones } from "../api/hooks.js";
+
+// A modest default footprint for players commissioning straight from this
+// form instead of dragging on the Map page — 25 cells, roughly what the
+// old flat "+2 slots per commission" used to grant at today's
+// CELLS_PER_ZONE_SLOT. The Map page's drag interaction is the primary way
+// to size a zone deliberately; this is just a reasonable non-zero fallback
+// so the form still works without ever visiting the map.
+const DEFAULT_ZONE_SIZE = 5;
+
+function rectsOverlap(a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }): boolean {
+  return !(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y);
+}
+
+function findFirstOpenRect(existing: ZoneRect[], width: number, height: number): { x: number; y: number } | null {
+  for (let y = 0; y <= PLOT_ZONING_SIZE - height; y++) {
+    for (let x = 0; x <= PLOT_ZONING_SIZE - width; x++) {
+      const candidate = { x, y, width, height };
+      if (!existing.some((z) => rectsOverlap(z, candidate))) {
+        return { x, y };
+      }
+    }
+  }
+  return null;
+}
 
 function invalidateGovernment(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ["government"] });
@@ -23,6 +48,7 @@ function ZoneCommissionForm() {
   const { data: zones } = useZones();
   const { data: allCompanies } = useAllCompanies();
   const { data: tutorial } = useTutorial();
+  const { data: worldMap } = useWorldMap();
   const [zoneType, setZoneType] = useState("");
   const [constructionCompanyId, setConstructionCompanyId] = useState("");
   const [treasuryCost, setTreasuryCost] = useState(0);
@@ -42,11 +68,21 @@ function ZoneCommissionForm() {
   }, [selectedZone]);
 
   const commission = useMutation({
-    mutationFn: () => api.commissionZone(constructionCompanyId, zoneType, treasuryCost),
+    mutationFn: () => {
+      const spot = findFirstOpenRect(worldMap?.myZones ?? [], DEFAULT_ZONE_SIZE, DEFAULT_ZONE_SIZE);
+      if (!spot) throw new Error("No open space left on your plot — free up room on the Map page first.");
+      return api.commissionZone(constructionCompanyId, zoneType, treasuryCost, {
+        zoneX: spot.x,
+        zoneY: spot.y,
+        zoneWidth: DEFAULT_ZONE_SIZE,
+        zoneHeight: DEFAULT_ZONE_SIZE,
+      });
+    },
     onSuccess: (res) => {
       setError(null);
       setMessage(res.pending ? "Commission sent — awaiting the construction company's acceptance." : "Commissioned — zone under construction.");
       invalidateGovernment(queryClient);
+      queryClient.invalidateQueries({ queryKey: ["worldMap"] });
       if (tutorial?.step === "government_unlock") {
         api
           .tutorialAdvance("government_unlock")
@@ -54,7 +90,7 @@ function ZoneCommissionForm() {
           .then(() => queryClient.invalidateQueries({ queryKey: ["tutorial"] }));
       }
     },
-    onError: (err) => setError(err instanceof ApiError ? err.message : "Commission failed"),
+    onError: (err) => setError(err instanceof Error ? err.message : "Commission failed"),
   });
 
   const constructionCompanies = (allCompanies?.companies ?? []).filter((c) => c.industry === "construction");
@@ -118,9 +154,11 @@ function ZoneCommissionForm() {
         <p className="suggestion" style={{ marginTop: 8 }}>
           {selectedZone.description} Suggested treasury payment is {selectedZone.suggestedTreasuryCost}g — edit above
           to propose a different amount. Funded entirely from your treasury; the construction company doesn't need
-          to stockpile any materials first. Takes {selectedZone.buildTimeHours}h to build once accepted, and grants
-          +{selectedZone.slotsGranted} founding capacity for {selectedZone.industries.join(", ")} companies once
-          complete. If the company isn't yours, they'll need to accept the offer first.
+          to stockpile any materials first. Takes {selectedZone.buildTimeHours}h to build once accepted. Commissioning
+          here places a default {DEFAULT_ZONE_SIZE}×{DEFAULT_ZONE_SIZE} zone in the first open space on your plot,
+          granting founding capacity for {selectedZone.industries.join(", ")} companies based on its size once
+          complete — visit the Map page to size and place it yourself instead. If the company isn't yours, they'll
+          need to accept the offer first.
         </p>
       )}
       {constructionCompanies.length === 0 && (

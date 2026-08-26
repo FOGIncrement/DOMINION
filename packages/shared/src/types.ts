@@ -150,6 +150,11 @@ export interface ZoneDef {
   // never requires the construction company to have pre-accumulated goods.
   suggestedTreasuryCost: number;
   buildTimeHours: number;
+  // Advisory only, same as suggestedTreasuryCost — a real commission's
+  // capacity grant is computed from the dragged zone rectangle's actual
+  // area (zoneWidth * zoneHeight / CELLS_PER_ZONE_SLOT), not this catalog
+  // number. Kept here purely so the client can show "roughly what a zone
+  // this size tends to grant" before the player has dragged anything.
   slotsGranted: number;
 }
 

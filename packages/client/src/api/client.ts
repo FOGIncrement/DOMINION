@@ -53,6 +53,7 @@ export const api = {
     }),
 
   worldSettlements: () => request<{ settlements: NpcSettlementInfo[] }>("/world/settlements"),
+  worldMap: () => request<WorldMapResponse>("/world/map"),
   news: () => request<{ events: NewsEvent[] }>("/news"),
 
   myCompanies: () => request<{ companies: MyCompany[] }>("/companies/mine"),
@@ -186,10 +187,15 @@ export const api = {
 
   zones: () => request<{ zones: ZoneCatalogEntry[] }>("/infrastructure"),
   myZoneProjects: () => request<{ projects: MyZoneProject[] }>("/infrastructure/mine"),
-  commissionZone: (constructionCompanyId: string, zoneType: string, treasuryCost: number) =>
+  commissionZone: (
+    constructionCompanyId: string,
+    zoneType: string,
+    treasuryCost: number,
+    shape: { zoneX: number; zoneY: number; zoneWidth: number; zoneHeight: number },
+  ) =>
     request<{ ok: true; projectId: string; pending: boolean }>("/infrastructure", {
       method: "POST",
-      body: JSON.stringify({ constructionCompanyId, zoneType, treasuryCost }),
+      body: JSON.stringify({ constructionCompanyId, zoneType, treasuryCost, ...shape }),
     }),
   acceptZoneProject: (projectId: string) =>
     request<{ ok: true }>(`/infrastructure/${projectId}/accept`, { method: "POST" }),
@@ -515,6 +521,10 @@ export interface MyZoneProject {
   constructionCompanyIsMine: boolean;
   governmentIsMine: boolean;
   treasuryCost: number;
+  zoneX: number | null;
+  zoneY: number | null;
+  zoneWidth: number | null;
+  zoneHeight: number | null;
   buildTimeHours: number;
   createdAt: string;
   acceptedAt: string | null;
@@ -522,4 +532,30 @@ export interface MyZoneProject {
   completedAt: string | null;
   cancelledAt: string | null;
   status: "pending" | "cancelled" | "building" | "completed";
+}
+
+export interface ZoneRect {
+  zoneType: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  status: "completed" | "pending" | "building";
+}
+
+export interface WorldMapSettlement {
+  id: string;
+  name: string;
+  worldCol: number;
+  worldRow: number;
+  isPlayer: boolean;
+  isMine: boolean;
+  archetypeName: string | null;
+}
+
+export interface WorldMapResponse {
+  cols: number;
+  rows: number;
+  settlements: WorldMapSettlement[];
+  myZones: ZoneRect[];
 }
