@@ -6,6 +6,7 @@ import {
   WORLD_DEMAND_TUNING,
   ZONE_TYPES,
   computeBondRedemptionValue,
+  computeCompanyMaxWorkers,
   computeTargetSharePrice,
   computeUnemployment,
   computeWelfareCostPerHour,
@@ -87,6 +88,7 @@ async function loadCompanySnapshots(): Promise<CompanySnapshot[]> {
     inputStock: c.inputStock,
     goodsStock: c.goodsStock,
     workersAssigned: c.workersAssigned,
+    autoStaff: c.autoStaff,
     level: c.level,
     isPublic: c.isPublic,
     sharesOutstanding: c.sharesOutstanding,
@@ -132,6 +134,16 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     const list = ownedCompaniesByOwnerAndIndustry.get(key) ?? [];
     list.push(company);
     ownedCompaniesByOwnerAndIndustry.set(key, list);
+  }
+
+  // All of an owner's companies regardless of industry — used by organic
+  // hiring below, which can auto-staff any industry, not just Retail/Bakery.
+  const ownedCompaniesByOwner = new Map<string, CompanySnapshot[]>();
+  for (const company of companies) {
+    if (!company.ownerId) continue;
+    const list = ownedCompaniesByOwner.get(company.ownerId) ?? [];
+    list.push(company);
+    ownedCompaniesByOwner.set(company.ownerId, list);
   }
 
   // Revenue booked by a settlement buying directly from a company it owns
@@ -254,6 +266,39 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
 
     if (settlement.playerId) {
       const buildingWorkers = settlement.buildings.reduce((sum, b) => sum + b.workersAssigned, 0);
+
+      // Organic hiring: idle population fills the open slots of any company
+      // this player opted into auto-staffing (Company.autoStaff), mirroring
+      // maybeAssignIdleWorkers for NPC buildings above but opt-in per
+      // company since a player may be deliberately running one lean.
+      // Mutates the CompanySnapshot objects in place rather than writing to
+      // the DB directly — the company tick loop later in this same
+      // runTick() persists workersAssigned unconditionally from these same
+      // snapshot references every tick, so a direct write here would just
+      // get clobbered back to its pre-hire value (same constraint
+      // directSales.ts already works around for retail/luxury purchases).
+      const ownedCompanies = ownedCompaniesByOwner.get(settlement.playerId) ?? [];
+      let idleForHiring = Math.max(
+        0,
+        consumption.newPopulationCount - buildingWorkers - (companyWorkersByOwner.get(settlement.playerId) ?? 0),
+      );
+      if (idleForHiring > 0) {
+        for (const company of ownedCompanies) {
+          if (idleForHiring <= 0) break;
+          if (!company.autoStaff) continue;
+          const industry = COMPANY_INDUSTRIES[company.industry];
+          const room = computeCompanyMaxWorkers(industry, company.level) - company.workersAssigned;
+          if (room <= 0) continue;
+          const toAssign = Math.min(room, idleForHiring);
+          company.workersAssigned += toAssign;
+          idleForHiring -= toAssign;
+        }
+        companyWorkersByOwner.set(
+          settlement.playerId,
+          ownedCompanies.reduce((sum, c) => sum + c.workersAssigned, 0),
+        );
+      }
+
       const companyWorkers = companyWorkersByOwner.get(settlement.playerId) ?? 0;
       const unemployed = computeUnemployment(consumption.newPopulationCount, buildingWorkers + companyWorkers);
 

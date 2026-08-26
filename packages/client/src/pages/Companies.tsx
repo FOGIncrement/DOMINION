@@ -439,9 +439,27 @@ function WorkforceTab({ company }: { company: MyCompany }) {
     onError: (err) => setError(err instanceof ApiError ? err.message : "Couldn't update workers"),
   });
 
+  const setAutoStaff = useMutation({
+    mutationFn: (enabled: boolean) => api.setAutoStaff(company.id, enabled),
+    onSuccess: () => {
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ["myCompanies"] });
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Couldn't update auto-staff"),
+  });
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {error && <div className="auth-error">{error}</div>}
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--text-secondary)", cursor: "pointer" }}>
+        <input
+          type="checkbox"
+          checked={company.autoStaff}
+          disabled={setAutoStaff.isPending}
+          onChange={(e) => setAutoStaff.mutate(e.target.checked)}
+        />
+        Auto-staff — automatically hires from available population
+      </label>
       <div style={{ fontSize: 12.5, color: "var(--text-secondary)" }}>
         {company.workersAssigned} of {company.maxWorkers} positions filled · {company.rates.wagePerHour.toFixed(1)}g/hr in wages
         {isIdle && " — idle"}

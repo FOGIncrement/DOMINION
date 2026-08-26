@@ -48,6 +48,11 @@ export default function TopBar() {
 
   const s = data?.settlement;
   const pop = data?.population;
+  const idleAvailable = pop ? Math.floor(pop.available) : 0;
+  // The population's own starting default is 70% — below half is a real
+  // "trending badly" signal worth flagging, not a hair-trigger on normal
+  // day-to-day fluctuation.
+  const lowHappiness = pop ? pop.happiness < 0.5 : false;
 
   // Ticks run once per real minute, so any single resource gain is tiny and
   // easy to miss. Show the actual hourly rate up front instead of making
@@ -104,8 +109,20 @@ export default function TopBar() {
         <span className="resource-pill__label">/ {pop?.capacity ?? "—"} Pop</span>
       </span>
 
+      <span
+        className="resource-pill"
+        title="Population not assigned to any building or company — found or auto-staff a company, or assign a building, to put them to work."
+      >
+        <span className={`resource-pill__value${idleAvailable > 0 ? " resource-pill__value--attention" : ""}`}>
+          {data ? idleAvailable : "—"}
+        </span>
+        <span className="resource-pill__label">Idle</span>
+      </span>
+
       <span className="resource-pill">
-        <span className="resource-pill__value">{pop ? Math.round(pop.happiness * 100) : "—"}%</span>
+        <span className={`resource-pill__value${lowHappiness ? " resource-pill__value--attention" : ""}`}>
+          {pop ? Math.round(pop.happiness * 100) : "—"}%
+        </span>
         <span className="resource-pill__label">Happiness</span>
       </span>
 

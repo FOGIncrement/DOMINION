@@ -67,6 +67,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ workersAssigned }),
     }),
+  setAutoStaff: (companyId: string, enabled: boolean) =>
+    request<{ ok: true; autoStaff: boolean }>(`/companies/${companyId}/auto-staff`, {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    }),
   tradeCompany: (companyId: string, side: "buy" | "sell", quantity: number) =>
     request<{ ok: true; newPrice: number; proceeds?: number; cost?: number; tax?: number }>(`/companies/${companyId}/trade`, {
       method: "POST",
@@ -275,6 +280,7 @@ export interface MyCompany {
   inputStock: number;
   goodsStock: number;
   workersAssigned: number;
+  autoStaff: boolean;
   maxWorkers: number;
   level: number;
   upgradeCost: number | null;

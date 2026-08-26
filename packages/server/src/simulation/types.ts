@@ -32,6 +32,7 @@ export interface CompanySnapshot {
   inputStock: number;
   goodsStock: number;
   workersAssigned: number;
+  autoStaff: boolean;
   level: number;
   isPublic: boolean;
   sharesOutstanding: number;

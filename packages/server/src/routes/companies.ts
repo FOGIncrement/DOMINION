@@ -73,6 +73,7 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
         inputStock: c.inputStock,
         goodsStock: c.goodsStock,
         workersAssigned: c.workersAssigned,
+        autoStaff: c.autoStaff,
         maxWorkers: computeCompanyMaxWorkers(industry, c.level),
         level: c.level,
         upgradeCost: computeCompanyUpgradeCost(industry, c.level),
@@ -232,6 +233,28 @@ companiesRouter.post("/:id/workers", async (req: AuthedRequest, res) => {
 
   await prisma.company.update({ where: { id: company.id }, data: { workersAssigned } });
   res.json({ ok: true, workersAssigned });
+});
+
+const autoStaffSchema = z.object({ enabled: z.boolean() });
+
+// Opting a company into "organic hiring" — see the settlement loop in
+// simulation/engine.ts for what this actually does at tick time. Purely a
+// flag flip here, no worker-count side effects of its own.
+companiesRouter.post("/:id/auto-staff", async (req: AuthedRequest, res) => {
+  const parsed = autoStaffSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid request" });
+    return;
+  }
+
+  const { company, controlled } = await loadControlledCompany(req.params.id, req.playerId!);
+  if (!company || !controlled) {
+    respondNotControlled(res, company);
+    return;
+  }
+
+  await prisma.company.update({ where: { id: company.id }, data: { autoStaff: parsed.data.enabled } });
+  res.json({ ok: true, autoStaff: parsed.data.enabled });
 });
 
 companiesRouter.post("/:id/upgrade", async (req: AuthedRequest, res) => {

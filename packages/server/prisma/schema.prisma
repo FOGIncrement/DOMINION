@@ -208,6 +208,13 @@ model Company {
   inputStock      Float     @default(0)
   goodsStock      Float     @default(0)
   workersAssigned Int       @default(0)
+  // Opt-in "organic hiring" — when true, idle settlement population fills
+  // this company's open worker slots automatically every tick, same as an
+  // NPC settlement's buildings (see maybeAssignIdleWorkers). Off by default
+  // for every company, existing and new alike, since it hands the company
+  // over to automatic management rather than the player's own +/-/Max
+  // controls; see the organic-hiring step in simulation/engine.ts.
+  autoStaff       Boolean   @default(false)
   level           Int       @default(1)
   totalRevenue    Float     @default(0)
   totalExpenses   Float     @default(0)
