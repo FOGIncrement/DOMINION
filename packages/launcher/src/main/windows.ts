@@ -13,7 +13,7 @@ export function createLauncherWindow(): BrowserWindow {
     height: 700,
     minWidth: 820,
     minHeight: 560,
-    title: "Dominion Launcher",
+    title: "Capitisle Launcher",
     webPreferences: {
       preload: PRELOAD_PATH,
       contextIsolation: true,
@@ -42,9 +42,9 @@ export function getLauncherWindow(): BrowserWindow | null {
 
 // Opens (or focuses, if already open) the game window against the given
 // server URL, and hides the launcher window while it's up. No preload here
-// — this window is just the live DOMINION web app in a native frame, the
-// same origin the launcher's own API calls already authenticated against
-// (see main/api.ts), so it opens straight into the logged-in Dashboard.
+// — this window is just the live game web app in a native frame, the same
+// origin the launcher's own API calls already authenticated against (see
+// main/api.ts), so it opens straight into the logged-in Dashboard.
 // Critically, this window must NOT set a `partition` — it has to share
 // Electron's implicit default session with the launcher's own net.fetch
 // calls, or the auth cookie won't be visible here at all.
@@ -59,7 +59,7 @@ export function openGameWindow(serverUrl: string): void {
     height: 800,
     minWidth: 960,
     minHeight: 600,
-    title: "Dominion",
+    title: "Capitisle",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -67,7 +67,10 @@ export function openGameWindow(serverUrl: string): void {
     },
   });
 
-  win.loadURL(serverUrl);
+  // The server now serves the marketing website at root and the actual
+  // game under /play (see packages/server/src/index.ts) — loading the bare
+  // serverUrl here would open the website, not the game.
+  win.loadURL(`${serverUrl.replace(/\/$/, "")}/play`);
 
   win.once("ready-to-show", () => {
     launcherWindow?.hide();
