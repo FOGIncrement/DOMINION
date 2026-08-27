@@ -86,6 +86,8 @@ export const api = {
     }),
   upgradeCompany: (companyId: string) =>
     request<{ ok: true; level: number; cost: number }>(`/companies/${companyId}/upgrade`, { method: "POST" }),
+  expandCompany: (companyId: string) =>
+    request<{ ok: true; facilityCount: number; cost: number }>(`/companies/${companyId}/expand`, { method: "POST" }),
   bailoutCompany: (companyId: string, amount: number) =>
     request<{ ok: true; amount: number; remainingDeficit: number }>(`/companies/${companyId}/bailout`, {
       method: "POST",
@@ -320,6 +322,8 @@ export interface MyCompany {
   maxWorkers: number;
   level: number;
   upgradeCost: number | null;
+  facilityCount: number;
+  expandCost: number | null;
   totalRevenue: number;
   totalExpenses: number;
   foundedAt: string;
@@ -340,6 +344,7 @@ export interface PublicCompany {
   isPlayerOwned: boolean;
   workersAssigned: number;
   level: number;
+  facilityCount: number;
   cash: number;
   foundedAt: string;
   isPublic: boolean;

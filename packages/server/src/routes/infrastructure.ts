@@ -67,18 +67,24 @@ function rectsOverlap(
   return !(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y);
 }
 
-// Capacity used is every non-closed company this player owns in the
-// category; capacity available is the baseline free allowance plus every
-// completed zone's slotsGranted. Only completed zones count — a project
-// that's still "building" hasn't delivered capacity yet.
-async function computeCapacity(playerId: string, settlementId: string, zoneType: ZoneTypeId) {
+// Capacity used is the sum of facilityCount across every non-closed company
+// this player owns in the category — a multi-facility company consumes
+// proportionally more, same as founding another company would (see
+// Company.facilityCount and routes/companies.ts's expand route, both of
+// which reuse this instead of maintaining their own count). Capacity
+// available is the baseline free allowance plus every completed zone's
+// slotsGranted. Only completed zones count — a project that's still
+// "building" hasn't delivered capacity yet.
+export async function computeZoneCategoryUsage(playerId: string, settlementId: string, zoneType: ZoneTypeId) {
   const def = ZONE_TYPES[zoneType];
-  const [used, zones] = await Promise.all([
-    prisma.company.count({
+  const [companies, zones] = await Promise.all([
+    prisma.company.findMany({
       where: { ownerId: playerId, closedAt: null, industry: { in: def.industries } },
+      select: { facilityCount: true },
     }),
     prisma.settlementZone.findMany({ where: { settlementId, type: zoneType } }),
   ]);
+  const used = companies.reduce((sum, c) => sum + c.facilityCount, 0);
   const available = ZONE_BASELINE_FREE_SLOTS[zoneType] + zones.reduce((sum, z) => sum + z.slotsGranted, 0);
   return { used, available };
 }
@@ -93,7 +99,7 @@ infrastructureRouter.get("/", async (req: AuthedRequest, res) => {
   const zones = await Promise.all(
     ZONE_TYPE_IDS.map(async (zoneType) => ({
       ...ZONE_TYPES[zoneType],
-      ...(await computeCapacity(req.playerId!, settlement.id, zoneType)),
+      ...(await computeZoneCategoryUsage(req.playerId!, settlement.id, zoneType)),
     })),
   );
 

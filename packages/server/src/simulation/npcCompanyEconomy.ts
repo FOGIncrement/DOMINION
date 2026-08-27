@@ -1,5 +1,6 @@
 import {
   COMPANY_INDUSTRY_IDS,
+  computeCompanyFacilityCost,
   computeCompanyMaxWorkers,
   computeCompanyUpgradeCost,
   type CompanyIndustryId,
@@ -62,7 +63,11 @@ export async function settleNpcCompanyTrading(
 export async function maybeHire(company: CompanySnapshot, state: MutableCompanyState): Promise<void> {
   const config = getConfig();
   const industry = config.COMPANY_INDUSTRIES[company.industry];
-  if (company.workersAssigned >= computeCompanyMaxWorkers(industry, company.level, config.COMPANY_UPGRADE_TUNING)) return;
+  if (
+    company.workersAssigned >=
+    computeCompanyMaxWorkers(industry, company.level, config.COMPANY_UPGRADE_TUNING, company.facilityCount)
+  )
+    return;
   if (state.cash < config.NPC_COMPANY_TUNING.minCashToHire) return;
   if (Math.random() > config.NPC_COMPANY_TUNING.hireChancePerTick) return;
 
@@ -91,6 +96,29 @@ export async function maybeUpgradeCompany(company: CompanySnapshot, state: Mutab
   await prisma.company.update({
     where: { id: company.id },
     data: { level: company.level + 1 },
+  });
+}
+
+/**
+ * Small chance for a cash-rich NPC company to open another facility,
+ * mirroring maybeUpgradeCompany — not gated by zone capacity the way a
+ * player-owned company's expansion is (see routes/companies.ts), since NPC
+ * companies have no settlement/Government to commission a zone through,
+ * same bypass NPC founding already has.
+ */
+export async function maybeExpandCompany(company: CompanySnapshot, state: MutableCompanyState): Promise<void> {
+  const config = getConfig();
+  const industry = config.COMPANY_INDUSTRIES[company.industry];
+  const cost = computeCompanyFacilityCost(industry, company.facilityCount, config.COMPANY_FACILITY_TUNING);
+  if (cost === null) return; // already at maxFacilities
+  if (state.cash < config.NPC_COMPANY_TUNING.minCashToExpand) return;
+  if (state.cash < cost) return;
+  if (Math.random() > config.NPC_COMPANY_TUNING.expandChancePerTick) return;
+
+  state.cash -= cost;
+  await prisma.company.update({
+    where: { id: company.id },
+    data: { facilityCount: company.facilityCount + 1 },
   });
 }
 

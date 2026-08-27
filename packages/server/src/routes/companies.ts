@@ -2,8 +2,8 @@ import { Router } from "express";
 import { z } from "zod";
 import {
   COMPANY_INDUSTRY_IDS,
-  ZONE_BASELINE_FREE_SLOTS,
   ZONE_TYPES,
+  computeCompanyFacilityCost,
   computeCompanyHourlyRates,
   computeCompanyMaxWorkers,
   computeCompanyUpgradeCost,
@@ -17,6 +17,7 @@ import { getConfig } from "../gameConfigStore.js";
 import { applyTradeImpact } from "../simulation/market.js";
 import { getControllerLabel, getControllingPlayerId } from "../simulation/control.js";
 import { buildCorporateBondClosureOps } from "../simulation/corporateBonds.js";
+import { computeZoneCategoryUsage } from "./infrastructure.js";
 
 export const companiesRouter = Router();
 
@@ -32,6 +33,7 @@ companiesRouter.get("/", async (_req, res) => {
       isPlayerOwned: c.ownerId !== null,
       workersAssigned: c.workersAssigned,
       level: c.level,
+      facilityCount: c.facilityCount,
       cash: Math.round(c.cash),
       foundedAt: c.foundedAt,
       isPublic: c.isPublic,
@@ -75,9 +77,11 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
         goodsStock: c.goodsStock,
         workersAssigned: c.workersAssigned,
         autoStaff: c.autoStaff,
-        maxWorkers: computeCompanyMaxWorkers(industry, c.level, config.COMPANY_UPGRADE_TUNING),
+        maxWorkers: computeCompanyMaxWorkers(industry, c.level, config.COMPANY_UPGRADE_TUNING, c.facilityCount),
         level: c.level,
         upgradeCost: computeCompanyUpgradeCost(industry, c.level, config.COMPANY_UPGRADE_TUNING),
+        facilityCount: c.facilityCount,
+        expandCost: computeCompanyFacilityCost(industry, c.facilityCount, config.COMPANY_FACILITY_TUNING),
         totalRevenue: c.totalRevenue,
         totalExpenses: c.totalExpenses,
         foundedAt: c.foundedAt,
@@ -128,13 +132,11 @@ companiesRouter.post("/", async (req: AuthedRequest, res) => {
   // NPC settlements have no Government to commission a zone through.
   const zoneType = zoneCategoryForIndustry(industry.id);
   const zoneDef = ZONE_TYPES[zoneType];
-  const [usedInCategory, zones] = await Promise.all([
-    prisma.company.count({
-      where: { ownerId: req.playerId!, closedAt: null, industry: { in: zoneDef.industries } },
-    }),
-    prisma.settlementZone.findMany({ where: { settlementId: settlement.id, type: zoneType } }),
-  ]);
-  const capacity = ZONE_BASELINE_FREE_SLOTS[zoneType] + zones.reduce((sum, z) => sum + z.slotsGranted, 0);
+  const { used: usedInCategory, available: capacity } = await computeZoneCategoryUsage(
+    req.playerId!,
+    settlement.id,
+    zoneType,
+  );
   if (usedInCategory >= capacity) {
     res.status(400).json({
       error: `Not enough ${zoneDef.name} capacity (${usedInCategory}/${capacity} used) — commission a ${zoneDef.name} from your government to found more.`,
@@ -206,7 +208,7 @@ companiesRouter.post("/:id/workers", async (req: AuthedRequest, res) => {
   const industry = config.COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
   const workersAssigned = Math.min(
     parsed.data.workersAssigned,
-    computeCompanyMaxWorkers(industry, company.level, config.COMPANY_UPGRADE_TUNING),
+    computeCompanyMaxWorkers(industry, company.level, config.COMPANY_UPGRADE_TUNING, company.facilityCount),
   );
 
   // Same population cap /game/workers enforces on the building side, and
@@ -284,6 +286,51 @@ companiesRouter.post("/:id/upgrade", async (req: AuthedRequest, res) => {
   const level = company.level + 1;
   await prisma.company.update({ where: { id: company.id }, data: { cash: company.cash - cost, level } });
   res.json({ ok: true, level, cost });
+});
+
+companiesRouter.post("/:id/expand", async (req: AuthedRequest, res) => {
+  const { company, controlled } = await loadControlledCompany(req.params.id, req.playerId!);
+  if (!company || !controlled) {
+    respondNotControlled(res, company);
+    return;
+  }
+
+  const config = getConfig();
+  const industry = config.COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
+  const cost = computeCompanyFacilityCost(industry, company.facilityCount, config.COMPANY_FACILITY_TUNING);
+  if (cost === null) {
+    res.status(400).json({ error: "Already at max facilities" });
+    return;
+  }
+
+  // Zone capacity is attributed to wherever the company was founded
+  // (ownerId's settlement), not whoever currently controls it — same
+  // reasoning as computeZoneCategoryUsage grouping by ownerId. A company
+  // with no owner (NPC-founded, possibly stock-acquired since) has no
+  // settlement/zoning to check against at all, same bypass NPC founding has.
+  if (company.ownerId) {
+    const settlement = await prisma.settlement.findUnique({ where: { playerId: company.ownerId } });
+    if (settlement) {
+      const zoneType = zoneCategoryForIndustry(industry.id);
+      const zoneDef = ZONE_TYPES[zoneType];
+      const { used, available } = await computeZoneCategoryUsage(company.ownerId, settlement.id, zoneType);
+      if (used >= available) {
+        res.status(400).json({
+          error: `Not enough ${zoneDef.name} capacity (${used}/${available} used) — commission a ${zoneDef.name} from your government to expand further.`,
+        });
+        return;
+      }
+    }
+  }
+
+  if (company.cash < cost) {
+    res.status(400).json({ error: `Need ${cost.toFixed(0)} gold in company cash to expand` });
+    return;
+  }
+
+  const facilityCount = company.facilityCount + 1;
+  await prisma.company.update({ where: { id: company.id }, data: { cash: company.cash - cost, facilityCount } });
+  res.json({ ok: true, facilityCount, cost });
 });
 
 const tradeSchema = z.object({ side: z.enum(["buy", "sell"]), quantity: z.number().positive() });

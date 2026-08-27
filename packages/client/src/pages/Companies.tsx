@@ -174,6 +174,16 @@ function CompanyActions({ company }: { company: MyCompany }) {
     onError: (err) => setError(err instanceof ApiError ? err.message : "Upgrade failed"),
   });
 
+  const expand = useMutation({
+    mutationFn: () => api.expandCompany(company.id),
+    onSuccess: (res) => {
+      setError(null);
+      setMessage(`Added a facility (now ${res.facilityCount}) for ${res.cost.toFixed(0)} gold.`);
+      invalidate();
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Expansion failed"),
+  });
+
   const bailout = useMutation({
     mutationFn: () => api.bailoutCompany(company.id, bailoutAmt),
     onSuccess: (res) => {
@@ -238,6 +248,9 @@ function CompanyActions({ company }: { company: MyCompany }) {
         </button>
         <button className="btn" disabled={company.upgradeCost === null || upgrade.isPending} onClick={() => upgrade.mutate()}>
           {company.upgradeCost === null ? "Max level" : `Upgrade (${company.upgradeCost.toFixed(0)}g)`}
+        </button>
+        <button className="btn" disabled={company.expandCost === null || expand.isPending} onClick={() => expand.mutate()}>
+          {company.expandCost === null ? "Max facilities" : `Add facility (${company.expandCost.toFixed(0)}g)`}
         </button>
         {!company.isPublic && !canIpo && <span className="suggestion" style={{ padding: 0, border: "none" }}>Needs {STOCK_TUNING.minProfitToIPO}g lifetime profit to IPO</span>}
         {!company.isPublic && canIpo && (
@@ -323,6 +336,10 @@ function OverviewTab({ company, contracts, onGoToWorkforce }: { company: MyCompa
             <div className="cc-stat-tile__value">{company.rates.goodsPerHour.toFixed(1)}/hr</div>
           </div>
         )}
+        <div className="cc-stat-tile">
+          <div className="cc-stat-tile__label">Facilities</div>
+          <div className="cc-stat-tile__value">{company.facilityCount}</div>
+        </div>
       </div>
 
       <div className="cc-stat-tile">
@@ -377,6 +394,10 @@ function LostControlOverview({ company }: { company: MyCompany }) {
             {company.workersAssigned} / {company.maxWorkers}
           </div>
         </div>
+        <div className="cc-stat-tile">
+          <div className="cc-stat-tile__label">Facilities</div>
+          <div className="cc-stat-tile__value">{company.facilityCount}</div>
+        </div>
       </div>
     </div>
   );
@@ -393,6 +414,10 @@ function RivalOverview({ company, onPropose }: { company: PublicCompany; onPropo
         <div className="cc-stat-tile">
           <div className="cc-stat-tile__label">Level</div>
           <div className="cc-stat-tile__value">{company.level}</div>
+        </div>
+        <div className="cc-stat-tile">
+          <div className="cc-stat-tile__label">Facilities</div>
+          <div className="cc-stat-tile__value">{company.facilityCount}</div>
         </div>
         <div className="cc-stat-tile">
           <div className="cc-stat-tile__label">Workforce</div>

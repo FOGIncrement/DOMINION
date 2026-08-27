@@ -32,6 +32,7 @@ import {
   type MutableResources,
 } from "./npcEconomy.js";
 import {
+  maybeExpandCompany,
   maybeFoundNpcCompany,
   maybeHire,
   maybeUpgradeCompany,
@@ -89,6 +90,7 @@ async function loadCompanySnapshots(): Promise<CompanySnapshot[]> {
     workersAssigned: c.workersAssigned,
     autoStaff: c.autoStaff,
     level: c.level,
+    facilityCount: c.facilityCount,
     isPublic: c.isPublic,
     sharesOutstanding: c.sharesOutstanding,
     lastTickAt: c.lastTickAt,
@@ -287,7 +289,9 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
           if (idleForHiring <= 0) break;
           if (!company.autoStaff) continue;
           const industry = config.COMPANY_INDUSTRIES[company.industry];
-          const room = computeCompanyMaxWorkers(industry, company.level, config.COMPANY_UPGRADE_TUNING) - company.workersAssigned;
+          const room =
+            computeCompanyMaxWorkers(industry, company.level, config.COMPANY_UPGRADE_TUNING, company.facilityCount) -
+            company.workersAssigned;
           if (room <= 0) continue;
           const toAssign = Math.min(room, idleForHiring);
           company.workersAssigned += toAssign;
@@ -368,6 +372,7 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
       revenue = await settleNpcCompanyTrading(company, state, prices);
       await maybeHire(company, state);
       await maybeUpgradeCompany(company, state);
+      await maybeExpandCompany(company, state);
       await maybeRepayLoan(company.id, state);
       await maybeBorrow(company.id, state);
     }

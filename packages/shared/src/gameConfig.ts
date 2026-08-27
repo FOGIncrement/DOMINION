@@ -449,6 +449,12 @@ export const NPC_COMPANY_TUNING = {
   hireChancePerTick: 0.05,
   minCashToUpgrade: 400,
   upgradeChancePerTick: 0.02,
+  // A facility costs more than a level upgrade (see COMPANY_FACILITY_TUNING)
+  // and also consumes zone capacity for player-owned companies — NPCs skip
+  // that gate (no Government/zoning), but keep a slightly more conservative
+  // cash bar and roll chance than upgrading, matching the bigger commitment.
+  minCashToExpand: 500,
+  expandChancePerTick: 0.015,
   // The NPC company roster could previously only shrink (auto-close on deep
   // debt) — nothing ever replaced a company that closed, or grew the roster
   // as the world's settlement count grew. foundChancePerTick rolls once per
@@ -469,6 +475,18 @@ export const COMPANY_UPGRADE_TUNING = {
   extraWorkersPerLevel: 2,
   outputBonusPerLevel: 0.2,
   costMultiplierPerLevel: 1.8, // upgrade cost = industry.foundingCost * multiplier^currentLevel
+};
+
+// A second, orthogonal reinvestment axis alongside level: facilityCount
+// multiplies the worker cap wholesale (computeCompanyMaxWorkers) rather than
+// raising per-worker efficiency — "more sites running the same practices,"
+// not "better practices." Steeper cost curve than COMPANY_UPGRADE_TUNING
+// since a facility is a bigger structural jump and (for player-owned
+// companies) also consumes zone capacity, same as founding a new company —
+// see the zone-capacity usage helper in routes/companies.ts.
+export const COMPANY_FACILITY_TUNING = {
+  maxFacilities: 4,
+  costMultiplierPerFacility: 2.5, // expand cost = industry.foundingCost * multiplier^currentFacilityCount
 };
 
 // Share price is a simple, deliberately-not-random valuation: a "P/E"-like

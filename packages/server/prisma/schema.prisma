@@ -251,6 +251,10 @@ model Company {
   // controls; see the organic-hiring step in simulation/engine.ts.
   autoStaff       Boolean   @default(false)
   level           Int       @default(1)
+  // How many physical sites this company runs, sharing one cash/branding/P&L
+  // pool — orthogonal to `level` (which raises per-worker efficiency
+  // company-wide). Multiplies the worker cap; see computeCompanyMaxWorkers.
+  facilityCount   Int       @default(1)
   totalRevenue    Float     @default(0)
   totalExpenses   Float     @default(0)
   lastTickAt      DateTime  @default(now())
