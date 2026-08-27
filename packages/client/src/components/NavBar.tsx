@@ -62,6 +62,11 @@ export default function NavBar() {
           🛠 Balance Config
         </NavLink>
       )}
+      {me?.isAdmin && (
+        <NavLink to="/admin/announcements" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+          📣 Announcements
+        </NavLink>
+      )}
     </nav>
   );
 }

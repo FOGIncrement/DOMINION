@@ -226,6 +226,15 @@ export const api = {
     }),
   adminResetAll: () =>
     request<{ ok: true; config: AdminConfigResponse["config"] }>("/admin/config/reset-all", { method: "POST" }),
+
+  announcements: () => request<{ announcements: Announcement[] }>("/announcements"),
+  adminCreateAnnouncement: (title: string, body: string) =>
+    request<{ ok: true; id: string }>("/admin/announcements", {
+      method: "POST",
+      body: JSON.stringify({ title, body }),
+    }),
+  adminDeleteAnnouncement: (id: string) =>
+    request<{ ok: true }>(`/admin/announcements/${id}`, { method: "DELETE" }),
 };
 
 export interface OfflineSummary {
@@ -594,4 +603,12 @@ export interface AdminConfigResponse {
     companyIndustryFields: string[];
     buildingTypeFields: string[];
   };
+}
+
+export interface Announcement {
+  id: string;
+  title: string;
+  body: string;
+  authorEmail: string;
+  createdAt: string;
 }

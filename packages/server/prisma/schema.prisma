@@ -36,6 +36,7 @@ model Player {
   bondsHeld  Bond[]
   corporateBondsHeld CorporateBond[]
   government Government?
+  announcementsPosted Announcement[]
 }
 
 model Government {
@@ -432,6 +433,21 @@ model Event {
 model WorldState {
   id         Int      @id @default(1)
   lastTickAt DateTime @default(now())
+}
+
+// Launcher/site news — deliberately separate from Event (in-game simulation
+// events like harvests and storms): this is dev-authored, admin-posted
+// content shown in the desktop launcher's Hub screen, not something the
+// tick engine ever writes.
+model Announcement {
+  id        String   @id @default(cuid())
+  title     String
+  body      String
+  authorId  String
+  author    Player   @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 // Singleton row, same shape idiom as WorldState. `data` holds only the

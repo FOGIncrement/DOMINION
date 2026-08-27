@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
+import { adminAnnouncementsRouter } from "./routes/adminAnnouncements.js";
 import { adminConfigRouter } from "./routes/adminConfig.js";
+import { announcementsRouter } from "./routes/announcements.js";
 import { authRouter } from "./routes/auth.js";
 import { banksRouter } from "./routes/banks.js";
 import { bondsRouter } from "./routes/bonds.js";
@@ -55,6 +57,8 @@ app.use("/api/tech", techRouter);
 app.use("/api/tutorial", tutorialRouter);
 app.use("/api/cheats", cheatsRouter);
 app.use("/api/admin/config", adminConfigRouter);
+app.use("/api/announcements", announcementsRouter);
+app.use("/api/admin/announcements", adminAnnouncementsRouter);
 
 // Serves the built client (packages/client/dist) when present, so one
 // process can be the whole production deployment — no separate static file

@@ -1,0 +1,27 @@
+appId: com.dominion.launcher
+productName: Dominion Launcher
+# npm workspaces hoists `electron` to the repo root's node_modules, not
+# this package's own — electron-builder's version auto-detection only
+# checks the local one, so it fails to compute a version unless told
+# explicitly. See https://github.com/electron-userland/electron-builder/issues/3984
+electronVersion: 31.7.7
+directories:
+  # NOT the default "dist" — this package's own build:main/build:renderer
+  # steps already write their output into ./dist (main/preload/renderer),
+  # which is what "files" below packages up. Using a distinct output dir
+  # avoids electron-builder's packaging step colliding with its own inputs.
+  output: release
+files:
+  - dist/main/**
+  - dist/preload/**
+  - dist/renderer/**
+  - package.json
+# No icon asset exists in the repo yet — omitting `win.icon` falls back to
+# electron-builder's own default icon, a legitimate placeholder for a first
+# test build. Add build/icon.ico (multi-res, 16/32/48/256px) and set
+# `icon: build/icon.ico` here once real branding exists.
+win:
+  target: nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

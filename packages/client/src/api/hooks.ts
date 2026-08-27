@@ -130,3 +130,7 @@ export function useTutorial() {
 export function useAdminConfig() {
   return useQuery({ queryKey: ["adminConfig"], queryFn: api.adminConfig, retry: false });
 }
+
+export function useAnnouncements() {
+  return useQuery({ queryKey: ["announcements"], queryFn: api.announcements, refetchInterval: POLL_MS });
+}
