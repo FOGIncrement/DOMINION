@@ -23,7 +23,7 @@ export default function App() {
   if (loading) {
     return (
       <div className="shell">
-        <div className="loading">Loading Dominion Launcher...</div>
+        <div className="loading">Loading Capitisle Launcher...</div>
       </div>
     );
   }

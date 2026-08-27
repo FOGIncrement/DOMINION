@@ -29,7 +29,9 @@ export default function Hub({
     <div className="hub">
       <div className="hub__top">
         <div className="brand" style={{ textAlign: "left", marginBottom: 0 }}>
-          <h1 style={{ fontSize: 20 }}>DOMINION</h1>
+          <h1 style={{ fontSize: 20 }}>
+            CAPIT<span className="wordmark__dash">-</span>ISLE
+          </h1>
         </div>
         <div className="hub__account">
           Signed in as <b>{me.email}</b>

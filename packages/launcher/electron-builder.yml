@@ -1,5 +1,5 @@
-appId: com.dominion.launcher
-productName: Dominion Launcher
+appId: com.capitisle.launcher
+productName: Capitisle Launcher
 # npm workspaces hoists `electron` to the repo root's node_modules, not
 # this package's own — electron-builder's version auto-detection only
 # checks the local one, so it fails to compute a version unless told
@@ -21,7 +21,13 @@ files:
 # test build. Add build/icon.ico (multi-res, 16/32/48/256px) and set
 # `icon: build/icon.ico` here once real branding exists.
 win:
-  target: nsis
-nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
+  # NSIS needs electron-builder's winCodeSign bundle, which contains macOS
+  # dylib symlinks that 7-Zip can't extract on Windows without Developer
+  # Mode enabled (SeCreateSymbolicLinkPrivilege) — this build environment
+  # has no admin rights to turn that on. "portable" produces a single
+  # self-contained .exe with no installer wrapper, sidestepping that
+  # dependency entirely. Revisit nsis (a real installer, Start Menu
+  # shortcut, uninstaller) once building on a machine with Developer Mode
+  # available — see dominion_desktop_launcher.md memory for the exact fix.
+  target: portable
+  signAndEditExecutable: false

@@ -53,7 +53,9 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (me: Me) => void }) 
     <div className="shell">
       <div>
         <div className="brand">
-          <h1>DOMINION</h1>
+          <h1>
+            CAPIT<span className="wordmark__dash">-</span>ISLE
+          </h1>
           <p>Launcher</p>
         </div>
         <form
@@ -112,7 +114,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (me: Me) => void }) 
               </>
             ) : (
               <>
-                New to Dominion?{" "}
+                New to Capitisle?{" "}
                 <button type="button" onClick={() => setMode("register")}>
                   Found a settlement
                 </button>

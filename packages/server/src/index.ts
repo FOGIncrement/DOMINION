@@ -60,6 +60,16 @@ app.use("/api/admin/config", adminConfigRouter);
 app.use("/api/announcements", announcementsRouter);
 app.use("/api/admin/announcements", adminAnnouncementsRouter);
 
+// Serves built launcher installers/portables for direct download — not
+// checked into git (large binaries, VPS-local state, deploy-time artifacts
+// just like the launcher's own generated dist/release folders already are).
+// Skipped entirely if the directory doesn't exist, same fs.existsSync guard
+// as the client dist block below.
+const downloadsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../downloads");
+if (fs.existsSync(downloadsDir)) {
+  app.use("/downloads", express.static(downloadsDir));
+}
+
 // Serves the built client (packages/client/dist) when present, so one
 // process can be the whole production deployment — no separate static file
 // server needed. In dev, the client is never built to disk (Vite's dev
