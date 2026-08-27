@@ -87,9 +87,19 @@ async function bootstrapAdmin() {
   });
 }
 
-app.listen(port, async () => {
-  console.log(`[server] listening on http://localhost:${port}`);
+// Config/admin bootstrap must finish before the port opens, not after —
+// app.listen's own callback firing is too late to gate on, since Express
+// starts routing real requests the instant the socket is bound, and several
+// routes call getConfig() unconditionally. A request landing in that gap
+// would crash on mergedCache still being undefined (hit for real during the
+// 2026-08-27 deploy, before this fix).
+async function boot() {
   await bootstrapAdmin();
   await initGameConfigStore();
-  startScheduler();
-});
+  app.listen(port, () => {
+    console.log(`[server] listening on http://localhost:${port}`);
+    startScheduler();
+  });
+}
+
+boot();
