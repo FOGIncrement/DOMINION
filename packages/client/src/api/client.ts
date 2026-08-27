@@ -54,6 +54,7 @@ export const api = {
 
   worldSettlements: () => request<{ settlements: NpcSettlementInfo[] }>("/world/settlements"),
   worldMap: () => request<WorldMapResponse>("/world/map"),
+  settlementDetail: (settlementId: string) => request<SettlementDetail>(`/world/settlements/${settlementId}/detail`),
   news: () => request<{ events: NewsEvent[] }>("/news"),
 
   myCompanies: () => request<{ companies: MyCompany[] }>("/companies/mine"),
@@ -587,6 +588,36 @@ export interface WorldMapResponse {
   rows: number;
   settlements: WorldMapSettlement[];
   myZones: ZoneRect[];
+}
+
+export interface SettlementDetailBuilding {
+  id: string;
+  type: string;
+  level: number;
+  workersAssigned: number;
+}
+
+export interface SettlementDetailCompany {
+  id: string;
+  name: string;
+  industry: string;
+  industryName: string;
+  level: number;
+  workersAssigned: number;
+}
+
+export interface SettlementDetail {
+  id: string;
+  name: string;
+  worldCol: number;
+  worldRow: number;
+  isMine: boolean;
+  isPlayer: boolean;
+  archetypeName: string | null;
+  population: { count: number };
+  buildings: SettlementDetailBuilding[];
+  companies: SettlementDetailCompany[];
+  zones: ZoneRect[];
 }
 
 // Loosely typed on purpose — this mirrors the server's runtime tuning

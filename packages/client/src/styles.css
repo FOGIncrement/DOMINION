@@ -417,6 +417,11 @@ a {
   left: 0;
   transform-origin: 0 0;
   will-change: transform;
+  /* World-mode and the island detail view (Map.tsx's IslandDetailLayer) are
+     both mounted on top of each other during the zoom-triggered transition
+     and crossfaded via opacity — keep this in sync with Map.tsx's
+     DETAIL_TRANSITION_MS. */
+  transition: opacity 280ms ease;
 }
 
 /* The terrain canvas is baked with imageSmoothingEnabled=false for a hard

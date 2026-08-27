@@ -1,7 +1,8 @@
 import { Router } from "express";
-import { NPC_ARCHETYPE_DEFS, WORLD_PLOT_COLS, WORLD_PLOT_ROWS } from "@dominion/shared";
+import { NPC_ARCHETYPE_DEFS, WORLD_PLOT_COLS, WORLD_PLOT_ROWS, type CompanyIndustryId } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
+import { getConfig } from "../gameConfigStore.js";
 import { getSettlementZoneRects } from "./infrastructure.js";
 
 export const worldRouter = Router();
@@ -35,6 +36,63 @@ worldRouter.get("/map", requireAuth, async (req: AuthedRequest, res) => {
       archetypeName: s.archetype ? NPC_ARCHETYPE_DEFS[s.archetype as keyof typeof NPC_ARCHETYPE_DEFS]?.name : null,
     })),
     myZones,
+  });
+});
+
+// Powers the World Map's zoom-to-detail island view. Discloses per-building
+// type/level/workers and, for a player-owned settlement, its companies
+// grouped by that one settlement — geographic grouping that /map and
+// /companies never expose today, even though each item is already mostly
+// public on its own (buildings via the Dashboard for your own settlement,
+// companies world-wide via GET /companies). Zone placement stays behind the
+// same isMine boundary /map already enforces — that's the one genuinely
+// strategic secret here.
+worldRouter.get("/settlements/:id/detail", requireAuth, async (req: AuthedRequest, res) => {
+  const settlement = await prisma.settlement.findUnique({
+    where: { id: req.params.id },
+    include: { population: true, buildings: true },
+  });
+  if (!settlement || settlement.worldCol === null || settlement.worldRow === null) {
+    res.status(404).json({ error: "Settlement not found" });
+    return;
+  }
+
+  const isMine = settlement.playerId === req.playerId;
+  const config = getConfig();
+
+  const companies = settlement.playerId
+    ? await prisma.company.findMany({
+        where: { ownerId: settlement.playerId, closedAt: null },
+        orderBy: { foundedAt: "asc" },
+      })
+    : [];
+
+  res.json({
+    id: settlement.id,
+    name: settlement.name,
+    worldCol: settlement.worldCol,
+    worldRow: settlement.worldRow,
+    isMine,
+    isPlayer: settlement.playerId !== null,
+    archetypeName: settlement.archetype
+      ? NPC_ARCHETYPE_DEFS[settlement.archetype as keyof typeof NPC_ARCHETYPE_DEFS]?.name
+      : null,
+    population: { count: Math.round(settlement.population?.count ?? 0) },
+    buildings: settlement.buildings.map((b) => ({
+      id: b.id,
+      type: b.type,
+      level: b.level,
+      workersAssigned: b.workersAssigned,
+    })),
+    companies: companies.map((c) => ({
+      id: c.id,
+      name: c.name,
+      industry: c.industry,
+      industryName: config.COMPANY_INDUSTRIES[c.industry as CompanyIndustryId]?.name ?? c.industry,
+      level: c.level,
+      workersAssigned: c.workersAssigned,
+    })),
+    zones: isMine ? await getSettlementZoneRects(settlement.id) : [],
   });
 });
 

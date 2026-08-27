@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   COMPANY_INDUSTRIES,
   COMPANY_INDUSTRY_IDS,
@@ -1185,7 +1186,13 @@ function MyContractsList() {
 export default function Companies() {
   const { data: all } = useAllCompanies();
   const [proposeToId, setProposeToId] = useState<string | null>(null);
-  const [jumpToId, setJumpToId] = useState<string | null>(null);
+  // Deep-link from the World Map's island detail view (clicking a company
+  // marker there navigates here with this router state) — read once, since
+  // CommandCenter clears it back to null via onJumpHandled after consuming it.
+  const location = useLocation();
+  const [jumpToId, setJumpToId] = useState<string | null>(
+    (location.state as { jumpToCompanyId?: string } | null)?.jumpToCompanyId ?? null,
+  );
 
   return (
     <div className="page page--full">
