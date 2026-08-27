@@ -70,19 +70,27 @@ if (fs.existsSync(downloadsDir)) {
   app.use("/downloads", express.static(downloadsDir));
 }
 
+// The marketing website owns the root now (news, download, "what is this
+// game" — see packages/website) — the game itself moved to /play so both
+// can be served by this one process without a second server. Root is a
+// single static page (no client-side routing of its own), so a plain
+// express.static covering "/" is enough; no catch-all needed here.
+const websiteDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../website");
+if (fs.existsSync(websiteDist)) {
+  app.use(express.static(websiteDist));
+}
+
 // Serves the built client (packages/client/dist) when present, so one
 // process can be the whole production deployment — no separate static file
 // server needed. In dev, the client is never built to disk (Vite's dev
 // server handles it on its own port instead), so this block is simply
-// skipped and nothing changes about the local dev workflow.
+// skipped and nothing changes about the local dev workflow. Mounted at
+// /play (not root) — see vite.config.ts's matching build.base and
+// main.tsx's BrowserRouter basename for the client-side half of this.
 const clientDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../client/dist");
 if (fs.existsSync(clientDist)) {
-  app.use(express.static(clientDist));
-  app.get("*", (req, res) => {
-    if (req.path.startsWith("/api/")) {
-      res.status(404).json({ error: "Not found" });
-      return;
-    }
+  app.use("/play", express.static(clientDist));
+  app.get("/play/*", (_req, res) => {
     res.sendFile(path.join(clientDist, "index.html"));
   });
 }

@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Capit-Isle</title>
+  <meta name="description" content="A persistent economic world sim. Found companies, bank on the future, go public, and govern your own island on a shared world map." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏝️</text></svg>" />
+<style>
+  :root {
+    --paper: #ddcda3;
+    --paper-deep: #cbb883;
+    --ink: #241a0f;
+    --ink-soft: #4a3a24;
+    --ink-faint: #7a6a4a;
+    --line: rgba(36, 26, 15, 0.18);
+    --gold: #9c6f1e;
+    --gold-deep: #6e4a0f;
+    --rust: #8f4429;
+    --green: #3c5c46;
+
+    --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+    --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-numeral: "Iowan Old Style", Georgia, serif;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    line-height: 1.65;
+    overflow-x: hidden;
+    position: relative;
+  }
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    opacity: 0.5;
+    background-image:
+      radial-gradient(ellipse 700px 500px at 8% 12%, rgba(111, 78, 33, 0.10), transparent 60%),
+      radial-gradient(ellipse 600px 800px at 95% 60%, rgba(111, 78, 33, 0.08), transparent 55%),
+      radial-gradient(ellipse 500px 400px at 30% 90%, rgba(111, 78, 33, 0.07), transparent 60%),
+      radial-gradient(rgba(36, 26, 15, 0.05) 0.6px, transparent 0.6px);
+    background-size: auto, auto, auto, 3px 3px;
+  }
+
+  img, svg { max-width: 100%; display: block; }
+  a { color: inherit; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 40px; position: relative; z-index: 2; }
+  @media (max-width: 720px) { .wrap { padding: 0 22px; } }
+
+  h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; font-weight: 700; }
+
+  .num {
+    font-family: var(--font-numeral);
+    font-style: italic;
+    color: var(--gold-deep);
+  }
+
+  /* ============ NAV ============ */
+  .nav {
+    position: sticky; top: 0; z-index: 40;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 22px 40px;
+    background: rgba(221, 205, 163, 0.86);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--line);
+  }
+  @media (max-width: 720px) { .nav { padding: 16px 22px; } }
+  .wordmark { font-family: var(--font-display); font-weight: 700; letter-spacing: 0.01em; white-space: nowrap; }
+  .wordmark__dash { color: var(--gold); font-weight: 400; margin: 0 0.02em; }
+
+  .nav__mark { font-size: 19px; }
+  .nav__links { display: flex; gap: 30px; }
+  .nav__links a { font-size: 12.5px; letter-spacing: 0.09em; text-transform: uppercase; text-decoration: none; color: var(--ink-soft); }
+  .nav__links a:hover { color: var(--ink); }
+  @media (max-width: 780px) { .nav__links { display: none; } }
+
+  /* ============ TITLE SPREAD ============ */
+  .titlepage { padding: 64px 0 40px; position: relative; z-index: 2; }
+  .titlepage__grid {
+    display: grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: 40px;
+    align-items: center;
+  }
+  @media (max-width: 900px) { .titlepage__grid { grid-template-columns: 1fr; } }
+
+  .titlepage__eyebrow {
+    font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--gold-deep); margin-bottom: 18px;
+  }
+  .titlepage__eyebrow { border-left: 2px solid var(--gold); padding-left: 10px; }
+
+  .titlepage h1 {
+    font-size: clamp(52px, 7.4vw, 96px);
+    line-height: 0.94;
+    letter-spacing: -0.01em;
+    margin-bottom: 26px;
+  }
+
+  .titlepage p.dek {
+    font-size: 18px;
+    color: var(--ink-soft);
+    max-width: 40ch;
+    margin-bottom: 34px;
+  }
+
+  .cta-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 14px 26px; font-family: var(--font-sans); font-weight: 600; font-size: 13.5px;
+    letter-spacing: 0.02em; text-decoration: none; cursor: pointer; border-radius: 2px;
+    border: 1.5px solid var(--ink);
+  }
+  .btn--fill { background: var(--ink); color: var(--paper); }
+  .btn--fill:hover { background: var(--gold-deep); border-color: var(--gold-deep); }
+  .btn--line { background: transparent; color: var(--ink); }
+  .btn--line:hover { background: rgba(36, 26, 15, 0.06); }
+  .cta-note { font-size: 12.5px; color: var(--ink-faint); margin-top: 16px; }
+
+  .titlepage__art { position: relative; }
+
+  /* ============ divider ============ */
+  .torn { display: block; width: 100%; height: 34px; margin-top: -1px; }
+
+  /* ============ MANIFESTO LINE ============ */
+  .manifesto { padding: 30px 0 70px; position: relative; z-index: 2; }
+  .manifesto p {
+    font-family: var(--font-display);
+    font-size: clamp(24px, 3.4vw, 36px);
+    line-height: 1.35;
+    max-width: 24ch;
+    color: var(--ink);
+  }
+  .manifesto p b { color: var(--gold-deep); font-style: italic; font-weight: 700; }
+
+  /* ============ CHAPTERS ============ */
+  .chapters { padding: 20px 0 90px; position: relative; z-index: 2; }
+  .chapter {
+    display: grid;
+    grid-template-columns: 90px 1fr 280px;
+    gap: 30px;
+    padding: 44px 0;
+    border-top: 1px solid var(--line);
+    align-items: start;
+  }
+  .chapter:last-child { border-bottom: 1px solid var(--line); }
+  @media (max-width: 860px) {
+    .chapter { grid-template-columns: 60px 1fr; }
+    .chapter__art { display: none; }
+  }
+  .chapter__no {
+    font-family: var(--font-numeral); font-style: italic; font-size: 40px; color: var(--paper-deep);
+    -webkit-text-stroke: 1px var(--gold-deep);
+    line-height: 1;
+  }
+  .chapter__body h3 { font-size: 25px; margin-bottom: 10px; }
+  .chapter__body p { color: var(--ink-soft); font-size: 15px; max-width: 52ch; margin: 0; }
+  .chapter__art svg { width: 100%; height: auto; }
+
+  /* ============ MAP SPREAD ============ */
+  .mapspread { position: relative; z-index: 2; padding: 0 0 90px; }
+  .mapspread__inner {
+    background: var(--ink);
+    border-radius: 2px;
+    padding: 56px 48px;
+    position: relative;
+    overflow: hidden;
+  }
+  @media (max-width: 720px) { .mapspread__inner { padding: 40px 22px; } }
+  .mapspread__grid { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 48px; align-items: center; position: relative; z-index: 2; }
+  @media (max-width: 900px) { .mapspread__grid { grid-template-columns: 1fr; } }
+  .mapspread h2 { color: var(--paper); font-size: clamp(28px, 3.6vw, 38px); margin-bottom: 16px; }
+  .mapspread p { color: rgba(221, 205, 163, 0.7); font-size: 15px; margin-bottom: 28px; max-width: 42ch; }
+  .stat-line { display: flex; gap: 30px; flex-wrap: wrap; }
+  .stat b { display: block; font-family: var(--font-numeral); font-style: italic; font-size: 26px; color: var(--gold); }
+  .stat span { font-size: 11px; color: rgba(221, 205, 163, 0.55); text-transform: uppercase; letter-spacing: 0.08em; }
+  .mapspread__map { border: 1px solid rgba(221, 205, 163, 0.18); }
+
+  /* ============ LEDGER / NEWS ============ */
+  .ledger-section { padding: 0 0 96px; position: relative; z-index: 2; }
+  .ledger-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 30px; flex-wrap: wrap; gap: 10px; }
+  .ledger-head h2 { font-size: clamp(26px, 3.2vw, 34px); }
+  .ledger-head span { font-size: 12px; color: var(--ink-faint); letter-spacing: 0.06em; text-transform: uppercase; }
+
+  .ledgerpaper {
+    background: repeating-linear-gradient(
+      var(--paper),
+      var(--paper) 51px,
+      var(--line) 52px
+    );
+    border: 1px solid var(--line);
+    padding: 6px 0 0;
+    position: relative;
+  }
+  .ledgerpaper::before {
+    content: "";
+    position: absolute; left: 74px; top: 0; bottom: 0; width: 1px;
+    background: rgba(143, 68, 41, 0.35);
+  }
+  .lentry {
+    display: grid;
+    grid-template-columns: 74px 1fr;
+    min-height: 52px;
+  }
+  .lentry__date {
+    padding: 15px 16px 0 0;
+    text-align: right;
+    font-family: var(--font-numeral); font-style: italic; font-size: 12px; color: var(--ink-faint);
+  }
+  .lentry__body { padding: 15px 24px 15px 24px; }
+  .lentry__body h3 { display: inline; font-size: 15.5px; font-family: var(--font-sans); font-weight: 700; }
+  .lentry__body p { display: inline; font-size: 14px; color: var(--ink-soft); margin: 0 0 0 6px; }
+  .lentry__tag {
+    font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--green);
+    margin-right: 8px;
+  }
+  @media (max-width: 640px) {
+    .ledgerpaper { background: var(--paper); }
+    .ledgerpaper::before { display: none; }
+    .lentry { grid-template-columns: 1fr; }
+    .lentry__date { text-align: left; padding: 15px 16px 0 24px; }
+    .lentry__body { padding: 0 24px 18px; }
+    .lentry__body h3, .lentry__body p { display: block; margin-left: 0; }
+  }
+
+  /* ============ CHARTER / DOWNLOAD ============ */
+  .charter { padding: 0 0 100px; position: relative; z-index: 2; }
+  .charter__inner {
+    border: 1.5px solid var(--ink);
+    padding: 64px 48px;
+    text-align: center;
+    position: relative;
+  }
+  @media (max-width: 640px) { .charter__inner { padding: 48px 24px; } }
+  .charter__inner::before, .charter__inner::after {
+    content: ""; position: absolute; width: 18px; height: 18px;
+  }
+  .charter__inner::before { top: -1.5px; left: -1.5px; border-top: 1.5px solid var(--gold); border-left: 1.5px solid var(--gold); }
+  .charter__inner::after { bottom: -1.5px; right: -1.5px; border-bottom: 1.5px solid var(--gold); border-right: 1.5px solid var(--gold); }
+  .charter h2 { font-size: clamp(30px, 4vw, 42px); margin-bottom: 14px; }
+  .charter p { color: var(--ink-soft); max-width: 44ch; margin: 0 auto 30px; }
+  .platform-row { margin-top: 26px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .platform-pill { font-size: 11.5px; padding: 6px 13px; border: 1px solid var(--line); color: var(--ink-faint); }
+  .platform-pill--active { border-color: var(--gold); color: var(--gold-deep); }
+
+  /* ============ FOOTER ============ */
+  footer { padding: 36px 0 44px; position: relative; z-index: 2; border-top: 1px solid var(--line); }
+  .footer__row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--ink-faint); }
+  .footer__links { display: flex; gap: 22px; }
+  .footer__links a { text-decoration: none; color: var(--ink-faint); }
+  .footer__links a:hover { color: var(--ink); }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wordmark nav__mark">CAPIT<span class="wordmark__dash">-</span>ISLE</div>
+  <div class="nav__links">
+    <a href="#chapters">The Game</a>
+    <a href="#world">World</a>
+    <a href="#news">News</a>
+    <a href="#download">Download</a>
+  </div>
+</nav>
+
+<div class="titlepage">
+  <div class="wrap">
+    <div class="titlepage__grid">
+      <div>
+        <div class="wordmark" style="font-size: 22px; margin-bottom: 22px;">CAPIT<span class="wordmark__dash">-</span>ISLE</div>
+        <div class="titlepage__eyebrow">A persistent economic world</div>
+        <h1>Found an island. Run its economy.</h1>
+        <p class="dek">Bakeries and banks, treasuries and trade routes. Every player claims a piece of one shared, always-running world.</p>
+        <div class="cta-row">
+          <a class="btn btn--fill" href="/play">Play in Browser</a>
+          <a class="btn btn--line" href="#download">Download for Windows</a>
+        </div>
+        <p class="cta-note">Free to play. New nations founding daily.</p>
+      </div>
+
+      <!-- PLACEHOLDER ART: hero illustration. Swap for a real gameplay
+           screenshot of a founded island once a stable build exists -->
+      <div class="titlepage__art">
+        <svg viewBox="0 0 420 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Illustrated map of an island with a company, a farm, and a bank">
+          <circle cx="210" cy="210" r="196" fill="none" stroke="#9c6f1e" stroke-width="1" opacity="0.35" stroke-dasharray="1 7" stroke-linecap="round"/>
+          <g fill="none" stroke="#241a0f" stroke-width="1" opacity="0.55">
+            <path d="M210 30 L210 50 M210 370 L210 390 M30 210 L50 210 M370 210 L390 210" stroke-width="1.4"/>
+            <path d="M92 92 L108 108 M312 312 L328 328 M92 328 L108 312 M312 108 L328 92" />
+          </g>
+          <path d="M210 20 L222 46 L210 40 L198 46 Z" fill="#8f4429" transform="rotate(0 210 210)"/>
+
+          <path d="M120 258 C104 224 118 176 168 152 C216 130 274 138 306 178 C336 216 320 262 276 282 C232 302 172 300 140 282 C126 274 128 268 120 258 Z"
+            fill="#c8bf8f" stroke="#241a0f" stroke-width="1.6"/>
+          <path d="M132 250 C160 268 220 276 268 262" stroke="#241a0f" stroke-width="0.8" opacity="0.3" fill="none"/>
+          <path d="M148 176 C172 158 216 152 250 164" stroke="#241a0f" stroke-width="0.8" opacity="0.25" fill="none"/>
+
+          <g stroke="#241a0f" stroke-width="1.3">
+            <rect x="168" y="196" width="26" height="22" fill="#e7dcb4"/>
+            <polygon points="165,196 181,180 197,196" fill="#9c6f1e"/>
+            <rect x="226" y="212" width="30" height="24" fill="#e7dcb4"/>
+            <polygon points="223,212 241,194 259,212" fill="#8f4429"/>
+            <rect x="196" y="238" width="22" height="18" fill="#e7dcb4"/>
+            <polygon points="193,238 207,224 221,238" fill="#3c5c46"/>
+          </g>
+          <line x1="241" y1="194" x2="241" y2="174" stroke="#241a0f" stroke-width="1.2"/>
+          <path d="M241 174 L262 180 L241 186 Z" fill="#9c6f1e" stroke="#241a0f" stroke-width="0.8"/>
+
+          <path d="M148 224 Q135 240 148 258" stroke="#241a0f" stroke-width="1" fill="none" opacity="0.5"/>
+          <circle cx="148" cy="224" r="2" fill="#241a0f" opacity="0.5"/>
+          <circle cx="148" cy="258" r="2" fill="#241a0f" opacity="0.5"/>
+
+          <g fill="#241a0f" opacity="0.4">
+            <circle cx="210" cy="210" r="1.4"/>
+            <circle cx="240" cy="180" r="1"/>
+            <circle cx="180" cy="230" r="1"/>
+          </g>
+          <text x="210" y="380" text-anchor="middle" font-family="Georgia, serif" font-style="italic" font-size="12" fill="#4a3a24" opacity="0.7">No. 001</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<svg class="torn" viewBox="0 0 1200 34" preserveAspectRatio="none" aria-hidden="true">
+  <path d="M0 10 L40 4 L82 14 L124 2 L168 12 L212 6 L256 16 L300 4 L344 12 L388 6 L432 15 L476 3 L520 11 L564 5 L608 14 L652 4 L696 13 L740 6 L784 16 L828 3 L872 12 L916 6 L960 15 L1004 4 L1048 12 L1092 6 L1136 14 L1180 4 L1200 8 L1200 34 L0 34 Z" fill="#cbb883"/>
+</svg>
+
+<div class="manifesto">
+  <div class="wrap">
+    <p>No turns. No pausing. The world <b>keeps ticking</b> whether you're at your desk or not.</p>
+  </div>
+</div>
+
+<section id="chapters" class="chapters">
+  <div class="wrap">
+    <div class="chapter">
+      <div class="chapter__no num">I</div>
+      <div class="chapter__body">
+        <h3>Found Companies</h3>
+        <p>Bakeries, sawmills, quarries, farms. Hire workers, set your own pace, and put every gold piece of profit back into growth.</p>
+      </div>
+      <!-- PLACEHOLDER ART: swap for a screenshot of a company (e.g. the
+           Companies page or a founded Bakery/Sawmill card) -->
+      <div class="chapter__art">
+        <svg viewBox="0 0 220 120" xmlns="http://www.w3.org/2000/svg">
+          <rect x="40" y="50" width="60" height="40" fill="#e7dcb4" stroke="#241a0f" stroke-width="1.4"/>
+          <polygon points="36,50 70,26 104,50" fill="#9c6f1e" stroke="#241a0f" stroke-width="1.4"/>
+          <rect x="60" y="66" width="16" height="24" fill="#241a0f" opacity="0.75"/>
+          <rect x="130" y="60" width="50" height="30" fill="#e7dcb4" stroke="#241a0f" stroke-width="1.4"/>
+          <polygon points="127,60 155,42 183,60" fill="#8f4429" stroke="#241a0f" stroke-width="1.4"/>
+          <path d="M20 96 L200 96" stroke="#241a0f" stroke-width="1" opacity="0.3"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="chapter">
+      <div class="chapter__no num">II</div>
+      <div class="chapter__body">
+        <h3>Bank On It</h3>
+        <p>Risk-priced loans, interest-bearing deposits, government and corporate bonds. Real credit with real consequences if you overextend.</p>
+      </div>
+      <!-- PLACEHOLDER ART: swap for a screenshot of the Banking page
+           (loan request / bond purchase view) -->
+      <div class="chapter__art">
+        <svg viewBox="0 0 220 120" xmlns="http://www.w3.org/2000/svg">
+          <rect x="40" y="46" width="140" height="46" fill="#e7dcb4" stroke="#241a0f" stroke-width="1.4"/>
+          <path d="M40 46 L110 18 L180 46 Z" fill="none" stroke="#241a0f" stroke-width="1.4"/>
+          <line x1="60" y1="58" x2="60" y2="82" stroke="#241a0f" stroke-width="1.4"/>
+          <line x1="90" y1="58" x2="90" y2="82" stroke="#241a0f" stroke-width="1.4"/>
+          <line x1="130" y1="58" x2="130" y2="82" stroke="#241a0f" stroke-width="1.4"/>
+          <line x1="160" y1="58" x2="160" y2="82" stroke="#241a0f" stroke-width="1.4"/>
+          <path d="M20 96 L200 96" stroke="#241a0f" stroke-width="1" opacity="0.3"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="chapter">
+      <div class="chapter__no num">III</div>
+      <div class="chapter__body">
+        <h3>Go Public</h3>
+        <p>IPO a profitable company, trade shares on the open market, and collect dividends. Or buy your way into someone else's.</p>
+      </div>
+      <!-- PLACEHOLDER ART: swap for a screenshot of the Stock Market page
+           (a share price chart / company detail view) -->
+      <div class="chapter__art">
+        <svg viewBox="0 0 220 120" xmlns="http://www.w3.org/2000/svg">
+          <polyline points="24,90 58,66 88,78 122,42 156,54 196,22" fill="none" stroke="#3c5c46" stroke-width="2.4"/>
+          <circle cx="196" cy="22" r="4" fill="#3c5c46"/>
+          <path d="M24 96 L196 96" stroke="#241a0f" stroke-width="1" opacity="0.3"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="chapter">
+      <div class="chapter__no num">IV</div>
+      <div class="chapter__body">
+        <h3>Govern Your Island</h3>
+        <p>Set tax rates, fund welfare, commission new zones. Every decision funded straight from your own treasury, no shortcuts.</p>
+      </div>
+      <!-- PLACEHOLDER ART: swap for a screenshot of the Government page
+           (tax/welfare rates or a zone-commission view) -->
+      <div class="chapter__art">
+        <svg viewBox="0 0 220 120" xmlns="http://www.w3.org/2000/svg">
+          <rect x="60" y="56" width="100" height="34" fill="#e7dcb4" stroke="#241a0f" stroke-width="1.4"/>
+          <rect x="80" y="30" width="60" height="26" fill="#e7dcb4" stroke="#241a0f" stroke-width="1.4"/>
+          <line x1="110" y1="30" x2="110" y2="12" stroke="#241a0f" stroke-width="1.4"/>
+          <path d="M110 12 L134 18 L110 24 Z" fill="#8f4429"/>
+          <path d="M40 96 L180 96" stroke="#241a0f" stroke-width="1" opacity="0.3"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="world" class="mapspread">
+  <div class="wrap">
+    <div class="mapspread__inner">
+      <div class="mapspread__grid">
+        <div>
+          <div class="titlepage__eyebrow" style="color:#d9ab4d;">One shared world</div>
+          <h2>Every nation, its own island. Every island, on the same sea.</h2>
+          <p>No two islands look alike. Each is drawn the moment a nation is founded, placed organically across a single map every player shares. Trade with a neighbor, or watch them grow from across the water.</p>
+          <div class="stat-line">
+            <div class="stat"><b>1</b><span>Shared world map</span></div>
+            <div class="stat"><b>Many</b><span>Procedural islands</span></div>
+            <div class="stat"><b>24 / 7</b><span>Always simulating</span></div>
+          </div>
+        </div>
+        <!-- PLACEHOLDER ART: swap for a real screenshot of the in-game
+             World Map page (procedural islands, zoom in on a cluster) -->
+        <svg class="mapspread__map" viewBox="0 0 380 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Stylized preview of the shared world map with several islands">
+          <defs>
+            <radialGradient id="sea" cx="50%" cy="45%" r="75%">
+              <stop offset="0%" stop-color="#2c4a52"/>
+              <stop offset="100%" stop-color="#152a30"/>
+            </radialGradient>
+          </defs>
+          <rect width="380" height="300" fill="url(#sea)"/>
+          <g opacity="0.14" stroke="#d9ab4d" stroke-width="1">
+            <line x1="0" y1="75" x2="380" y2="75"/><line x1="0" y1="150" x2="380" y2="150"/><line x1="0" y1="225" x2="380" y2="225"/>
+            <line x1="95" y1="0" x2="95" y2="300"/><line x1="190" y1="0" x2="190" y2="300"/><line x1="285" y1="0" x2="285" y2="300"/>
+          </g>
+          <g fill="#8fa877" opacity="0.92">
+            <ellipse cx="84" cy="88" rx="32" ry="22"/>
+            <ellipse cx="212" cy="64" rx="24" ry="17"/>
+            <ellipse cx="304" cy="108" rx="28" ry="20"/>
+            <ellipse cx="66" cy="200" rx="26" ry="18"/>
+            <ellipse cx="184" cy="214" rx="36" ry="24"/>
+            <ellipse cx="314" cy="222" rx="22" ry="16"/>
+            <ellipse cx="140" cy="130" rx="18" ry="13"/>
+          </g>
+          <g fill="#ddcda3" opacity="0.9">
+            <rect x="78" y="82" width="5" height="5"/><rect x="88" y="86" width="5" height="5"/>
+            <rect x="208" y="59" width="5" height="5"/>
+            <rect x="298" y="103" width="5" height="5"/>
+            <rect x="60" y="196" width="5" height="5"/>
+            <rect x="176" y="209" width="5" height="5"/><rect x="188" y="216" width="5" height="5"/>
+            <rect x="310" y="218" width="5" height="5"/>
+          </g>
+          <circle cx="84" cy="88" r="3" fill="#d9ab4d"><animate attributeName="opacity" values="1;0.35;1" dur="2.8s" repeatCount="indefinite"/></circle>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="news" class="ledger-section">
+  <div class="wrap">
+    <div class="ledger-head">
+      <h2>From the ledger</h2>
+      <span>Patch notes &amp; world events</span>
+    </div>
+    <div class="ledgerpaper">
+      <div class="lentry">
+        <div class="lentry__date">27 Aug</div>
+        <div class="lentry__body"><span class="lentry__tag">Update</span><h3>The Tuning Ledger goes live.</h3><p>Every pacing lever in the game is now editable in real time, so the economy can be tuned without a restart.</p></div>
+      </div>
+      <div class="lentry">
+        <div class="lentry__date">26 Aug</div>
+        <div class="lentry__body"><span class="lentry__tag">World</span><h3>Islands now grow outward, not sideways.</h3><p>New nations spiral out from the center of the map in every direction instead of filling row by row.</p></div>
+      </div>
+      <div class="lentry">
+        <div class="lentry__date">24 Aug</div>
+        <div class="lentry__body"><span class="lentry__tag">Feature</span><h3>Zoning arrives on the map itself.</h3><p>Commission Industrial and Retail zones directly on your island, and place them where your economy needs them.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="download" class="charter">
+  <div class="wrap">
+    <div class="charter__inner">
+      <h2>Found your island today.</h2>
+      <p>Play straight in your browser, or download the launcher for a proper desktop app. The world is already running either way.</p>
+      <div class="cta-row" style="justify-content: center;">
+        <a class="btn btn--fill" href="/play" style="font-size:15px; padding: 15px 34px;">Play in Browser</a>
+        <a class="btn btn--line" href="/downloads/Capitisle-Launcher-0.1.0-portable.exe" style="font-size:15px; padding: 15px 34px;">Download for Windows</a>
+      </div>
+      <p style="font-size: 11.5px; color: var(--ink-faint); margin-top: 14px;">Portable .exe, no installer. Windows may warn that it's from an unrecognized publisher; the app isn't code-signed yet.</p>
+      <div class="platform-row">
+        <span class="platform-pill platform-pill--active">Windows</span>
+        <span class="platform-pill">macOS, planned</span>
+        <span class="platform-pill">Linux, planned</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap footer__row">
+    <div>&copy; 2026 Capit<span class="wordmark__dash">-</span>Isle. Every settlement founded at your own risk.</div>
+    <div class="footer__links">
+      <a href="#news">News</a>
+      <a href="#download">Download</a>
+      <a href="#">Community</a>
+      <a href="#">Support</a>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
