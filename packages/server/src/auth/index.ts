@@ -21,11 +21,17 @@ export function signSession(payload: AuthTokenPayload): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: "30d" });
 }
 
-export function setSessionCookie(res: Response, token: string) {
+// Per-request, not a blanket env flag — the same server process answers
+// both the plain-http bare-IP:4000 path (still what the desktop launcher
+// defaults to) and the https domain path (fronted by nginx), so whether
+// this particular request is secure has to be judged per-request. Requires
+// `app.set("trust proxy", 1)` (see index.ts) so req.secure reflects nginx's
+// X-Forwarded-Proto instead of always reading as http.
+export function setSessionCookie(req: Request, res: Response, token: string) {
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: false, // MVP runs over http on localhost; set true behind HTTPS in production
+    secure: req.secure,
     maxAge: 30 * 24 * 60 * 60 * 1000,
   });
 }

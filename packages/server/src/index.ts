@@ -33,6 +33,13 @@ import { startScheduler } from "./scheduler.js";
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
 
+// Needed so req.secure reflects nginx's X-Forwarded-Proto (see
+// setSessionCookie) instead of always reading as http — this process is
+// reached both directly (bare-IP:4000, still plain http) and behind the
+// nginx+HTTPS domain front door, and only the proxied path sets that
+// header, so trusting it doesn't make the direct path look falsely secure.
+app.set("trust proxy", 1);
+
 app.use(cors({ origin: process.env.CLIENT_ORIGIN ?? "http://localhost:5173", credentials: true }));
 app.use(express.json());
 app.use(cookieParser());

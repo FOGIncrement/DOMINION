@@ -8,7 +8,7 @@ import type { LauncherSettings } from "../shared-types";
 // (see the plan doc). For 2-3 flat fields this is simpler and safer than
 // fighting that dependency's module format.
 const DEFAULTS: LauncherSettings = {
-  serverUrl: "http://130.162.188.190:4000",
+  serverUrl: "https://clashpointgames.com",
   rememberedEmail: null,
 };
 

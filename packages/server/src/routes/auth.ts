@@ -41,7 +41,7 @@ authRouter.post("/register", async (req, res) => {
   await prisma.government.create({ data: { playerId: player.id, treasury: STARTING_TREASURY } });
 
   const token = signSession({ playerId: player.id });
-  setSessionCookie(res, token);
+  setSessionCookie(req, res, token);
   res.status(201).json({ playerId: player.id });
 });
 
@@ -60,7 +60,7 @@ authRouter.post("/login", async (req, res) => {
   }
 
   const token = signSession({ playerId: player.id });
-  setSessionCookie(res, token);
+  setSessionCookie(req, res, token);
   res.json({ playerId: player.id });
 });
 
