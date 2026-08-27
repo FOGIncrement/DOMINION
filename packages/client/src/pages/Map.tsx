@@ -11,10 +11,10 @@ import {
   WORLD_TERRAIN_SEED,
   ZONE_TYPES,
   ZONE_TYPE_IDS,
+  bandColor,
   elevationAtWorld,
   islandCenterFor,
   islandProfileFor,
-  rampColor,
   type WorldSlot,
   type ZoneTypeId,
 } from "@dominion/shared";
@@ -153,7 +153,6 @@ function bakeWorldTerrain(canvas: HTMLCanvasElement, settlements: WorldMapSettle
 
   const lightX = -0.6;
   const lightY = -0.75;
-  const CONTOUR_STEP = 0.09;
   const sampleCanvas = document.createElement("canvas");
   sampleCanvas.width = sampleCols;
   sampleCanvas.height = sampleRows;
@@ -172,26 +171,29 @@ function bakeWorldTerrain(canvas: HTMLCanvasElement, settlements: WorldMapSettle
       const dx = eR - eL;
       const dy = eD - eU;
       const land = e >= SEA_LEVEL;
-      let shade = land ? clamp(1 + (dx * -lightX + dy * -lightY) * 4.4, 0.6, 1.42) : 1;
+      // Posterized into 3 discrete levels (not the old continuous 0.6-1.42
+      // range, and no separate contour-line pass) so relief still reads
+      // against flat biome bands without a smooth gradient fighting the
+      // pixel-art look — a contour line at a fixed elevation interval reads
+      // as a stray dark stripe once color itself is already banded.
+      let shade = 1;
       if (land) {
-        const m = e / CONTOUR_STEP;
-        const frac = m - Math.floor(m);
-        const distToLine = Math.min(frac, 1 - frac);
-        if (distToLine < 0.04) shade *= 0.84;
+        const continuous = clamp(1 + (dx * -lightX + dy * -lightY) * 4.4, 0.6, 1.42);
+        shade = continuous < 0.85 ? 0.8 : continuous > 1.15 ? 1.2 : 1;
       }
       // grain uses global sample indices (not per-tile-relative), so it
       // never resets/misaligns at a former tile boundary either
       const grain = 1 + (hash2D(col, row, GRAIN_SEED) - 0.5) * 0.04;
 
-      const rgb = rampColor(e);
+      const rgb = bandColor(e);
       let r = rgb[0];
       let g = rgb[1];
       let b = rgb[2];
       const tint = tints[idx];
       if (land && tint) {
-        r = lerp(r, tint[0], 0.13);
-        g = lerp(g, tint[1], 0.13);
-        b = lerp(b, tint[2], 0.13);
+        r = lerp(r, tint[0], 0.2);
+        g = lerp(g, tint[1], 0.2);
+        b = lerp(b, tint[2], 0.2);
       }
 
       const p = idx * 4;
@@ -212,8 +214,7 @@ function bakeWorldTerrain(canvas: HTMLCanvasElement, settlements: WorldMapSettle
   canvas.style.width = `${displayW}px`;
   canvas.style.height = `${displayH}px`;
   const ctx = canvas.getContext("2d")!;
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
+  ctx.imageSmoothingEnabled = false;
   ctx.drawImage(sampleCanvas, 0, 0, sampleCols, sampleRows, 0, 0, displayW, displayH);
 }
 
@@ -232,7 +233,7 @@ function WorldTerrainCanvas({ settlements, bounds }: { settlements: WorldMapSett
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rosterKey]);
 
-  return <canvas ref={canvasRef} style={{ position: "absolute", display: "block" }} />;
+  return <canvas ref={canvasRef} className="map-terrain-canvas" style={{ position: "absolute", display: "block" }} />;
 }
 
 function IslandMarker({ settlement }: { settlement: WorldMapSettlement }) {

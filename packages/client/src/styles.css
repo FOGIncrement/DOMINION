@@ -419,6 +419,17 @@ a {
   will-change: transform;
 }
 
+/* The terrain canvas is baked with imageSmoothingEnabled=false for a hard
+   pixel-art blit, but the browser still bilinear-scales a <canvas> element
+   by default when CSS transforms enlarge it — .map-world's zoom scale is a
+   second, independent smoothing stage on top of the bake. Without this the
+   pixelated look holds at zoom=1 and blurs right back out the moment the
+   user zooms in. */
+.map-terrain-canvas {
+  image-rendering: -webkit-crisp-edges;
+  image-rendering: pixelated;
+}
+
 .map-zoom-readout {
   position: absolute;
   bottom: 10px;

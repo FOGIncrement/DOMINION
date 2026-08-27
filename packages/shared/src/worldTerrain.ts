@@ -40,23 +40,27 @@ export interface IslandProfile {
   tint: [number, number, number];
 }
 
-export interface TerrainColorStop {
-  elevation: number;
+export interface TerrainBand {
+  threshold: number;
   color: [number, number, number];
 }
 
-// A continuous elevation ramp (interpolated, not banded) so relief reads
-// like a real topographic map rather than flat-colored zones.
-export const TERRAIN_COLOR_RAMP: TerrainColorStop[] = [
-  { elevation: -0.35, color: [20, 41, 57] },
-  { elevation: 0.3, color: [37, 80, 108] },
-  { elevation: 0.4, color: [79, 138, 168] },
-  { elevation: 0.45, color: [211, 189, 133] },
-  { elevation: 0.5, color: [122, 154, 88] },
-  { elevation: 0.62, color: [94, 120, 64] },
-  { elevation: 0.75, color: [150, 123, 87] },
-  { elevation: 0.9, color: [221, 210, 190] },
-  { elevation: 1.05, color: [255, 255, 255] },
+// Hard-edged biome bands (not interpolated) for a pixel-art terrain look —
+// ported from a Godot canvas_item shader (grid-snapped noise sample +
+// threshold cascade) the palette was already tuned in. Threshold semantics
+// match the shader exactly: a band's threshold is its upper bound —
+// elevation strictly below it gets that band's flat color, falling through
+// to the next band otherwise. SEA_LEVEL (0.4 above) already matches the
+// shader's own deepSeaThreshold, so the numbers ported over unscaled.
+export const TERRAIN_BANDS: TerrainBand[] = [
+  { threshold: 0.4, color: [144, 224, 239] }, // deep sea
+  { threshold: 0.47, color: [173, 232, 244] }, // sea
+  { threshold: 0.54, color: [202, 240, 249] }, // shallow sea
+  { threshold: 0.555, color: [255, 243, 176] }, // sand
+  { threshold: 0.6, color: [167, 201, 87] }, // grass
+  { threshold: 0.65, color: [106, 153, 78] }, // forest
+  { threshold: 0.71, color: [108, 117, 126] }, // mountain
+  { threshold: 0.9, color: [255, 255, 255] }, // snow (also the catch-all above this)
 ];
 
 function hash2D(x: number, y: number, seed: number): number {
@@ -248,20 +252,9 @@ export function isLand(elevation: number): boolean {
   return elevation >= SEA_LEVEL;
 }
 
-export function rampColor(elevation: number): [number, number, number] {
-  const ramp = TERRAIN_COLOR_RAMP;
-  if (elevation <= ramp[0].elevation) return ramp[0].color;
-  for (let i = 1; i < ramp.length; i++) {
-    const stop = ramp[i];
-    if (elevation <= stop.elevation) {
-      const prev = ramp[i - 1];
-      const t = (elevation - prev.elevation) / (stop.elevation - prev.elevation);
-      return [
-        lerp(prev.color[0], stop.color[0], t),
-        lerp(prev.color[1], stop.color[1], t),
-        lerp(prev.color[2], stop.color[2], t),
-      ];
-    }
+export function bandColor(elevation: number): [number, number, number] {
+  for (const band of TERRAIN_BANDS) {
+    if (elevation < band.threshold) return band.color;
   }
-  return ramp[ramp.length - 1].color;
+  return TERRAIN_BANDS[TERRAIN_BANDS.length - 1].color;
 }
