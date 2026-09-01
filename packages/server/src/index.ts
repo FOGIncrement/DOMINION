@@ -23,9 +23,11 @@ import { infrastructureRouter } from "./routes/infrastructure.js";
 import { initGameConfigStore } from "./gameConfigStore.js";
 import { loansRouter } from "./routes/loans.js";
 import { marketRouter } from "./routes/market.js";
+import { militaryRouter } from "./routes/military.js";
 import { newsRouter } from "./routes/news.js";
 import { stocksRouter } from "./routes/stocks.js";
 import { techRouter } from "./routes/tech.js";
+import { territoryRouter } from "./routes/territory.js";
 import { tutorialRouter } from "./routes/tutorial.js";
 import { worldRouter } from "./routes/world.js";
 import { startScheduler } from "./scheduler.js";
@@ -65,6 +67,8 @@ app.use("/api/tutorial", tutorialRouter);
 app.use("/api/cheats", cheatsRouter);
 app.use("/api/admin/config", adminConfigRouter);
 app.use("/api/announcements", announcementsRouter);
+app.use("/api/territory", territoryRouter);
+app.use("/api/military", militaryRouter);
 app.use("/api/admin/announcements", adminAnnouncementsRouter);
 
 // Serves built launcher installers/portables for direct download — not

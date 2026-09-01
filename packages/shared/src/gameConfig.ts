@@ -13,6 +13,7 @@ import type {
   ZoneDef,
   ZoneTypeId,
 } from "./types.js";
+import type { BiomeId } from "./continentTerrain.js";
 
 export const STARTING_SETTLEMENT = {
   population: 25,
@@ -570,6 +571,63 @@ export const BUILDING_UPGRADE_TUNING = {
 
 export const EVENT_TUNING = {
   chancePerTick: 0.15,
+};
+
+// Margin land-system Phase 2 (territory partition/ownership/lifecycle) —
+// simple pacing levers, admin-tunable via the same FLAT_GROUPS registry as
+// everything above. targetAreaPerSeedKm2 drives how many territory seeds
+// get placed at world-gen time (computed from measured land area / this
+// number, not a fixed count — see generateTerritories.ts). dormant/
+// abandoned thresholds gate off Player.lastSeenAt, not a stored per-
+// territory status (see the Territory model) — reclaim is just logging
+// back in, which already refreshes lastSeenAt via the existing offline-
+// summary mechanism, with zero extra code.
+export const TERRITORY_TUNING = {
+  targetAreaPerSeedKm2: 500,
+  dormantAfterDays: 14,
+  abandonedAfterDays: 30,
+  // River-crossing cost multiplier at the biggest river on the continent,
+  // scaling down to 1x (no extra toll) at zero flow — a trickling stream
+  // barely taxes a border, a major river is a real obstacle.
+  riverFlowTollMax: 2,
+};
+
+// Structural data, not a pacing lever (same treatment ZONE_TYPES/TECHS/
+// NPC_ARCHETYPE_DEFS already get — deliberately NOT in FLAT_GROUPS, see
+// gameConfigStore.ts's own comment on that registry). The terrain-cost
+// lookup for the territory-partition multi-source Dijkstra: "every point
+// belongs to the cheapest seed to reach," not the geometrically closest —
+// crossing a mountain is expensive, a plain is cheap. ocean/lake values are
+// never actually read (those cells are excluded from the partition before
+// any cost lookup happens) but are listed for type completeness.
+export const TERRITORY_BIOME_COST: Record<BiomeId, number> = {
+  ocean: Infinity,
+  lake: Infinity,
+  river: 3,
+  beach: 1,
+  desert: 1.3,
+  plains: 1,
+  grassland: 1,
+  forest: 1.5,
+  taiga: 1.5,
+  tundra: 1.4,
+  mountain: 6,
+  snow: 8,
+};
+
+// Phase 4 (military/conquest) — one scalar army, no unit composition. See
+// routes/military.ts for how these are used.
+export const MILITARY_TUNING = {
+  // Gold spent raising an army converts to armyStrength at this rate.
+  strengthPerGold: 0.1,
+  // Home-turf advantage — defending is meant to be easier than attacking.
+  defenderBonusMultiplier: 1.2,
+  // +/- range applied to both sides' rolled power, e.g. 0.15 = +/-15%.
+  attackRandomJitter: 0.15,
+  attackCooldownHours: 6,
+  // Fraction of armyStrength a defender loses even when they successfully
+  // repel an attack — a won defense still costs something.
+  defenderStrengthLossFractionOnWin: 0.3,
 };
 
 export const RESOURCE_LABELS: Record<ResourceType, string> = {

@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import {
   BUILDING_TYPES,
   computeHourlyProduction,
@@ -9,7 +10,7 @@ import {
   type TechId,
 } from "@dominion/shared";
 import { api, ApiError, type GameStateResponse, type TechInfo } from "../api/client.js";
-import { useGameState, useTechs } from "../api/hooks.js";
+import { useGameState, useMyTerritories, useTechs } from "../api/hooks.js";
 import { useState, type SVGProps } from "react";
 import {
   BookIcon,
@@ -101,6 +102,7 @@ type DashboardTab = "overview" | "build" | "research";
 export default function Dashboard() {
   const { data, isLoading } = useGameState();
   const { data: techData } = useTechs();
+  const { data: territoryData } = useMyTerritories();
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
@@ -427,6 +429,31 @@ export default function Dashboard() {
             Resources tick once a minute — watch the +/hr rate next to each resource up top rather than
             the totals; they'll barely move minute to minute.
           </div>
+        </div>
+
+        <div className="card">
+          <h2 className="card__title">Home Territory</h2>
+          {territoryData?.territories.length ? (
+            <>
+              <div className="suggestion" style={{ marginTop: 0 }}>
+                {territoryData.territories[0].dominantBiome} ·{" "}
+                {Math.round(territoryData.territories[0].areaKm2).toLocaleString()} km²
+              </div>
+              {territoryData.territories.length > 1 && (
+                <div className="suggestion">
+                  Plus {territoryData.territories.length - 1} more territor
+                  {territoryData.territories.length - 1 === 1 ? "y" : "ies"} claimed.
+                </div>
+              )}
+              <Link to="/continent" className="btn" style={{ marginTop: 8 }}>
+                View on the Continent
+              </Link>
+            </>
+          ) : (
+            <div className="suggestion" style={{ marginTop: 0 }}>
+              Assigning your land...
+            </div>
+          )}
         </div>
       </div>
     </div>

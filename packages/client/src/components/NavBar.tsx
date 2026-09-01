@@ -46,6 +46,9 @@ export default function NavBar() {
       <NavLink to="/map" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
         Map
       </NavLink>
+      <NavLink to="/continent" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+        Continent
+      </NavLink>
       <NavLink to="/world" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
         World
       </NavLink>

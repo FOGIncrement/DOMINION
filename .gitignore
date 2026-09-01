@@ -3,6 +3,7 @@ dist/
 build/
 release/
 packages/server/downloads/
+packages/server/worldgen-output/
 .env
 *.local
 *.tsbuildinfo

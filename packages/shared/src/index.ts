@@ -7,3 +7,4 @@ export * from "./employment.js";
 export * from "./loans.js";
 export * from "./bonds.js";
 export * from "./worldTerrain.js";
+export * from "./continentTerrain.js";

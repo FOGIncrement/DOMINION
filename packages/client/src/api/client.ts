@@ -230,6 +230,25 @@ export const api = {
   adminResetAll: () =>
     request<{ ok: true; config: AdminConfigResponse["config"] }>("/admin/config/reset-all", { method: "POST" }),
 
+  mapPreview: () => request<MapPreviewResponse>("/territory/preview"),
+  territoryClaims: () => request<{ claims: TerritoryClaim[] }>("/territory/claims"),
+  territoryDetail: (seedIndex: number) => request<TerritoryDetail>(`/territory/${seedIndex}`),
+  myTerritories: () => request<{ territories: MyTerritory[] }>("/territory/mine"),
+  claimTerritory: (seedIndex: number) =>
+    request<{ ok: true; seedIndex: number; claimedAt: string }>(`/territory/${seedIndex}/claim`, { method: "POST" }),
+
+  myMilitary: () => request<MilitaryStatus>("/military/mine"),
+  raiseArmy: (goldAmount: number) =>
+    request<{ ok: true; armyStrength: number }>("/military/raise", {
+      method: "POST",
+      body: JSON.stringify({ goldAmount }),
+    }),
+  attackTerritory: (targetSeedIndex: number) =>
+    request<AttackResult>("/military/attack", {
+      method: "POST",
+      body: JSON.stringify({ targetSeedIndex }),
+    }),
+
   announcements: () => request<{ announcements: Announcement[] }>("/announcements"),
   adminCreateAnnouncement: (title: string, body: string) =>
     request<{ ok: true; id: string }>("/admin/announcements", {
@@ -639,6 +658,62 @@ export interface AdminConfigResponse {
     companyIndustryFields: string[];
     buildingTypeFields: string[];
   };
+}
+
+export interface MapPreviewResponse {
+  cols: number;
+  rows: number;
+  cellSizeKm: number;
+  biomeIds: string[];
+  biome: string; // base64-encoded Uint8Array, cols*rows
+  seed: string; // base64-encoded Uint16Array (little-endian), cols*rows — NO_SEED sentinel for ocean/lake
+  noSeedSentinel: number;
+}
+
+export interface TerritoryClaim {
+  seedIndex: number;
+  ownerId: string;
+  ownerLabel: string;
+  status: "active" | "dormant" | "abandoned";
+  isMine: boolean;
+}
+
+export interface TerritoryDetail {
+  seedIndex: number;
+  centerWorldX: number;
+  centerWorldY: number;
+  areaKm2: number;
+  dominantBiome: string;
+  resources: Record<string, number>;
+  status: "unclaimed" | "active" | "dormant" | "abandoned";
+  ownerId: string | null;
+  isMine: boolean;
+  claimedAt?: string;
+}
+
+export interface MyTerritory {
+  seedIndex: number;
+  centerWorldX: number;
+  centerWorldY: number;
+  areaKm2: number;
+  dominantBiome: string;
+  resources: Record<string, number>;
+  status: "active" | "dormant" | "abandoned";
+  claimedAt: string;
+}
+
+export interface MilitaryStatus {
+  armyStrength: number;
+  lastAttackAt: string | null;
+  cooldownRemainingSeconds: number;
+}
+
+export interface AttackResult {
+  ok: true;
+  won: boolean;
+  attackerPower: number;
+  defenderPower: number;
+  territorySeedIndex: number;
 }
 
 export interface Announcement {

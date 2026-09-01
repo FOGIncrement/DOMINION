@@ -12,6 +12,7 @@ import Companies from "./pages/Companies.js";
 import SupplyChain from "./pages/SupplyChain.js";
 import Government from "./pages/Government.js";
 import Map from "./pages/Map.js";
+import Continent from "./pages/Continent.js";
 import Market from "./pages/Market.js";
 import StockMarket from "./pages/StockMarket.js";
 import World from "./pages/World.js";
@@ -47,6 +48,7 @@ export default function App() {
         <Route path="/banking" element={<Banking />} />
         <Route path="/government" element={<Government />} />
         <Route path="/map" element={<Map />} />
+        <Route path="/continent" element={<Continent />} />
         <Route path="/world" element={<World />} />
         <Route path="/news" element={<News />} />
         {me.isAdmin && <Route path="/admin/config" element={<AdminConfig />} />}

@@ -28,6 +28,14 @@ model Player {
   // with the separate ENABLE_CHEATS env kill-switch) the disposable cheats.
   isAdmin          Boolean  @default(false)
 
+  // Phase 4 (military/conquest): a single scalar, no unit composition — see
+  // routes/military.ts. armyStrength always drops to 0 after an attack (win
+  // or lose, see the combat design there), so it's a spend-and-recover
+  // value, not a stockpile. lastAttackAt gates the attack cooldown the same
+  // way territory.ts's computeStatus gates dormant/abandoned off lastSeenAt.
+  armyStrength Float    @default(0)
+  lastAttackAt DateTime?
+
   settlement Settlement?
   companies  Company[]
   shareholdings Shareholding[]
@@ -37,6 +45,7 @@ model Player {
   corporateBondsHeld CorporateBond[]
   government Government?
   announcementsPosted Announcement[]
+  territories Territory[]
 }
 
 model Government {
@@ -465,4 +474,28 @@ model GameConfigOverride {
   id        Int      @id @default(1)
   data      String   @default("{}")
   updatedAt DateTime @updatedAt
+}
+
+// Margin land-system Phase 2. seedIndex identifies one territory from the
+// baked, never-changing partition in worldgen-output/seeds.json +
+// territoryOwner.u16 (see worldgen/generateTerritories.ts) — the geometry
+// itself (which cells belong to this seed, its area/center/biome/resource
+// summary) is never stored here, only ownership. A row only ever exists
+// once a seed has actually been claimed; an unclaimed seed simply has no
+// row at all (no "unclaimed" status value needed).
+//
+// Deliberately NO stored status column (active/dormant/abandoned) — that's
+// computed at read time from the owning Player.lastSeenAt against
+// TERRITORY_TUNING's day thresholds (see routes/territory.ts), which also
+// makes "reclaim" automatic: a returning player's lastSeenAt already
+// refreshes via the existing offline-summary mechanism the moment they play
+// again, with zero extra code here.
+model Territory {
+  id        String   @id @default(cuid())
+  seedIndex Int      @unique
+  ownerId   String
+  owner     Player   @relation(fields: [ownerId], references: [id])
+  claimedAt DateTime @default(now())
+
+  @@index([ownerId])
 }

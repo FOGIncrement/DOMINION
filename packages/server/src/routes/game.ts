@@ -14,6 +14,7 @@ import { requireAuth, type AuthedRequest } from "../auth/index.js";
 import { getConfig } from "../gameConfigStore.js";
 import { housingCapacity } from "../simulation/consumption.js";
 import { computeOfflineSummaryAndAdvance } from "../offlineSummary.js";
+import { ensurePlayerTerritory } from "./territory.js";
 import type { SettlementSnapshot } from "../simulation/types.js";
 
 export const gameRouter = Router();
@@ -61,6 +62,11 @@ gameRouter.get("/state", async (req: AuthedRequest, res) => {
     res.status(404).json({ error: "No settlement found for this player" });
     return;
   }
+  // Every player is meant to hold real land on the continent, not just have
+  // the option to claim some — see territory.ts's ensurePlayerTerritory.
+  // This is the one place every session bootstraps through, so it's also
+  // what backfills every pre-existing player.
+  await ensurePlayerTerritory(req.playerId!);
   const config = getConfig();
   const snapshot = toSnapshot(settlement);
 

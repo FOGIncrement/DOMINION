@@ -146,3 +146,22 @@ export function useAdminConfig() {
 export function useAnnouncements() {
   return useQuery({ queryKey: ["announcements"], queryFn: api.announcements, refetchInterval: POLL_MS });
 }
+
+// staleTime: Infinity — the baked raster this fetches never changes without
+// a worldgen rerun + server restart, so one fetch per session is enough; see
+// useTerritoryClaims below for the part that does change.
+export function useMapPreview() {
+  return useQuery({ queryKey: ["mapPreview"], queryFn: api.mapPreview, staleTime: Infinity, retry: false });
+}
+
+export function useTerritoryClaims() {
+  return useQuery({ queryKey: ["territoryClaims"], queryFn: api.territoryClaims, refetchInterval: POLL_MS });
+}
+
+export function useMyTerritories() {
+  return useQuery({ queryKey: ["myTerritories"], queryFn: api.myTerritories, refetchInterval: POLL_MS });
+}
+
+export function useMyMilitary() {
+  return useQuery({ queryKey: ["myMilitary"], queryFn: api.myMilitary, refetchInterval: POLL_MS });
+}

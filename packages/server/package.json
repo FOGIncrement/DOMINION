@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "seed": "tsx prisma/seed.ts",
+    "worldgen": "tsx src/worldgen/generateContinent.ts",
+    "worldgen:territories": "tsx src/worldgen/generateTerritories.ts",
+    "worldgen:adjacency": "tsx src/worldgen/computeAdjacency.ts",
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate"
   },
