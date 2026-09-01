@@ -583,7 +583,12 @@ export const EVENT_TUNING = {
 // back in, which already refreshes lastSeenAt via the existing offline-
 // summary mechanism, with zero extra code.
 export const TERRITORY_TUNING = {
-  targetAreaPerSeedKm2: 500,
+  // Chosen so the continent reads as ~40-55 distinct countries (1,056,692km²
+  // measured land / 22,000 ≈ 48) rather than ~2000 tiny provinces — a
+  // country-scale starting claim, not a field. Subdividing an owned country
+  // into smaller provinces is deliberately not modeled yet; this only
+  // controls the size of the atomic claimable/conquerable unit.
+  targetAreaPerSeedKm2: 22000,
   dormantAfterDays: 14,
   abandonedAfterDays: 30,
   // River-crossing cost multiplier at the biggest river on the continent,

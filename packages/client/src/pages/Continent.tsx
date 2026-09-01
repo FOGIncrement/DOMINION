@@ -1,16 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BIOME_COLORS, type BiomeId } from "@dominion/shared";
 import { api, ApiError, type AttackResult, type TerritoryClaim } from "../api/client.js";
 import { useGovernment, useMapPreview, useMyMilitary, useMyTerritories, useTerritoryClaims } from "../api/hooks.js";
 
-// Display px per (already-downsampled, 4km-per-cell) preview cell — a plain
-// integer scale drawn with imageSmoothingEnabled=false, matching the
-// pixel-art upscale idiom the old island Map already uses. Higher than it
-// would need to be for the full grid, since the canvas is cropped to just
-// the continent's own bounding box (see computeLandBounds) rather than the
-// whole ocean-padded world.
+// Display px per (already-downsampled, 4km-per-cell) preview cell, at zoom=1
+// — a plain integer scale drawn with imageSmoothingEnabled=false, matching
+// the pixel-art upscale idiom the old island Map already uses. The viewport
+// itself now supports real zoom/pan (see ContinentCanvas) on top of this.
 const CANVAS_SCALE = 4;
+const ZOOM_MAX = 12;
+const CENTER_ZOOM = 4; // zoom level "Center on My Territory" jumps to
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, v));
+}
 
 function base64ToUint8(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -70,6 +74,7 @@ function lerp(a: number, b: number, t: number): number {
 interface Geometry {
   cols: number;
   rows: number;
+  cellSizeKm: number;
   biomeIds: string[];
   biome: Uint8Array;
   seed: Uint16Array;
@@ -86,9 +91,9 @@ interface Bounds {
 // The continent is one landmass on a much larger grid (open ocean padding
 // on every side, by design — see continentTerrain.ts's mask), so rendering
 // the full grid wastes most of the canvas on empty water. Cropping to the
-// land's own bounding box (plus a small margin) makes the actual continent
-// fill the view without needing real pan/zoom, which is out of scope for
-// this quick pass.
+// land's own bounding box (plus a small margin) is what the initial
+// fit-to-viewport zoom frames — real pan/zoom (below) handles seeing any
+// part of it up close from there.
 const CROP_MARGIN_CELLS = 12;
 
 function computeLandBounds(geometry: Geometry): Bounds {
@@ -130,6 +135,7 @@ function renderContinent(
   bounds: Bounds,
   claimMap: Map<number, TerritoryClaim>,
   accentRgb: [number, number, number],
+  selectedSeedIndex: number | null,
 ) {
   const { cols, biome, seed, biomeIds, noSeedSentinel } = geometry;
   const n = cols * geometry.rows;
@@ -166,6 +172,22 @@ function renderContinent(
         b *= 0.45;
       }
 
+      // Selection highlight — traces the specific clicked seed's own
+      // boundary (not its merged-nation group), so clicking one province of
+      // a multi-seed nation still shows exactly which one is selected. Full-
+      // strength, overriding the border darkening above rather than
+      // blending with it, so it reads clearly against the muted map palette.
+      if (selectedSeedIndex !== null) {
+        const isSelf = s === selectedSeedIndex;
+        const rightDiffers = col < bounds.maxCol && (seed[idx + 1] === selectedSeedIndex) !== isSelf;
+        const downDiffers = row < bounds.maxRow && (seed[idx + cols] === selectedSeedIndex) !== isSelf;
+        if (rightDiffers || downDiffers) {
+          r = 255;
+          g = 255;
+          b = 255;
+        }
+      }
+
       const p = ((row - bounds.minRow) * outW + (col - bounds.minCol)) * 4;
       data[p] = r;
       data[p + 1] = g;
@@ -176,61 +198,221 @@ function renderContinent(
   ctx.putImageData(image, 0, 0);
 }
 
-function ContinentCanvas({
-  geometry,
-  claims,
-  onSelect,
-}: {
-  geometry: Geometry;
-  claims: TerritoryClaim[];
-  onSelect: (seedIndex: number | null) => void;
-}) {
+export interface ContinentCanvasHandle {
+  centerOn: (worldX: number, worldY: number) => void;
+  zoomBy: (factor: number) => void;
+}
+
+const ContinentCanvas = forwardRef<
+  ContinentCanvasHandle,
+  {
+    geometry: Geometry;
+    claims: TerritoryClaim[];
+    selected: number | null;
+    onSelect: (seedIndex: number | null) => void;
+  }
+>(function ContinentCanvas({ geometry, claims, selected, onSelect }, ref) {
+  const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const zoomRef = useRef(1);
+  const panRef = useRef({ x: 0, y: 0 });
+  const minZoomRef = useRef(0.1);
+  const draggingRef = useRef(false);
+  const lastPointRef = useRef({ x: 0, y: 0 });
+  const pointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
+  const [zoomLabel, setZoomLabel] = useState("1.0×");
+
   const claimMap = useMemo(() => new Map(claims.map((c) => [c.seedIndex, c])), [claims]);
   const bounds = useMemo(() => computeLandBounds(geometry), [geometry]);
+  const outW = bounds.maxCol - bounds.minCol + 1;
+  const outH = bounds.maxRow - bounds.minRow + 1;
+  const nativeW = outW * CANVAS_SCALE;
+  const nativeH = outH * CANVAS_SCALE;
 
+  const applyTransform = () => {
+    const viewport = viewportRef.current;
+    const canvas = canvasRef.current;
+    if (!viewport || !canvas) return;
+    const zoom = zoomRef.current;
+    const vw = viewport.clientWidth;
+    const vh = viewport.clientHeight;
+    const contentW = nativeW * zoom;
+    const contentH = nativeH * zoom;
+
+    let panX = panRef.current.x;
+    let panY = panRef.current.y;
+    if (contentW <= vw) panX = (vw - contentW) / 2;
+    else panX = clamp(panX, vw - contentW, 0);
+    if (contentH <= vh) panY = (vh - contentH) / 2;
+    else panY = clamp(panY, vh - contentH, 0);
+    panRef.current = { x: panX, y: panY };
+
+    canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+    setZoomLabel(`${zoom.toFixed(1)}×`);
+  };
+
+  const zoomTo = (newZoom: number, clientX: number, clientY: number) => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const rect = viewport.getBoundingClientRect();
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    const zoom = zoomRef.current;
+    const worldX = (px - panRef.current.x) / zoom;
+    const worldY = (py - panRef.current.y) / zoom;
+    zoomRef.current = clamp(newZoom, minZoomRef.current, ZOOM_MAX);
+    panRef.current = { x: px - worldX * zoomRef.current, y: py - worldY * zoomRef.current };
+    applyTransform();
+  };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      centerOn: (worldX: number, worldY: number) => {
+        const viewport = viewportRef.current;
+        if (!viewport) return;
+        const nx = (worldX / geometry.cellSizeKm - bounds.minCol) * CANVAS_SCALE;
+        const ny = (worldY / geometry.cellSizeKm - bounds.minRow) * CANVAS_SCALE;
+        zoomRef.current = clamp(CENTER_ZOOM, minZoomRef.current, ZOOM_MAX);
+        panRef.current = {
+          x: viewport.clientWidth / 2 - nx * zoomRef.current,
+          y: viewport.clientHeight / 2 - ny * zoomRef.current,
+        };
+        applyTransform();
+      },
+      zoomBy: (factor: number) => {
+        const viewport = viewportRef.current;
+        if (!viewport) return;
+        const rect = viewport.getBoundingClientRect();
+        zoomTo(zoomRef.current * factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
+      },
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [geometry, bounds],
+  );
+
+  // Bake the bitmap once per geometry/bounds/claims/selection change — pure
+  // raster content, independent of the current pan/zoom transform.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const accentHex = getComputedStyle(document.documentElement).getPropertyValue("--accent") || "#45d1a8";
     const accent = hexToRgb(accentHex);
 
-    const outW = bounds.maxCol - bounds.minCol + 1;
-    const outH = bounds.maxRow - bounds.minRow + 1;
     const offscreen = document.createElement("canvas");
     offscreen.width = outW;
     offscreen.height = outH;
     const offCtx = offscreen.getContext("2d")!;
-    renderContinent(offCtx, geometry, bounds, claimMap, accent);
+    renderContinent(offCtx, geometry, bounds, claimMap, accent, selected);
 
-    canvas.width = outW * CANVAS_SCALE;
-    canvas.height = outH * CANVAS_SCALE;
+    canvas.width = nativeW;
+    canvas.height = nativeH;
     const ctx = canvas.getContext("2d")!;
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(offscreen, 0, 0, outW, outH, 0, 0, canvas.width, canvas.height);
-  }, [geometry, bounds, claimMap]);
+    ctx.drawImage(offscreen, 0, 0, outW, outH, 0, 0, nativeW, nativeH);
+  }, [geometry, bounds, claimMap, selected, outW, outH, nativeW, nativeH]);
 
-  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const px = (e.clientX - rect.left) * (canvas.width / rect.width);
-    const py = (e.clientY - rect.top) * (canvas.height / rect.height);
-    const col = bounds.minCol + Math.floor(px / CANVAS_SCALE);
-    const row = bounds.minRow + Math.floor(py / CANVAS_SCALE);
+  // Initial fit-to-viewport zoom (and the floor zoomTo/centerOn clamp to) —
+  // computed once the viewport has a real size, not before.
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const fitZoom = Math.min(viewport.clientWidth / nativeW, viewport.clientHeight / nativeH, 1);
+    minZoomRef.current = Math.min(1, Math.max(0.05, fitZoom));
+    zoomRef.current = minZoomRef.current;
+    panRef.current = {
+      x: (viewport.clientWidth - nativeW * zoomRef.current) / 2,
+      y: (viewport.clientHeight - nativeH * zoomRef.current) / 2,
+    };
+    applyTransform();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nativeW, nativeH]);
+
+  useEffect(() => {
+    const onResize = () => applyTransform();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // React's onWheel is bound passively, so preventDefault() inside it
+  // silently no-ops (the page scrolls along with the zoom) — a native
+  // listener with { passive: false } is required to actually stop that.
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = Math.exp(-e.deltaY * 0.0016);
+      zoomTo(zoomRef.current * factor, e.clientX, e.clientY);
+    };
+    viewport.addEventListener("wheel", onWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", onWheel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    draggingRef.current = true;
+    lastPointRef.current = { x: e.clientX, y: e.clientY };
+    pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
+    viewportRef.current?.classList.add("map-viewport--dragging");
+    (e.target as Element).setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current) return;
+    const dx = e.clientX - lastPointRef.current.x;
+    const dy = e.clientY - lastPointRef.current.y;
+    lastPointRef.current = { x: e.clientX, y: e.clientY };
+    panRef.current = { x: panRef.current.x + dx, y: panRef.current.y + dy };
+    applyTransform();
+  };
+
+  // A plain click can't be distinguished from "the end of a drag" via a
+  // separate onClick handler once panning is in play, so selection is
+  // decided here instead: pointerup counts as a click only if the pointer
+  // barely moved since pointerdown.
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    draggingRef.current = false;
+    viewportRef.current?.classList.remove("map-viewport--dragging");
+    const start = pointerDownPosRef.current;
+    pointerDownPosRef.current = null;
+    if (!start) return;
+    if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 4) return;
+
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const rect = viewport.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    const zoom = zoomRef.current;
+    const nativeX = (px - panRef.current.x) / zoom;
+    const nativeY = (py - panRef.current.y) / zoom;
+    const col = bounds.minCol + Math.floor(nativeX / CANVAS_SCALE);
+    const row = bounds.minRow + Math.floor(nativeY / CANVAS_SCALE);
     if (col < bounds.minCol || col > bounds.maxCol || row < bounds.minRow || row > bounds.maxRow) return;
     const seedIndex = geometry.seed[row * geometry.cols + col];
     onSelect(seedIndex === geometry.noSeedSentinel ? null : seedIndex);
   };
 
   return (
-    <canvas
-      ref={canvasRef}
-      onClick={handleClick}
-      style={{ display: "block", width: "100%", height: "auto", cursor: "pointer", imageRendering: "pixelated" }}
-    />
+    <div
+      ref={viewportRef}
+      className="map-viewport"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+    >
+      <canvas
+        ref={canvasRef}
+        className="map-terrain-canvas"
+        style={{ position: "absolute", top: 0, left: 0, transformOrigin: "0 0" }}
+      />
+      <div className="map-zoom-readout">{zoomLabel}</div>
+    </div>
   );
-}
+});
 
 function TerritoryPanel({
   seedIndex,
@@ -399,12 +581,15 @@ export default function Continent() {
   const { data: claimsData } = useTerritoryClaims();
   const { data: mineData } = useMyTerritories();
   const [selected, setSelected] = useState<number | null>(null);
+  const canvasHandleRef = useRef<ContinentCanvasHandle>(null);
+  const hasCenteredRef = useRef(false);
 
   const geometry = useMemo<Geometry | null>(() => {
     if (!preview) return null;
     return {
       cols: preview.cols,
       rows: preview.rows,
+      cellSizeKm: preview.cellSizeKm,
       biomeIds: preview.biomeIds,
       biome: base64ToUint8(preview.biome),
       seed: base64ToUint16(preview.seed),
@@ -415,6 +600,20 @@ export default function Continent() {
   const claims = claimsData?.claims ?? [];
   const mine = mineData?.territories ?? [];
   const mineTotalArea = mine.reduce((sum, t) => sum + t.areaKm2, 0);
+
+  const centerOnMine = () => {
+    if (mine.length > 0) canvasHandleRef.current?.centerOn(mine[0].centerWorldX, mine[0].centerWorldY);
+  };
+
+  // Auto-center on the player's own territory once, the first time it's
+  // available — directly serves "I need to zoom in to see my country"
+  // without requiring a button click first. Doesn't re-fire on later polls.
+  useEffect(() => {
+    if (hasCenteredRef.current || !geometry || mine.length === 0) return;
+    hasCenteredRef.current = true;
+    centerOnMine();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [geometry, mine.length]);
 
   if (!geometry) {
     return (
@@ -427,14 +626,28 @@ export default function Continent() {
   return (
     <div className="page page--full">
       <div className="card">
-        <h2 className="card__title" style={{ margin: 0 }}>
-          The Continent
-        </h2>
+        <div className="trade-row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+          <h2 className="card__title" style={{ margin: 0 }}>
+            The Continent
+          </h2>
+          <div className="trade-row">
+            <button className="btn" onClick={() => canvasHandleRef.current?.zoomBy(1 / 1.5)}>
+              −
+            </button>
+            <button className="btn" onClick={() => canvasHandleRef.current?.zoomBy(1.5)}>
+              +
+            </button>
+            <button className="btn" disabled={mine.length === 0} onClick={centerOnMine}>
+              Center on My Territory
+            </button>
+          </div>
+        </div>
         <p className="suggestion" style={{ marginTop: 4 }}>
-          Every player's land in one place. Click any territory to inspect and claim it. Same-owner territories
-          share a color and merge visually; borders mark distinct claimable parcels and the coastline.
+          Scroll to zoom, drag to pan. Click any territory to inspect and claim it — the selected one gets a bright
+          outline. Same-owner territories share a color and merge visually; borders mark distinct claimable parcels
+          and the coastline.
         </p>
-        <ContinentCanvas geometry={geometry} claims={claims} onSelect={setSelected} />
+        <ContinentCanvas ref={canvasHandleRef} geometry={geometry} claims={claims} selected={selected} onSelect={setSelected} />
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>

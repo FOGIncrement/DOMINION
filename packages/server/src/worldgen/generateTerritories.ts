@@ -160,7 +160,14 @@ function main(): void {
   // 3. Multi-source Dijkstra over the cost raster.
   const NO_OWNER = 0xffff;
   const owner = new Uint16Array(n).fill(NO_OWNER);
-  const bestCost = new Float32Array(n).fill(Infinity);
+  // Float64, not Float32: with few, widely-spaced seeds, accumulated path
+  // costs run much longer (many more hops) than with many close-together
+  // ones. Float32's lower precision let two different accumulation paths
+  // round to adjacent-but-different representations of "the same" cost,
+  // which kept satisfying newCost < bestCost back and forth between a pair
+  // of cells — a near-infinite relaxation cycle that only shows up at this
+  // path length, not the short paths a dense seed layout produces.
+  const bestCost = new Float64Array(n).fill(Infinity);
   const heap = new MinHeap();
   seedPoints.forEach((seed, seedIndex) => {
     const idx = seed.row * GRID_COLS + seed.col;
