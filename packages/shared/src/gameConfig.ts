@@ -595,6 +595,16 @@ export const TERRITORY_TUNING = {
   // scaling down to 1x (no extra toll) at zero flow — a trickling stream
   // barely taxes a border, a major river is a real obstacle.
   riverFlowTollMax: 2,
+  // Hourly Settlement resource income per point of a territory's baked
+  // deposit richness (0-255 scale, see generateTerritories.ts's per-seed
+  // resources), summed across every territory a player owns and added
+  // alongside building production each tick — see engine.ts. Only applies
+  // to food/wood/stone/gold, the resources Settlement actually tracks;
+  // iron/coal are baked but have no economic sink yet. Chosen so a typical
+  // territory (observed deposit averages tend to run single digits to
+  // ~20) contributes a few units/hour — present, not dominant, next to
+  // building production.
+  resourceIncomeRate: 0.4,
 };
 
 // Structural data, not a pacing lever (same treatment ZONE_TYPES/TECHS/
