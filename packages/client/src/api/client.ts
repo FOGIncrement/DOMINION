@@ -236,6 +236,11 @@ export const api = {
   myTerritories: () => request<{ territories: MyTerritory[] }>("/territory/mine"),
   claimTerritory: (seedIndex: number) =>
     request<{ ok: true; seedIndex: number; claimedAt: string }>(`/territory/${seedIndex}/claim`, { method: "POST" }),
+  foundExtractionCompany: (seedIndex: number, resource: "food" | "wood" | "stone", name: string) =>
+    request<{ ok: true; companyId: string }>(`/territory/${seedIndex}/found-extraction`, {
+      method: "POST",
+      body: JSON.stringify({ resource, name }),
+    }),
 
   myMilitary: () => request<MilitaryStatus>("/military/mine"),
   raiseArmy: (goldAmount: number) =>
@@ -333,6 +338,10 @@ export interface MyCompany {
   id: string;
   name: string;
   industry: string;
+  // Set only for an extraction company founded via the territory-gated
+  // path (POST /territory/:seedIndex/found-extraction) — which land its
+  // production is drawn from.
+  territorySeedIndex: number | null;
   cash: number;
   inputStock: number;
   goodsStock: number;

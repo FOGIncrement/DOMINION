@@ -259,6 +259,17 @@ export function zoneCategoryForIndustry(industry: CompanyIndustryId): ZoneTypeId
   return entry.id;
 }
 
+// Which of the three existing extraction industries (farming/logging/
+// quarrying — "labor in, raw resource out," see COMPANY_INDUSTRIES above)
+// a territory-linked extraction company uses for a given resource. Shared
+// by routes/territory.ts's found-extraction founding path and the
+// Continent page's founding UI, so both agree on the mapping.
+export const RESOURCE_TO_EXTRACTION_INDUSTRY: Record<"food" | "wood" | "stone", CompanyIndustryId> = {
+  food: "farming",
+  wood: "logging",
+  stone: "quarrying",
+};
+
 export const TECHS: Record<TechId, TechDef> = {
   masonry: {
     id: "masonry",
@@ -595,6 +606,21 @@ export const TERRITORY_TUNING = {
   // scaling down to 1x (no extra toll) at zero flow — a trickling stream
   // barely taxes a border, a major river is a real obstacle.
   riverFlowTollMax: 2,
+  // One-time gold grant when a player gains a new territory (claim,
+  // auto-assignment, or a won attack) — matches farming/logging/quarrying's
+  // own foundingCost exactly, so it's always "enough for your first
+  // extraction company on this land," never a passive income source. See
+  // routes/territory.ts's grantExtractionStarterBundle.
+  extractionStarterGrant: 150,
+  // Territory-linked extraction companies (routes/territory.ts's
+  // found-extraction) scale goodsPerWorkerPerHour by
+  // clamp(0.5 + richness/extractionRichnessDivisor, min, max) — divisor
+  // chosen against real observed deposit averages (single digits to ~20 in
+  // practice, not the theoretical 0-255 scale), so a middling territory
+  // sits near 1x and a rich one meaningfully outperforms a poor one.
+  extractionRichnessDivisor: 20,
+  extractionMultiplierMin: 0.5,
+  extractionMultiplierMax: 2.5,
 };
 
 // Structural data, not a pacing lever (same treatment ZONE_TYPES/TECHS/

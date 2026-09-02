@@ -448,6 +448,43 @@ a {
   pointer-events: none;
 }
 
+/* Territory click-info, anchored to the map's own corner rather than
+   stacked in normal page flow below it — same background/border/shadow
+   tokens as .card so it reads as "a card floating over the map," not a
+   different visual language. */
+.map-territory-popup {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 280px;
+  max-width: calc(100% - 20px);
+  max-height: calc(100% - 20px);
+  overflow-y: auto;
+  background: var(--surface-1);
+  border: var(--card-border);
+  box-shadow: var(--card-shadow);
+  border-radius: var(--radius-card);
+  padding: 14px;
+  z-index: 5;
+}
+
+.map-territory-popup__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.map-territory-popup__close:hover {
+  color: var(--text-primary, inherit);
+}
+
 .card-section-label {
   font-size: 11px;
   font-weight: 600;

@@ -275,6 +275,15 @@ model Company {
   ipoAt           DateTime?
   closedAt        DateTime?
 
+  // Set only for an extraction company founded via the territory-gated path
+  // (routes/territory.ts's found-extraction, not the zoning-gated
+  // routes/companies.ts path) — which specific territory's deposits it
+  // draws from. Not unique: a territory can host up to one extraction
+  // company per resource it actually has. No FK to Territory (baked seed
+  // data, not a DB row) — read live via worldgen/loadedTerritoryData.ts's
+  // getSeedByIndex wherever this matters, so it can never drift out of sync.
+  territorySeedIndex Int?
+
   trades            MarketTrade[]
   shareholdings     Shareholding[]
   priceHistory      SharePriceHistoryPoint[]

@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { z } from "zod";
+import { RESOURCE_TO_EXTRACTION_INDUSTRY } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
 import { getConfig } from "../gameConfigStore.js";
@@ -26,6 +28,24 @@ export function computeStatus(lastSeenAt: Date, now: Date): TerritoryStatus {
   return "active";
 }
 
+// Territory-linked extraction companies (found-extraction below) don't
+// store their own production rate — it's derived live from the territory's
+// baked deposit richness for the industry's output resource, so it can
+// never drift out of sync with the world data. clamp(0.5 +
+// richness/divisor, min, max): divisor is tuned against real observed
+// deposit averages (single digits to ~20), not the theoretical 0-255
+// scale, so a middling territory sits near 1x. Exported for both
+// simulation/engine.ts's tick loop (the real production math) and
+// routes/companies.ts's /mine (so the displayed rate matches what actually
+// gets produced, not the flat industry default).
+export function extractionRichnessMultiplier(seedIndex: number, outputResource: string): number {
+  const tuning = getConfig().TERRITORY_TUNING;
+  const seed = getSeedByIndex(seedIndex);
+  const richness = seed?.resources[outputResource] ?? 0;
+  const raw = 0.5 + richness / tuning.extractionRichnessDivisor;
+  return Math.min(tuning.extractionMultiplierMax, Math.max(tuning.extractionMultiplierMin, raw));
+}
+
 const PAGE_SIZE = 50;
 
 // Every seed with a Territory row that's still active/dormant under its
@@ -40,6 +60,18 @@ export async function getUnavailableSeedIndexes(): Promise<Set<number>> {
   return new Set(
     claimed.filter((t) => computeStatus(t.owner.lastSeenAt, now) !== "abandoned").map((t) => t.seedIndex),
   );
+}
+
+// A new territory is a blank slate — no passive income, just a one-time
+// gold grant sized to found exactly one extraction company on it (see
+// found-extraction below). Called once per territory gained, from every
+// path that gives a player one: this claim route (both branches),
+// ensurePlayerTerritory, and military.ts's won-attack branch. Additive
+// (Settlement.gold += grant), not "top up to," so it's a real bundle every
+// time, not a one-off floor.
+export async function grantExtractionStarterBundle(playerId: string): Promise<void> {
+  const grant = getConfig().TERRITORY_TUNING.extractionStarterGrant;
+  await prisma.settlement.update({ where: { playerId }, data: { gold: { increment: grant } } });
 }
 
 // Every player is meant to hold real land, not just have the *option* to
@@ -63,6 +95,7 @@ export async function ensurePlayerTerritory(playerId: string): Promise<void> {
   const seedIndex = candidates[Math.floor(Math.random() * candidates.length)].seedIndex;
   try {
     await prisma.territory.create({ data: { seedIndex, ownerId: playerId } });
+    await grantExtractionStarterBundle(playerId);
   } catch {
     // Benign race — see comment above.
   }
@@ -193,10 +226,83 @@ territoryRouter.post("/:seedIndex/claim", async (req: AuthedRequest, res) => {
       where: { seedIndex },
       data: { ownerId: req.playerId!, claimedAt: new Date() },
     });
+    await grantExtractionStarterBundle(req.playerId!);
     res.json({ ok: true, seedIndex, claimedAt: updated.claimedAt });
     return;
   }
 
   const created = await prisma.territory.create({ data: { seedIndex, ownerId: req.playerId! } });
+  await grantExtractionStarterBundle(req.playerId!);
   res.status(201).json({ ok: true, seedIndex, claimedAt: created.claimedAt });
+});
+
+const foundExtractionSchema = z.object({
+  resource: z.enum(["food", "wood", "stone"]),
+  name: z.string().min(1).max(60),
+});
+
+// A second founding path alongside routes/companies.ts's zoning-gated one —
+// deliberately does NOT call computeZoneCategoryUsage at all. Territory
+// ownership is this path's whole gate: you must own the land, and it must
+// actually have the resource you're trying to extract.
+territoryRouter.post("/:seedIndex/found-extraction", async (req: AuthedRequest, res) => {
+  const seedIndex = Number(req.params.seedIndex);
+  const parsed = foundExtractionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request" });
+    return;
+  }
+
+  const seed = getSeedByIndex(seedIndex);
+  if (!seed) {
+    res.status(404).json({ error: "No such territory" });
+    return;
+  }
+
+  const territory = await prisma.territory.findUnique({ where: { seedIndex } });
+  if (!territory || territory.ownerId !== req.playerId!) {
+    res.status(403).json({ error: "You don't own this territory" });
+    return;
+  }
+
+  const { resource, name } = parsed.data;
+  const richness = seed.resources[resource] ?? 0;
+  if (richness <= 0) {
+    res.status(400).json({ error: `This territory has no ${resource} deposits to extract` });
+    return;
+  }
+
+  const industryId = RESOURCE_TO_EXTRACTION_INDUSTRY[resource];
+  const existing = await prisma.company.findFirst({
+    where: { territorySeedIndex: seedIndex, industry: industryId, closedAt: null },
+  });
+  if (existing) {
+    res.status(400).json({ error: `You've already founded a ${industryId} company on this territory` });
+    return;
+  }
+
+  const industry = getConfig().COMPANY_INDUSTRIES[industryId];
+  const settlement = await prisma.settlement.findUnique({ where: { playerId: req.playerId! } });
+  if (!settlement) {
+    res.status(404).json({ error: "No settlement found for this player" });
+    return;
+  }
+  if (settlement.gold < industry.foundingCost) {
+    res.status(400).json({ error: `Founding a ${industry.name} costs ${industry.foundingCost}g` });
+    return;
+  }
+
+  const [, company] = await prisma.$transaction([
+    prisma.settlement.update({ where: { id: settlement.id }, data: { gold: { decrement: industry.foundingCost } } }),
+    prisma.company.create({
+      data: {
+        ownerId: req.playerId!,
+        name,
+        industry: industryId,
+        cash: industry.foundingCost,
+        territorySeedIndex: seedIndex,
+      },
+    }),
+  ]);
+  res.status(201).json({ ok: true, companyId: company.id });
 });

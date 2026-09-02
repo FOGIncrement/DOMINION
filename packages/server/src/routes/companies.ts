@@ -18,6 +18,7 @@ import { applyTradeImpact } from "../simulation/market.js";
 import { getControllerLabel, getControllingPlayerId } from "../simulation/control.js";
 import { buildCorporateBondClosureOps } from "../simulation/corporateBonds.js";
 import { computeZoneCategoryUsage } from "./infrastructure.js";
+import { extractionRichnessMultiplier } from "./territory.js";
 
 export const companiesRouter = Router();
 
@@ -72,6 +73,7 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
         id: c.id,
         name: c.name,
         industry: c.industry,
+        territorySeedIndex: c.territorySeedIndex,
         cash: c.cash,
         inputStock: c.inputStock,
         goodsStock: c.goodsStock,
@@ -85,7 +87,18 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
         totalRevenue: c.totalRevenue,
         totalExpenses: c.totalExpenses,
         foundedAt: c.foundedAt,
-        rates: computeCompanyHourlyRates(industry, c.workersAssigned, c.level, config.COMPANY_UPGRADE_TUNING),
+        // Territory-linked extraction companies produce at a
+        // richness-scaled rate (see simulation/engine.ts's tick loop) — the
+        // displayed rate has to use the same scaled industry def, or it'd
+        // show the flat default and never match actual production.
+        rates: computeCompanyHourlyRates(
+          c.territorySeedIndex != null
+            ? { ...industry, goodsPerWorkerPerHour: industry.goodsPerWorkerPerHour * extractionRichnessMultiplier(c.territorySeedIndex, industry.outputResource) }
+            : industry,
+          c.workersAssigned,
+          c.level,
+          config.COMPANY_UPGRADE_TUNING,
+        ),
         isPublic: c.isPublic,
         sharePrice: c.sharePrice,
         sharesOutstanding: c.sharesOutstanding,

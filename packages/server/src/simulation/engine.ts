@@ -43,6 +43,7 @@ import { runNpcInvestorTick, type PublicCompanyForInvesting } from "./npcInvesto
 import { computeProduction } from "./production.js";
 import { driftSharePrice, maybeDividend } from "./stocks.js";
 import type { CompanySnapshot, SettlementSnapshot } from "./types.js";
+import { extractionRichnessMultiplier } from "../routes/territory.js";
 
 async function loadSnapshots(): Promise<SettlementSnapshot[]> {
   const settlements = await prisma.settlement.findMany({
@@ -94,6 +95,7 @@ async function loadCompanySnapshots(): Promise<CompanySnapshot[]> {
     isPublic: c.isPublic,
     sharesOutstanding: c.sharesOutstanding,
     lastTickAt: c.lastTickAt,
+    territorySeedIndex: c.territorySeedIndex,
   }));
 }
 
@@ -342,7 +344,16 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     const elapsedHours = Math.max(0, Math.min(MAX_CATCHUP_HOURS, rawElapsedHours));
     if (elapsedHours <= 0) continue;
 
-    const industry = config.COMPANY_INDUSTRIES[company.industry];
+    const baseIndustry = config.COMPANY_INDUSTRIES[company.industry];
+    const industry =
+      company.territorySeedIndex != null
+        ? {
+            ...baseIndustry,
+            goodsPerWorkerPerHour:
+              baseIndustry.goodsPerWorkerPerHour *
+              extractionRichnessMultiplier(company.territorySeedIndex, baseIndustry.outputResource),
+          }
+        : baseIndustry;
     const result = tickCompany(company, elapsedHours, industry, config.COMPANY_UPGRADE_TUNING);
 
     if (industry.inputResource) {

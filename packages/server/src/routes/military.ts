@@ -5,7 +5,7 @@ import { requireAuth, type AuthedRequest } from "../auth/index.js";
 import { getConfig } from "../gameConfigStore.js";
 import { getAdjacentSeeds } from "../worldgen/loadedAdjacency.js";
 import { getOrCreateGovernment } from "./government.js";
-import { computeStatus } from "./territory.js";
+import { computeStatus, grantExtractionStarterBundle } from "./territory.js";
 
 export const militaryRouter = Router();
 militaryRouter.use(requireAuth);
@@ -138,6 +138,11 @@ militaryRouter.post("/attack", async (req: AuthedRequest, res) => {
         }),
     ...(won ? [prisma.player.update({ where: { id: target.ownerId }, data: { armyStrength: 0 } })] : []),
   ]);
+
+  // A conquered territory is exactly as much "a new territory" as a
+  // peaceful claim — same one-time blank-slate starter bundle, see
+  // territory.ts's grantExtractionStarterBundle.
+  if (won) await grantExtractionStarterBundle(req.playerId!);
 
   res.json({ ok: true, won, attackerPower, defenderPower, territorySeedIndex: targetSeedIndex });
 });

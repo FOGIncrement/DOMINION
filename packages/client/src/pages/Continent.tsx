@@ -1,8 +1,15 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BIOME_COLORS, type BiomeId } from "@dominion/shared";
+import { BIOME_COLORS, RESOURCE_TO_EXTRACTION_INDUSTRY, type BiomeId } from "@dominion/shared";
 import { api, ApiError, type AttackResult, type TerritoryClaim } from "../api/client.js";
-import { useGovernment, useMapPreview, useMyMilitary, useMyTerritories, useTerritoryClaims } from "../api/hooks.js";
+import {
+  useGovernment,
+  useMapPreview,
+  useMyCompanies,
+  useMyMilitary,
+  useMyTerritories,
+  useTerritoryClaims,
+} from "../api/hooks.js";
 
 // Display px per (already-downsampled, 4km-per-cell) preview cell, at zoom=1
 // — a plain integer scale drawn with imageSmoothingEnabled=false, matching
@@ -210,8 +217,9 @@ const ContinentCanvas = forwardRef<
     claims: TerritoryClaim[];
     selected: number | null;
     onSelect: (seedIndex: number | null) => void;
+    children?: React.ReactNode;
   }
->(function ContinentCanvas({ geometry, claims, selected, onSelect }, ref) {
+>(function ContinentCanvas({ geometry, claims, selected, onSelect, children }, ref) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const zoomRef = useRef(1);
@@ -410,18 +418,69 @@ const ContinentCanvas = forwardRef<
         style={{ position: "absolute", top: 0, left: 0, transformOrigin: "0 0" }}
       />
       <div className="map-zoom-readout">{zoomLabel}</div>
+      {children}
     </div>
   );
 });
+
+// One resource -> one extraction company per territory. Founds via the
+// territory-gated path (routes/territory.ts's found-extraction) — separate
+// from, and not subject to, the old zoning-capacity founding route.
+function ExtractionFounder({
+  seedIndex,
+  resource,
+  richness,
+  onFounded,
+}: {
+  seedIndex: number;
+  resource: "food" | "wood" | "stone";
+  richness: number;
+  onFounded: () => void;
+}) {
+  const industryId = RESOURCE_TO_EXTRACTION_INDUSTRY[resource];
+  const [name, setName] = useState(`${resource[0].toUpperCase()}${resource.slice(1)} Co. #${seedIndex}`);
+  const [error, setError] = useState<string | null>(null);
+
+  const found = useMutation({
+    mutationFn: () => api.foundExtractionCompany(seedIndex, resource, name),
+    onSuccess: () => {
+      setError(null);
+      onFounded();
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Founding failed"),
+  });
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      {error && <div className="auth-error">{error}</div>}
+      <div className="trade-row">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          style={{ flex: 1, minWidth: 0 }}
+        />
+        <button className="btn" disabled={found.isPending} onClick={() => found.mutate()}>
+          Found {industryId}
+        </button>
+      </div>
+      <p className="suggestion" style={{ marginTop: 2, marginBottom: 0 }}>
+        {resource} deposit richness {richness} on this territory.
+      </p>
+    </div>
+  );
+}
 
 function TerritoryPanel({
   seedIndex,
   claims,
   onChanged,
+  onClose,
 }: {
   seedIndex: number;
   claims: TerritoryClaim[];
   onChanged: () => void;
+  onClose: () => void;
 }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
@@ -431,6 +490,7 @@ function TerritoryPanel({
     queryFn: () => api.territoryDetail(seedIndex),
   });
   const { data: military } = useMyMilitary();
+  const { data: companiesData } = useMyCompanies();
   const claimInfo = claims.find((c) => c.seedIndex === seedIndex) ?? null;
 
   const claim = useMutation({
@@ -461,7 +521,10 @@ function TerritoryPanel({
 
   if (isLoading || !data) {
     return (
-      <div className="card">
+      <div className="map-territory-popup">
+        <button className="map-territory-popup__close" onClick={onClose} aria-label="Close">
+          ×
+        </button>
         <div className="loading">Loading territory...</div>
       </div>
     );
@@ -478,8 +541,17 @@ function TerritoryPanel({
         : null;
   const resourceEntries = Object.entries(data.resources).filter(([, v]) => v > 0);
 
+  // A blank-slate territory has no production until you found something on
+  // it — extraction companies are the way in, one per resource it actually
+  // has (see routes/territory.ts's found-extraction).
+  const territoryCompanies = (companiesData?.companies ?? []).filter((c) => c.territorySeedIndex === seedIndex);
+  const extractableResources = (["food", "wood", "stone"] as const).filter((r) => (data.resources[r] ?? 0) > 0);
+
   return (
-    <div className="card">
+    <div className="map-territory-popup">
+      <button className="map-territory-popup__close" onClick={onClose} aria-label="Close">
+        ×
+      </button>
       <h2 className="card__title">Territory #{data.seedIndex}</h2>
       {error && <div className="auth-error">{error}</div>}
       <p className="suggestion" style={{ marginTop: 0 }}>
@@ -521,6 +593,31 @@ function TerritoryPanel({
           {battleReport.won
             ? `Victory! Your forces (${Math.round(battleReport.attackerPower)}) overpowered the defenders (${Math.round(battleReport.defenderPower)}). This territory is now yours.`
             : `Defeat. Your forces (${Math.round(battleReport.attackerPower)}) were repelled by the defenders (${Math.round(battleReport.defenderPower)}). Your army is spent.`}
+        </div>
+      )}
+      {claimInfo?.isMine && extractableResources.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div className="card-section-label">Extraction</div>
+          {extractableResources.map((resource) => {
+            const industryId = RESOURCE_TO_EXTRACTION_INDUSTRY[resource];
+            const founded = territoryCompanies.find((c) => c.industry === industryId);
+            return founded ? (
+              <p className="suggestion" key={resource} style={{ marginTop: 4 }}>
+                {founded.name} is extracting {resource} here.
+              </p>
+            ) : (
+              <ExtractionFounder
+                key={resource}
+                seedIndex={seedIndex}
+                resource={resource}
+                richness={data.resources[resource]}
+                onFounded={() => {
+                  queryClient.invalidateQueries({ queryKey: ["myCompanies"] });
+                  onChanged();
+                }}
+              />
+            );
+          })}
         </div>
       )}
     </div>
@@ -647,7 +744,11 @@ export default function Continent() {
           outline. Same-owner territories share a color and merge visually; borders mark distinct claimable parcels
           and the coastline.
         </p>
-        <ContinentCanvas ref={canvasHandleRef} geometry={geometry} claims={claims} selected={selected} onSelect={setSelected} />
+        <ContinentCanvas ref={canvasHandleRef} geometry={geometry} claims={claims} selected={selected} onSelect={setSelected}>
+          {selected !== null && (
+            <TerritoryPanel key={selected} seedIndex={selected} claims={claims} onChanged={() => {}} onClose={() => setSelected(null)} />
+          )}
+        </ContinentCanvas>
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
@@ -660,12 +761,6 @@ export default function Continent() {
       </div>
 
       <MilitaryPanel />
-
-      {selected !== null && (
-        <div style={{ marginTop: 16 }}>
-          <TerritoryPanel key={selected} seedIndex={selected} claims={claims} onChanged={() => {}} />
-        </div>
-      )}
     </div>
   );
 }

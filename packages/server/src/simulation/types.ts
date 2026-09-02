@@ -38,4 +38,9 @@ export interface CompanySnapshot {
   isPublic: boolean;
   sharesOutstanding: number;
   lastTickAt: Date;
+  // Set only for an extraction company founded via the territory-gated path
+  // (routes/territory.ts's found-extraction) — see engine.ts's tick loop
+  // for how this scales goodsPerWorkerPerHour by the territory's own
+  // deposit richness for that resource.
+  territorySeedIndex: number | null;
 }
