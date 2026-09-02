@@ -1,4 +1,4 @@
-import type { BuildingTypeId, CompanyIndustryId, NpcArchetype } from "@dominion/shared";
+import type { CompanyIndustryId, MarketResourceType, NpcArchetype } from "@dominion/shared";
 
 export interface SettlementSnapshot {
   id: string;
@@ -6,21 +6,10 @@ export interface SettlementSnapshot {
   playerId: string | null;
   archetype: NpcArchetype | null;
   food: number;
-  wood: number;
-  stone: number;
   gold: number;
   storageCap: number;
   lastTickAt: Date;
   population: { count: number; growthRate: number; happiness: number };
-  buildings: { id: string; type: BuildingTypeId; workersAssigned: number; level: number }[];
-  techIds: string[];
-}
-
-export interface TickResourceDelta {
-  food: number;
-  wood: number;
-  stone: number;
-  gold: number;
 }
 
 export interface CompanySnapshot {
@@ -29,8 +18,11 @@ export interface CompanySnapshot {
   ownerId: string | null;
   industry: CompanyIndustryId;
   cash: number;
-  inputStock: number;
-  goodsStock: number;
+  // One entry per resource this company currently holds any stock of
+  // (every input it's stockpiled, every output it hasn't sold yet) —
+  // replaces the old single inputStock/goodsStock scalars, which could
+  // only ever represent one resource each. Missing key == 0.
+  stocks: Partial<Record<MarketResourceType, number>>;
   workersAssigned: number;
   autoStaff: boolean;
   level: number;
@@ -38,9 +30,7 @@ export interface CompanySnapshot {
   isPublic: boolean;
   sharesOutstanding: number;
   lastTickAt: Date;
-  // Set only for an extraction company founded via the territory-gated path
-  // (routes/territory.ts's found-extraction) — see engine.ts's tick loop
-  // for how this scales goodsPerWorkerPerHour by the territory's own
-  // deposit richness for that resource.
+  // Set only for a land-gated company founded via routes/territory.ts's
+  // POST /:seedIndex/found — which territory it's founded on.
   territorySeedIndex: number | null;
 }

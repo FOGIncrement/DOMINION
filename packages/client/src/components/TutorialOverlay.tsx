@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { TutorialStep } from "@dominion/shared";
 import { api, ApiError } from "../api/client.js";
-import { useGameState, useMyCompanies, useTutorial } from "../api/hooks.js";
+import { useGameState, useMyCompanies, useMyTerritories, useTutorial } from "../api/hooks.js";
 
 // The presentational-only pause after the (already-instant) hire call — long
 // enough to read "Hiring..." as a real event, not a backend delay mechanic
@@ -22,7 +22,7 @@ interface StepContent {
 const STEP_CONTENT: Record<Exclude<TutorialStep, "completed">, StepContent> = {
   found_company: {
     title: "Found your first company",
-    body: "Every settlement needs an economy. Head to the Companies tab and found a Construction company below — it's what will build zones for other industries.",
+    body: "Every settlement needs an economy. Head to the Companies tab and found a Retail Store below — it'll buy wholesale food and sell it to your population.",
     spotlightSelectors: ['[data-tutorial="tutorial-found-company-submit"]'],
   },
   hiring: {
@@ -31,7 +31,7 @@ const STEP_CONTENT: Record<Exclude<TutorialStep, "completed">, StepContent> = {
   },
   government_unlock: {
     title: "Commission your first zone",
-    body: "Head to Government and commission your first Industrial Zone with your construction company — that opens up room for more companies to be founded.",
+    body: "Head to Government and commission your first Industrial Zone — pay the treasury cost and it opens up room for more companies to be founded.",
     spotlightSelectors: ['[data-tutorial="tutorial-zone-form"]', '[data-tutorial="tutorial-nav-government"]'],
   },
   // Reached only for the instant between a successful commission and the
@@ -88,8 +88,17 @@ export default function TutorialOverlay() {
   const { data: tutorial } = useTutorial();
   const { data: mine } = useMyCompanies();
   const { data: gameState } = useGameState();
+  const { data: territories, isLoading: territoriesLoading } = useMyTerritories();
   const [hiring, setHiring] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // The territory-picking gate (App.tsx) runs before the tutorial's own
+  // "found_company" step even makes sense — Companies is nav-locked until a
+  // player has land, so a found_company prompt overlapping the picker (and
+  // pointing at a route the player literally can't reach yet) is a real bug,
+  // not just visual clutter. Suppress the whole overlay until land is
+  // picked; the tutorial resumes normally right after.
+  const needsStartingTerritory = !territoriesLoading && territories?.territories.length === 0;
 
   const step = tutorial?.step;
   const invalidateTutorial = () => queryClient.invalidateQueries({ queryKey: ["tutorial"] });
@@ -104,11 +113,11 @@ export default function TutorialOverlay() {
     onSuccess: invalidateTutorial,
   });
 
-  // The tutorial's own construction company, rediscovered from data rather
-  // than remembered in local state — so a mid-tutorial page refresh doesn't
+  // The tutorial's own retail company, rediscovered from data rather than
+  // remembered in local state — so a mid-tutorial page refresh doesn't
   // strand the player without a target for the hire button.
   const hireCompany = (mine?.companies ?? []).find(
-    (c) => c.industry === "construction" && c.controlledByMe && c.workersAssigned === 0,
+    (c) => c.industry === "retail" && c.controlledByMe && c.workersAssigned === 0,
   );
 
   const hireWorkers = useMutation({
@@ -134,7 +143,7 @@ export default function TutorialOverlay() {
   const content = step && step !== "completed" ? STEP_CONTENT[step] : null;
   const rect = useSpotlightRect(content?.spotlightSelectors);
 
-  if (!step || step === "completed" || !content) return null;
+  if (needsStartingTerritory || !step || step === "completed" || !content) return null;
 
   return (
     <>
@@ -169,7 +178,7 @@ export default function TutorialOverlay() {
               Hire Workers
             </button>
           ) : (
-            <p className="suggestion">Looking for your construction company...</p>
+            <p className="suggestion">Looking for your retail company...</p>
           ))}
         {hiring && (
           <div className="tutorial-progress">

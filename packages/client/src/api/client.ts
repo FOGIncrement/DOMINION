@@ -1,4 +1,4 @@
-import type { MarketResourceType, TutorialStep } from "@dominion/shared";
+import type { CompanyIndustryId, CurrencyCode, MarketResourceType, TutorialStep } from "@dominion/shared";
 
 const BASE = "/api";
 
@@ -30,20 +30,14 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
-  me: () => request<{ playerId: string; email: string; isAdmin: boolean }>("/auth/me"),
+  me: () => request<{ playerId: string; email: string; isAdmin: boolean; currencyCode: CurrencyCode }>("/auth/me"),
+  setCurrency: (currencyCode: CurrencyCode) =>
+    request<{ ok: true; currencyCode: CurrencyCode }>("/auth/me/currency", {
+      method: "PATCH",
+      body: JSON.stringify({ currencyCode }),
+    }),
 
   gameState: () => request<GameStateResponse>("/game/state"),
-  build: (type: string) => request<{ ok: true }>("/game/buildings", { method: "POST", body: JSON.stringify({ type }) }),
-  setWorkers: (buildingId: string, workersAssigned: number) =>
-    request<{ ok: true; workersAssigned: number }>("/game/workers", {
-      method: "POST",
-      body: JSON.stringify({ buildingId, workersAssigned }),
-    }),
-  upgradeBuilding: (buildingId: string) =>
-    request<{ ok: true; level: number }>(`/game/buildings/${buildingId}/upgrade`, { method: "POST" }),
-
-  techs: () => request<{ techs: TechInfo[] }>("/tech"),
-  research: (techId: string) => request<{ ok: true }>("/tech/research", { method: "POST", body: JSON.stringify({ techId }) }),
 
   market: () => request<MarketResponse>("/market"),
   trade: (resourceType: string, side: "buy" | "sell", quantity: number) =>
@@ -54,7 +48,6 @@ export const api = {
 
   worldSettlements: () => request<{ settlements: NpcSettlementInfo[] }>("/world/settlements"),
   worldMap: () => request<WorldMapResponse>("/world/map"),
-  settlementDetail: (settlementId: string) => request<SettlementDetail>(`/world/settlements/${settlementId}/detail`),
   news: () => request<{ events: NewsEvent[] }>("/news"),
 
   myCompanies: () => request<{ companies: MyCompany[] }>("/companies/mine"),
@@ -74,10 +67,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ enabled }),
     }),
-  tradeCompany: (companyId: string, side: "buy" | "sell", quantity: number) =>
+  tradeCompany: (companyId: string, side: "buy" | "sell", resource: MarketResourceType, quantity: number) =>
     request<{ ok: true; newPrice: number; proceeds?: number; cost?: number; tax?: number }>(`/companies/${companyId}/trade`, {
       method: "POST",
-      body: JSON.stringify({ side, quantity }),
+      body: JSON.stringify({ side, resource, quantity }),
     }),
   withdrawCompanyCash: (companyId: string, amount: number) =>
     request<{ ok: true }>(`/companies/${companyId}/withdraw`, {
@@ -105,13 +98,14 @@ export const api = {
   createContract: (
     sellerCompanyId: string,
     buyerCompanyId: string,
+    resourceType: MarketResourceType,
     quantityPerHour: number,
     pricePerUnit: number,
     termHours: number,
   ) =>
     request<{ ok: true; contractId: string; pending: boolean }>("/contracts", {
       method: "POST",
-      body: JSON.stringify({ sellerCompanyId, buyerCompanyId, quantityPerHour, pricePerUnit, termHours }),
+      body: JSON.stringify({ sellerCompanyId, buyerCompanyId, resourceType, quantityPerHour, pricePerUnit, termHours }),
     }),
   cancelContract: (contractId: string) => request<{ ok: true }>(`/contracts/${contractId}/cancel`, { method: "POST" }),
   acceptContract: (contractId: string) => request<{ ok: true }>(`/contracts/${contractId}/accept`, { method: "POST" }),
@@ -168,7 +162,7 @@ export const api = {
   myCorporateBonds: () => request<{ bonds: MyCorporateBond[] }>("/corporate-bonds/mine"),
 
   cheatsStatus: () => request<{ enabled: boolean }>("/cheats/status"),
-  cheatAddResources: (deltas: Partial<Record<"food" | "wood" | "stone" | "gold", number>>) =>
+  cheatAddResources: (deltas: Partial<Record<"food" | "gold", number>>) =>
     request<{ ok: true }>("/cheats/resources", { method: "POST", body: JSON.stringify(deltas) }),
   cheatAddPopulation: (amount: number) =>
     request<{ ok: true }>("/cheats/population", { method: "POST", body: JSON.stringify({ amount }) }),
@@ -190,20 +184,17 @@ export const api = {
 
   zones: () => request<{ zones: ZoneCatalogEntry[] }>("/infrastructure"),
   myZoneProjects: () => request<{ projects: MyZoneProject[] }>("/infrastructure/mine"),
+  // Pay the treasury cost, done — no construction company, no accept/cancel
+  // negotiation (see the recipe-economy plan's zoning simplification).
   commissionZone: (
-    constructionCompanyId: string,
     zoneType: string,
     treasuryCost: number,
     shape: { zoneX: number; zoneY: number; zoneWidth: number; zoneHeight: number },
   ) =>
-    request<{ ok: true; projectId: string; pending: boolean }>("/infrastructure", {
+    request<{ ok: true; projectId: string }>("/infrastructure", {
       method: "POST",
-      body: JSON.stringify({ constructionCompanyId, zoneType, treasuryCost, ...shape }),
+      body: JSON.stringify({ zoneType, treasuryCost, ...shape }),
     }),
-  acceptZoneProject: (projectId: string) =>
-    request<{ ok: true }>(`/infrastructure/${projectId}/accept`, { method: "POST" }),
-  cancelZoneProject: (projectId: string) =>
-    request<{ ok: true }>(`/infrastructure/${projectId}/cancel`, { method: "POST" }),
 
   tutorial: () => request<TutorialInfo>("/tutorial"),
   tutorialAdvance: (step: TutorialStep) =>
@@ -218,12 +209,12 @@ export const api = {
     }),
   adminResetFlat: (group: string) =>
     request<{ ok: true; config: AdminConfigResponse["config"] }>(`/admin/config/flat/${group}/reset`, { method: "POST" }),
-  adminSetRecord: (group: "COMPANY_INDUSTRIES" | "BUILDING_TYPES", entryId: string, patch: Record<string, number>) =>
+  adminSetRecord: (group: "COMPANY_INDUSTRIES", entryId: string, patch: Record<string, number>) =>
     request<{ ok: true; config: AdminConfigResponse["config"] }>(`/admin/config/record/${group}/${entryId}`, {
       method: "POST",
       body: JSON.stringify(patch),
     }),
-  adminResetRecord: (group: "COMPANY_INDUSTRIES" | "BUILDING_TYPES", entryId: string) =>
+  adminResetRecord: (group: "COMPANY_INDUSTRIES", entryId: string) =>
     request<{ ok: true; config: AdminConfigResponse["config"] }>(`/admin/config/record/${group}/${entryId}/reset`, {
       method: "POST",
     }),
@@ -234,12 +225,20 @@ export const api = {
   territoryClaims: () => request<{ claims: TerritoryClaim[] }>("/territory/claims"),
   territoryDetail: (seedIndex: number) => request<TerritoryDetail>(`/territory/${seedIndex}`),
   myTerritories: () => request<{ territories: MyTerritory[] }>("/territory/mine"),
+  myTerritoryDetail: () => request<MyTerritoryDetailResponse>("/territory/mine/detail"),
+  // Free — only succeeds for a player's very first territory (see the
+  // "choose your starting land" picker flow in Continent.tsx).
   claimTerritory: (seedIndex: number) =>
     request<{ ok: true; seedIndex: number; claimedAt: string }>(`/territory/${seedIndex}/claim`, { method: "POST" }),
-  foundExtractionCompany: (seedIndex: number, resource: "food" | "wood" | "stone", name: string) =>
-    request<{ ok: true; companyId: string }>(`/territory/${seedIndex}/found-extraction`, {
+  // Paid (Government treasury) — every territory after a player's first.
+  buyTerritory: (seedIndex: number) =>
+    request<{ ok: true; seedIndex: number; claimedAt: string; price: number }>(`/territory/${seedIndex}/buy`, {
       method: "POST",
-      body: JSON.stringify({ resource, name }),
+    }),
+  foundOnTerritory: (seedIndex: number, industry: CompanyIndustryId, name: string) =>
+    request<{ ok: true; companyId: string }>(`/territory/${seedIndex}/found`, {
+      method: "POST",
+      body: JSON.stringify({ industry, name }),
     }),
 
   myMilitary: () => request<MilitaryStatus>("/military/mine"),
@@ -266,7 +265,7 @@ export const api = {
 
 export interface OfflineSummary {
   awaySeconds: number;
-  resourceDeltas: { food: number; wood: number; stone: number; gold: number };
+  resourceDeltas: { food: number; gold: number };
   populationDelta: number;
   events: { id: string; title: string; description: string; occurredAt: string }[];
 }
@@ -277,36 +276,15 @@ export interface GameStateResponse {
     name: string;
     era: number;
     food: number;
-    wood: number;
-    stone: number;
     gold: number;
     storageCap: number;
     foundedAt: string;
   };
   // available == unemployed: population.count minus every worker currently
-  // assigned to a building or a company this player founded — the same
-  // number both /game/workers and /companies/:id/workers cap hiring against.
+  // assigned to a company this player founded — the same number
+  // /companies/:id/workers caps hiring against.
   population: { count: number; happiness: number; capacity: number; available: number };
-  buildings: {
-    id: string;
-    type: string;
-    level: number;
-    workersAssigned: number;
-    upgradeCost: Partial<Record<"food" | "wood" | "stone" | "gold", number>> | null;
-  }[];
-  techIds: string[];
   offlineSummary: OfflineSummary | null;
-}
-
-export interface TechInfo {
-  id: string;
-  name: string;
-  description: string;
-  cost: Record<string, number>;
-  requiredTech?: string;
-  unlocksBuilding?: string;
-  researched: boolean;
-  available: boolean;
 }
 
 export interface MarketResponse {
@@ -320,7 +298,6 @@ export interface NpcSettlementInfo {
   archetype: string | null;
   archetypeName: string | null;
   population: number;
-  buildingCount: number;
   gold: number;
   foundedAt: string;
 }
@@ -338,13 +315,13 @@ export interface MyCompany {
   id: string;
   name: string;
   industry: string;
-  // Set only for an extraction company founded via the territory-gated
-  // path (POST /territory/:seedIndex/found-extraction) — which land its
-  // production is drawn from.
+  // Set only for a land-gated company founded via POST
+  // /territory/:seedIndex/found — which territory it's founded on.
   territorySeedIndex: number | null;
   cash: number;
-  inputStock: number;
-  goodsStock: number;
+  // One entry per resource this company currently holds any stock of
+  // (every recipe input it's stockpiled, every output not yet sold).
+  stocks: Partial<Record<MarketResourceType, number>>;
   workersAssigned: number;
   autoStaff: boolean;
   maxWorkers: number;
@@ -355,7 +332,11 @@ export interface MyCompany {
   totalRevenue: number;
   totalExpenses: number;
   foundedAt: string;
-  rates: { inputPerHour: number; goodsPerHour: number; wagePerHour: number };
+  rates: {
+    inputs: Partial<Record<MarketResourceType, number>>;
+    outputs: Partial<Record<MarketResourceType, number>>;
+    wagePerHour: number;
+  };
   isPublic: boolean;
   sharePrice: number;
   sharesOutstanding: number;
@@ -579,10 +560,6 @@ export interface TutorialInfo {
 export interface MyZoneProject {
   id: string;
   zoneType: string;
-  constructionCompanyId: string;
-  constructionCompanyName: string;
-  constructionCompanyIsMine: boolean;
-  governmentIsMine: boolean;
   treasuryCost: number;
   zoneX: number | null;
   zoneY: number | null;
@@ -623,49 +600,20 @@ export interface WorldMapResponse {
   myZones: ZoneRect[];
 }
 
-export interface SettlementDetailBuilding {
-  id: string;
-  type: string;
-  level: number;
-  workersAssigned: number;
-}
-
-export interface SettlementDetailCompany {
-  id: string;
-  name: string;
-  industry: string;
-  industryName: string;
-  level: number;
-  workersAssigned: number;
-}
-
-export interface SettlementDetail {
-  id: string;
-  name: string;
-  worldCol: number;
-  worldRow: number;
-  isMine: boolean;
-  isPlayer: boolean;
-  archetypeName: string | null;
-  population: { count: number };
-  buildings: SettlementDetailBuilding[];
-  companies: SettlementDetailCompany[];
-  zones: ZoneRect[];
-}
-
 // Loosely typed on purpose — this mirrors the server's runtime tuning
 // registry (packages/server/src/gameConfigStore.ts), whose group/field
 // shape is generic by design so new tuning groups don't need a matching
 // type update here. Flat groups are Record<string, number>; COMPANY_INDUSTRIES
-// and BUILDING_TYPES are Record<id, fullDefWithOverridesApplied> — the
-// editable numeric fields are named in meta, everything else is read-only
-// context (name, description, structural fields).
+// is Record<id, fullDefWithOverridesApplied> — the editable numeric fields
+// are named in meta, everything else is read-only context (name,
+// description, structural fields).
 export interface AdminConfigResponse {
   config: Record<string, Record<string, unknown>>;
   meta: {
     flatGroups: Record<string, string[]>;
+    flatGroupDescriptions: Record<string, string>;
     companyIndustryFields: string[];
-    buildingTypeFields: string[];
+    companyIndustriesDescription: string;
   };
 }
 
@@ -709,6 +657,21 @@ export interface MyTerritory {
   resources: Record<string, number>;
   status: "active" | "dormant" | "abandoned";
   claimedAt: string;
+}
+
+// Native-resolution crop (no downsampling, unlike MapPreviewResponse) of
+// just the player's own owned territory/territories — see the "My
+// Territory" page (formerly the old per-island Map.tsx).
+export interface MyTerritoryDetailResponse {
+  cols: number;
+  rows: number;
+  cellSizeKm: number;
+  biomeIds: string[];
+  biome: string; // base64-encoded Uint8Array, cols*rows
+  seed: string; // base64-encoded Uint16Array (little-endian), cols*rows — NO_SEED sentinel for cells outside the player's land
+  noSeedSentinel: number;
+  offsetWorldX: number; // world-km coordinate of this crop's top-left corner, for aligning territory popups/zone placement
+  offsetWorldY: number;
 }
 
 export interface MilitaryStatus {

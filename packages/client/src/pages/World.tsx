@@ -18,7 +18,6 @@ export default function World() {
                 <th>Name</th>
                 <th>Archetype</th>
                 <th>Population</th>
-                <th>Buildings</th>
                 <th>Gold</th>
                 <th>Founded</th>
               </tr>
@@ -29,7 +28,6 @@ export default function World() {
                   <td>{s.name}</td>
                   <td>{s.archetypeName && <span className="archetype-tag">{s.archetypeName}</span>}</td>
                   <td>{s.population.toLocaleString()}</td>
-                  <td>{s.buildingCount}</td>
                   <td>{s.gold.toLocaleString()}</td>
                   <td>{new Date(s.foundedAt).toLocaleDateString()}</td>
                 </tr>

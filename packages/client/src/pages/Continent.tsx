@@ -1,6 +1,13 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BIOME_COLORS, RESOURCE_TO_EXTRACTION_INDUSTRY, type BiomeId } from "@dominion/shared";
+import {
+  BIOME_COLORS,
+  COMPANY_INDUSTRIES,
+  COMPANY_INDUSTRY_IDS,
+  TERRITORY_TUNING,
+  type BiomeId,
+  type CompanyIndustryId,
+} from "@dominion/shared";
 import { api, ApiError, type AttackResult, type TerritoryClaim } from "../api/client.js";
 import {
   useGovernment,
@@ -423,26 +430,28 @@ const ContinentCanvas = forwardRef<
   );
 });
 
-// One resource -> one extraction company per territory. Founds via the
-// territory-gated path (routes/territory.ts's found-extraction) — separate
-// from, and not subject to, the old zoning-capacity founding route.
-function ExtractionFounder({
+// Every land-gated industry (Power Plant, Wheat Farm, etc. — COMPANY_
+// INDUSTRIES entries with requiresTerritory: true) can be founded on any
+// territory you own, one per industry per territory — no per-resource
+// deposit check (see the recipe-economy plan's "Land = ownership gate"
+// decision). Founds via the territory-gated path (routes/territory.ts's
+// POST /:seedIndex/found), separate from, and not subject to, the ordinary
+// zoning-capacity founding route.
+function LandCompanyFounder({
   seedIndex,
-  resource,
-  richness,
+  industryId,
   onFounded,
 }: {
   seedIndex: number;
-  resource: "food" | "wood" | "stone";
-  richness: number;
+  industryId: CompanyIndustryId;
   onFounded: () => void;
 }) {
-  const industryId = RESOURCE_TO_EXTRACTION_INDUSTRY[resource];
-  const [name, setName] = useState(`${resource[0].toUpperCase()}${resource.slice(1)} Co. #${seedIndex}`);
+  const industry = COMPANY_INDUSTRIES[industryId];
+  const [name, setName] = useState(`${industry.name} #${seedIndex}`);
   const [error, setError] = useState<string | null>(null);
 
   const found = useMutation({
-    mutationFn: () => api.foundExtractionCompany(seedIndex, resource, name),
+    mutationFn: () => api.foundOnTerritory(seedIndex, industryId, name),
     onSuccess: () => {
       setError(null);
       onFounded();
@@ -461,11 +470,11 @@ function ExtractionFounder({
           style={{ flex: 1, minWidth: 0 }}
         />
         <button className="btn" disabled={found.isPending} onClick={() => found.mutate()}>
-          Found {industryId}
+          Found {industry.name}
         </button>
       </div>
       <p className="suggestion" style={{ marginTop: 2, marginBottom: 0 }}>
-        {resource} deposit richness {richness} on this territory.
+        {industry.foundingCost}g · {industry.outputs.map((o) => o.resource).join(", ")}
       </p>
     </div>
   );
@@ -474,11 +483,13 @@ function ExtractionFounder({
 function TerritoryPanel({
   seedIndex,
   claims,
+  pickingMode,
   onChanged,
   onClose,
 }: {
   seedIndex: number;
   claims: TerritoryClaim[];
+  pickingMode: boolean;
   onChanged: () => void;
   onClose: () => void;
 }) {
@@ -493,16 +504,35 @@ function TerritoryPanel({
   const { data: companiesData } = useMyCompanies();
   const claimInfo = claims.find((c) => c.seedIndex === seedIndex) ?? null;
 
+  const invalidateAfterAcquire = () => {
+    queryClient.invalidateQueries({ queryKey: ["territoryClaims"] });
+    queryClient.invalidateQueries({ queryKey: ["myTerritories"] });
+    queryClient.invalidateQueries({ queryKey: ["territoryDetail", seedIndex] });
+    queryClient.invalidateQueries({ queryKey: ["myTerritoryDetail"] });
+    queryClient.invalidateQueries({ queryKey: ["government"] });
+  };
+
+  // Free — only ever succeeds server-side while the player owns zero
+  // territory (see the "choose your starting land" picker flow).
   const claim = useMutation({
     mutationFn: () => api.claimTerritory(seedIndex),
     onSuccess: () => {
       setError(null);
-      queryClient.invalidateQueries({ queryKey: ["territoryClaims"] });
-      queryClient.invalidateQueries({ queryKey: ["myTerritories"] });
-      queryClient.invalidateQueries({ queryKey: ["territoryDetail", seedIndex] });
+      invalidateAfterAcquire();
       onChanged();
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "Claim failed"),
+  });
+
+  // Paid (Government treasury) — every territory after a player's first.
+  const buy = useMutation({
+    mutationFn: () => api.buyTerritory(seedIndex),
+    onSuccess: () => {
+      setError(null);
+      invalidateAfterAcquire();
+      onChanged();
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Purchase failed"),
   });
 
   const attack = useMutation({
@@ -530,8 +560,14 @@ function TerritoryPanel({
     );
   }
 
-  const canClaim = !claimInfo || (claimInfo.status === "abandoned" && !claimInfo.isMine);
-  const canAttack = !!claimInfo && !claimInfo.isMine && claimInfo.status !== "abandoned";
+  const unclaimedOrAbandoned = !claimInfo || (claimInfo.status === "abandoned" && !claimInfo.isMine);
+  // Free claiming is only ever open during the one-time starting-territory
+  // pick — every territory after that is bought (Government treasury) or
+  // taken by force, never free (see the territory-acquisition rework).
+  const canClaim = pickingMode && unclaimedOrAbandoned;
+  const canBuy = !pickingMode && unclaimedOrAbandoned;
+  const buyPrice = Math.round(data.areaKm2 * TERRITORY_TUNING.buyPricePerKm2);
+  const canAttack = !pickingMode && !!claimInfo && !claimInfo.isMine && claimInfo.status !== "abandoned";
   const cantAttackReason = !military
     ? null
     : military.armyStrength <= 0
@@ -542,13 +578,23 @@ function TerritoryPanel({
   const resourceEntries = Object.entries(data.resources).filter(([, v]) => v > 0);
 
   // A blank-slate territory has no production until you found something on
-  // it — extraction companies are the way in, one per resource it actually
-  // has (see routes/territory.ts's found-extraction).
+  // it — one land-gated company per industry per territory (see
+  // routes/territory.ts's POST /:seedIndex/found).
   const territoryCompanies = (companiesData?.companies ?? []).filter((c) => c.territorySeedIndex === seedIndex);
-  const extractableResources = (["food", "wood", "stone"] as const).filter((r) => (data.resources[r] ?? 0) > 0);
+  const landGatedIndustries = COMPANY_INDUSTRY_IDS.filter((id) => COMPANY_INDUSTRIES[id].requiresTerritory);
 
   return (
-    <div className="map-territory-popup">
+    // stopPropagation on every pointer stage — the popup is a DOM sibling of
+    // the canvas inside the same .map-viewport that ContinentCanvas binds its
+    // pan/select pointer handlers to, so without this, any click inside the
+    // popup (Close, Claim, Attack, the founder form) also bubbles up and
+    // re-selects/deselects whatever territory is underneath it on the map.
+    <div
+      className="map-territory-popup"
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerMove={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+    >
       <button className="map-territory-popup__close" onClick={onClose} aria-label="Close">
         ×
       </button>
@@ -572,7 +618,12 @@ function TerritoryPanel({
       )}
       {canClaim && (
         <button className="btn btn--accent" disabled={claim.isPending} onClick={() => claim.mutate()}>
-          {claimInfo?.status === "abandoned" ? "Claim Abandoned Territory" : "Claim This Territory"}
+          {claimInfo?.status === "abandoned" ? "Claim Abandoned Territory (Free)" : "Choose as My Starting Territory"}
+        </button>
+      )}
+      {canBuy && (
+        <button className="btn btn--accent" disabled={buy.isPending} onClick={() => buy.mutate()}>
+          Buy This Territory ({buyPrice.toLocaleString()}g)
         </button>
       )}
       {canAttack && (
@@ -595,22 +646,20 @@ function TerritoryPanel({
             : `Defeat. Your forces (${Math.round(battleReport.attackerPower)}) were repelled by the defenders (${Math.round(battleReport.defenderPower)}). Your army is spent.`}
         </div>
       )}
-      {claimInfo?.isMine && extractableResources.length > 0 && (
+      {claimInfo?.isMine && (
         <div style={{ marginTop: 10 }}>
-          <div className="card-section-label">Extraction</div>
-          {extractableResources.map((resource) => {
-            const industryId = RESOURCE_TO_EXTRACTION_INDUSTRY[resource];
+          <div className="card-section-label">Land-Gated Companies</div>
+          {landGatedIndustries.map((industryId) => {
             const founded = territoryCompanies.find((c) => c.industry === industryId);
             return founded ? (
-              <p className="suggestion" key={resource} style={{ marginTop: 4 }}>
-                {founded.name} is extracting {resource} here.
+              <p className="suggestion" key={industryId} style={{ marginTop: 4 }}>
+                {founded.name} ({COMPANY_INDUSTRIES[industryId].name}) is running here.
               </p>
             ) : (
-              <ExtractionFounder
-                key={resource}
+              <LandCompanyFounder
+                key={industryId}
                 seedIndex={seedIndex}
-                resource={resource}
-                richness={data.resources[resource]}
+                industryId={industryId}
                 onFounded={() => {
                   queryClient.invalidateQueries({ queryKey: ["myCompanies"] });
                   onChanged();
@@ -673,7 +722,7 @@ function MilitaryPanel() {
   );
 }
 
-export default function Continent() {
+export default function Continent({ pickingMode = false }: { pickingMode?: boolean }) {
   const { data: preview } = useMapPreview();
   const { data: claimsData } = useTerritoryClaims();
   const { data: mineData } = useMyTerritories();
@@ -722,6 +771,16 @@ export default function Continent() {
 
   return (
     <div className="page page--full">
+      {pickingMode && (
+        <div className="card" style={{ borderColor: "var(--accent)" }}>
+          <h2 className="card__title">Choose Your Starting Territory</h2>
+          <p className="suggestion" style={{ marginTop: 0 }}>
+            Click any unclaimed (or abandoned) territory below and choose it as your one free starting territory.
+            This is the only free land you'll ever get — after this, more territory costs your government treasury
+            to buy, or has to be taken by force.
+          </p>
+        </div>
+      )}
       <div className="card">
         <div className="trade-row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
           <h2 className="card__title" style={{ margin: 0 }}>
@@ -740,27 +799,36 @@ export default function Continent() {
           </div>
         </div>
         <p className="suggestion" style={{ marginTop: 4 }}>
-          Scroll to zoom, drag to pan. Click any territory to inspect and claim it — the selected one gets a bright
-          outline. Same-owner territories share a color and merge visually; borders mark distinct claimable parcels
-          and the coastline.
+          {pickingMode
+            ? "Scroll to zoom, drag to pan. Click a territory to inspect it, then choose it as your starting land."
+            : "Scroll to zoom, drag to pan. Click any territory to inspect, buy, or attack it — the selected one gets a bright outline. Same-owner territories share a color and merge visually; borders mark distinct parcels and the coastline."}
         </p>
         <ContinentCanvas ref={canvasHandleRef} geometry={geometry} claims={claims} selected={selected} onSelect={setSelected}>
           {selected !== null && (
-            <TerritoryPanel key={selected} seedIndex={selected} claims={claims} onChanged={() => {}} onClose={() => setSelected(null)} />
+            <TerritoryPanel
+              key={selected}
+              seedIndex={selected}
+              claims={claims}
+              pickingMode={pickingMode}
+              onChanged={() => {}}
+              onClose={() => setSelected(null)}
+            />
           )}
         </ContinentCanvas>
       </div>
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <h2 className="card__title">Your Territories</h2>
-        <p className="suggestion" style={{ marginTop: 0 }}>
-          {mine.length === 0
-            ? "You don't hold any territory yet — click a territory on the map to claim it."
-            : `${mine.length} territor${mine.length === 1 ? "y" : "ies"} · ${Math.round(mineTotalArea).toLocaleString()} km² total`}
-        </p>
-      </div>
+      {!pickingMode && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <h2 className="card__title">Your Territories</h2>
+          <p className="suggestion" style={{ marginTop: 0 }}>
+            {mine.length === 0
+              ? "You don't hold any territory yet."
+              : `${mine.length} territor${mine.length === 1 ? "y" : "ies"} · ${Math.round(mineTotalArea).toLocaleString()} km² total`}
+          </p>
+        </div>
+      )}
 
-      <MilitaryPanel />
+      {!pickingMode && <MilitaryPanel />}
     </div>
   );
 }

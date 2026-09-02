@@ -18,13 +18,14 @@ function formatFieldLabel(field: string): string {
     .trim();
 }
 
-// Purely a display grouping so ~21 flat groups don't read as one wall of
+// Purely a display grouping so ~24 flat groups don't read as one wall of
 // cards — has no bearing on what's actually editable (that's meta, from the
 // server). Any group the server registry adds later that isn't listed here
 // still renders, just under "Other," so this can drift without breaking.
-const CATEGORY_ORDER = ["Population & Events", "Market & Trade", "Companies & Buildings", "Stock Market", "Banking & Bonds", "NPC Economy", "Other"] as const;
+const CATEGORY_ORDER = ["Population & Events", "Market & Trade", "Companies", "Territory & Military", "Stock Market", "Banking & Bonds", "NPC Economy", "Other"] as const;
 const CATEGORY_FOR_GROUP: Record<string, (typeof CATEGORY_ORDER)[number]> = {
   POPULATION_TUNING: "Population & Events",
+  HOUSING_TUNING: "Population & Events",
   EVENT_TUNING: "Population & Events",
   MARKET_TUNING: "Market & Trade",
   WORLD_DEMAND_TUNING: "Market & Trade",
@@ -32,9 +33,11 @@ const CATEGORY_FOR_GROUP: Record<string, (typeof CATEGORY_ORDER)[number]> = {
   TRADE_FEE: "Market & Trade",
   RETAIL_TUNING: "Market & Trade",
   LUXURY_GOODS_TUNING: "Market & Trade",
-  COMPANY_UPGRADE_TUNING: "Companies & Buildings",
-  COMPANY_FAILURE_TUNING: "Companies & Buildings",
-  BUILDING_UPGRADE_TUNING: "Companies & Buildings",
+  COMPANY_UPGRADE_TUNING: "Companies",
+  COMPANY_FACILITY_TUNING: "Companies",
+  COMPANY_FAILURE_TUNING: "Companies",
+  TERRITORY_TUNING: "Territory & Military",
+  MILITARY_TUNING: "Territory & Military",
   STOCK_TUNING: "Stock Market",
   DIVIDEND_TUNING: "Stock Market",
   NPC_INVESTOR_TUNING: "Stock Market",
@@ -51,7 +54,17 @@ function setConfigCache(queryClient: ReturnType<typeof useQueryClient>, config: 
   queryClient.setQueryData<AdminConfigResponse | undefined>(["adminConfig"], (old) => (old ? { ...old, config } : old));
 }
 
-function TuningGroupCard({ group, fields, values }: { group: string; fields: string[]; values: Record<string, unknown> }) {
+function TuningGroupCard({
+  group,
+  description,
+  fields,
+  values,
+}: {
+  group: string;
+  description: string;
+  fields: string[];
+  values: Record<string, unknown>;
+}) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +118,7 @@ function TuningGroupCard({ group, fields, values }: { group: string; fields: str
           </button>
         </div>
       </div>
+      {description && <p className="suggestion" style={{ margin: "0 0 10px" }}>{description}</p>}
       {error && <div className="auth-error">{error}</div>}
       <div className="admin-config-card__fields">
         {fields.map((field) => (
@@ -124,12 +138,14 @@ function TuningGroupCard({ group, fields, values }: { group: string; fields: str
 
 function RecordGroupTable({
   title,
+  description,
   group,
   fields,
   entries,
 }: {
   title: string;
-  group: "COMPANY_INDUSTRIES" | "BUILDING_TYPES";
+  description: string;
+  group: "COMPANY_INDUSTRIES";
   fields: string[];
   entries: Record<string, Record<string, unknown>>;
 }) {
@@ -181,6 +197,7 @@ function RecordGroupTable({
   return (
     <div className="card">
       <h2 className="card__title">{title}</h2>
+      {description && <p className="suggestion" style={{ marginTop: 0 }}>{description}</p>}
       <div className="table-scroll">
         <table className="settlement-table">
           <thead>
@@ -278,15 +295,10 @@ export default function AdminConfig() {
 
       <RecordGroupTable
         title="Company Industries"
+        description={meta.companyIndustriesDescription}
         group="COMPANY_INDUSTRIES"
         fields={meta.companyIndustryFields}
         entries={(config.COMPANY_INDUSTRIES ?? {}) as Record<string, Record<string, unknown>>}
-      />
-      <RecordGroupTable
-        title="Building Types"
-        group="BUILDING_TYPES"
-        fields={meta.buildingTypeFields}
-        entries={(config.BUILDING_TYPES ?? {}) as Record<string, Record<string, unknown>>}
       />
 
       {CATEGORY_ORDER.filter((c) => byCategory.has(c)).map((category) => (
@@ -297,6 +309,7 @@ export default function AdminConfig() {
               <TuningGroupCard
                 key={group}
                 group={group}
+                description={meta.flatGroupDescriptions[group]}
                 fields={meta.flatGroups[group]}
                 values={(config[group] ?? {}) as Record<string, unknown>}
               />

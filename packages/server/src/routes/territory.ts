@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
-import { RESOURCE_TO_EXTRACTION_INDUSTRY } from "@dominion/shared";
+import { COMPANY_INDUSTRY_IDS } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
 import { getConfig } from "../gameConfigStore.js";
 import { getMapPreview } from "../worldgen/loadedMapPreview.js";
+import { getTerritoryCrop } from "../worldgen/loadedTerritoryCrop.js";
 import { getSeedByIndex, getTerritorySeeds } from "../worldgen/loadedTerritoryData.js";
 
 export const territoryRouter = Router();
@@ -28,24 +29,6 @@ export function computeStatus(lastSeenAt: Date, now: Date): TerritoryStatus {
   return "active";
 }
 
-// Territory-linked extraction companies (found-extraction below) don't
-// store their own production rate — it's derived live from the territory's
-// baked deposit richness for the industry's output resource, so it can
-// never drift out of sync with the world data. clamp(0.5 +
-// richness/divisor, min, max): divisor is tuned against real observed
-// deposit averages (single digits to ~20), not the theoretical 0-255
-// scale, so a middling territory sits near 1x. Exported for both
-// simulation/engine.ts's tick loop (the real production math) and
-// routes/companies.ts's /mine (so the displayed rate matches what actually
-// gets produced, not the flat industry default).
-export function extractionRichnessMultiplier(seedIndex: number, outputResource: string): number {
-  const tuning = getConfig().TERRITORY_TUNING;
-  const seed = getSeedByIndex(seedIndex);
-  const richness = seed?.resources[outputResource] ?? 0;
-  const raw = 0.5 + richness / tuning.extractionRichnessDivisor;
-  return Math.min(tuning.extractionMultiplierMax, Math.max(tuning.extractionMultiplierMin, raw));
-}
-
 const PAGE_SIZE = 50;
 
 // Every seed with a Territory row that's still active/dormant under its
@@ -63,42 +46,15 @@ export async function getUnavailableSeedIndexes(): Promise<Set<number>> {
 }
 
 // A new territory is a blank slate — no passive income, just a one-time
-// gold grant sized to found exactly one extraction company on it (see
-// found-extraction below). Called once per territory gained, from every
-// path that gives a player one: this claim route (both branches),
+// gold grant sized to found exactly one land-gated company on it (see
+// POST /:seedIndex/found below). Called once per territory gained, from
+// every path that gives a player one: this claim route (both branches),
 // ensurePlayerTerritory, and military.ts's won-attack branch. Additive
 // (Settlement.gold += grant), not "top up to," so it's a real bundle every
 // time, not a one-off floor.
 export async function grantExtractionStarterBundle(playerId: string): Promise<void> {
   const grant = getConfig().TERRITORY_TUNING.extractionStarterGrant;
   await prisma.settlement.update({ where: { playerId }, data: { gold: { increment: grant } } });
-}
-
-// Every player is meant to hold real land, not just have the *option* to
-// claim some via /continent — this backfills anyone with zero territories
-// (both brand-new registrations and every pre-existing player, the first
-// time they load their dashboard after this shipped) with one random
-// claimable seed. Called from GET /game/state; see that route for why.
-// Not wrapped in a transaction — same TOCTOU tolerance
-// settlementFactory.ts's assignSettlementPlot already accepts for its own
-// count-then-create gap. seedIndex is @unique, so a lost race just throws
-// on the losing create; swallowed below as benign rather than surfaced,
-// since the player picks up land on their next /game/state poll instead.
-export async function ensurePlayerTerritory(playerId: string): Promise<void> {
-  const owned = await prisma.territory.count({ where: { ownerId: playerId } });
-  if (owned > 0) return;
-
-  const unavailable = await getUnavailableSeedIndexes();
-  const candidates = getTerritorySeeds().filter((s) => !unavailable.has(s.seedIndex));
-  if (candidates.length === 0) return; // no land left — extremely unlikely at ~2000 seeds, don't hard-fail
-
-  const seedIndex = candidates[Math.floor(Math.random() * candidates.length)].seedIndex;
-  try {
-    await prisma.territory.create({ data: { seedIndex, ownerId: playerId } });
-    await grantExtractionStarterBundle(playerId);
-  } catch {
-    // Benign race — see comment above.
-  }
 }
 
 // "Available" = every baked seed except ones with a Territory row that's
@@ -129,6 +85,33 @@ territoryRouter.get("/mine", async (req: AuthedRequest, res) => {
       status: computeStatus(t.owner.lastSeenAt, now),
       claimedAt: t.claimedAt,
     })),
+  });
+});
+
+// Native-resolution (no downsampling, unlike /preview) crop of just the
+// requesting player's own owned territory — powers the "My Territory" page.
+// Small payload despite full resolution since it's cropped tightly to the
+// player's own land, not the whole continent.
+territoryRouter.get("/mine/detail", async (req: AuthedRequest, res) => {
+  const territories = await prisma.territory.findMany({
+    where: { ownerId: req.playerId! },
+    select: { seedIndex: true },
+  });
+  const crop = getTerritoryCrop(territories.map((t) => t.seedIndex));
+  if (!crop) {
+    res.status(404).json({ error: "You don't hold any territory yet" });
+    return;
+  }
+  res.json({
+    cols: crop.cols,
+    rows: crop.rows,
+    cellSizeKm: crop.cellSizeKm,
+    biomeIds: crop.biomeIds,
+    biome: Buffer.from(crop.biome).toString("base64"),
+    seed: Buffer.from(crop.seed.buffer, crop.seed.byteOffset, crop.seed.byteLength).toString("base64"),
+    noSeedSentinel: crop.noSeedSentinel,
+    offsetWorldX: crop.offsetWorldX,
+    offsetWorldY: crop.offsetWorldY,
   });
 });
 
@@ -195,15 +178,24 @@ territoryRouter.get("/:seedIndex", async (req: AuthedRequest, res) => {
   });
 });
 
-// Claims an unclaimed seed, or transfers an abandoned one — the same path
-// either way (see the Phase 2 plan: no separate "purchase" flow for v1).
-// Rejects a still-active/dormant seed under someone else, and claiming a
-// seed the requester already owns (that's just... already true).
+// Free, but only for a player's very first territory — the "choose your
+// starting land" onboarding flow (see Continent.tsx's picking mode). Claims
+// an unclaimed seed, or transfers an abandoned one, the same path either
+// way. Once a player already owns land, this route is closed off entirely —
+// POST /:seedIndex/buy (below) is the paid path for everything after that,
+// and POST /military/attack is the path for taking active/dormant land by
+// force.
 territoryRouter.post("/:seedIndex/claim", async (req: AuthedRequest, res) => {
   const seedIndex = Number(req.params.seedIndex);
   const seed = getSeedByIndex(seedIndex);
   if (!seed) {
     res.status(404).json({ error: "No such territory" });
+    return;
+  }
+
+  const owned = await prisma.territory.count({ where: { ownerId: req.playerId! } });
+  if (owned > 0) {
+    res.status(400).json({ error: "You already hold territory — buy unclaimed land or conquer it instead" });
     return;
   }
 
@@ -213,10 +205,6 @@ territoryRouter.post("/:seedIndex/claim", async (req: AuthedRequest, res) => {
   });
 
   if (existing) {
-    if (existing.ownerId === req.playerId!) {
-      res.status(400).json({ error: "You already own this territory" });
-      return;
-    }
     const status = computeStatus(existing.owner.lastSeenAt, new Date());
     if (status !== "abandoned") {
       res.status(400).json({ error: `This territory is still ${status} under its current owner` });
@@ -236,18 +224,82 @@ territoryRouter.post("/:seedIndex/claim", async (req: AuthedRequest, res) => {
   res.status(201).json({ ok: true, seedIndex, claimedAt: created.claimedAt });
 });
 
-const foundExtractionSchema = z.object({
-  resource: z.enum(["food", "wood", "stone"]),
+// The paid counterpart to /claim, for every territory after a player's
+// first — same unclaimed/abandoned eligibility, but requires the requester
+// to already own land (the inverse guard from /claim, so the two error
+// messages point players to the right verb) and charges Government.treasury
+// rather than granting for free. Mirrors the debit-then-transfer
+// $transaction pattern bonds.ts's POST /buy already uses.
+territoryRouter.post("/:seedIndex/buy", async (req: AuthedRequest, res) => {
+  const seedIndex = Number(req.params.seedIndex);
+  const seed = getSeedByIndex(seedIndex);
+  if (!seed) {
+    res.status(404).json({ error: "No such territory" });
+    return;
+  }
+
+  const owned = await prisma.territory.count({ where: { ownerId: req.playerId! } });
+  if (owned === 0) {
+    res.status(400).json({ error: "Claim your first territory for free before buying more" });
+    return;
+  }
+
+  const government = await prisma.government.findUnique({ where: { playerId: req.playerId! } });
+  if (!government) {
+    res.status(404).json({ error: "No government found for this player" });
+    return;
+  }
+
+  const price = Math.round(seed.areaKm2 * getConfig().TERRITORY_TUNING.buyPricePerKm2);
+  if (government.treasury < price) {
+    res.status(400).json({ error: `Buying this territory costs ${price}g from your government treasury` });
+    return;
+  }
+
+  const existing = await prisma.territory.findUnique({
+    where: { seedIndex },
+    include: { owner: { select: { lastSeenAt: true } } },
+  });
+
+  if (existing) {
+    if (existing.ownerId === req.playerId!) {
+      res.status(400).json({ error: "You already own this territory" });
+      return;
+    }
+    const status = computeStatus(existing.owner.lastSeenAt, new Date());
+    if (status !== "abandoned") {
+      res.status(400).json({ error: `This territory is still ${status} under its current owner — attack it instead` });
+      return;
+    }
+    const [, updated] = await prisma.$transaction([
+      prisma.government.update({ where: { id: government.id }, data: { treasury: { decrement: price } } }),
+      prisma.territory.update({ where: { seedIndex }, data: { ownerId: req.playerId!, claimedAt: new Date() } }),
+    ]);
+    res.json({ ok: true, seedIndex, claimedAt: updated.claimedAt, price });
+    return;
+  }
+
+  const [, created] = await prisma.$transaction([
+    prisma.government.update({ where: { id: government.id }, data: { treasury: { decrement: price } } }),
+    prisma.territory.create({ data: { seedIndex, ownerId: req.playerId! } }),
+  ]);
+  res.status(201).json({ ok: true, seedIndex, claimedAt: created.claimedAt, price });
+});
+
+const foundOnTerritorySchema = z.object({
+  industry: z.enum(COMPANY_INDUSTRY_IDS),
   name: z.string().min(1).max(60),
 });
 
 // A second founding path alongside routes/companies.ts's zoning-gated one —
 // deliberately does NOT call computeZoneCategoryUsage at all. Territory
-// ownership is this path's whole gate: you must own the land, and it must
-// actually have the resource you're trying to extract.
-territoryRouter.post("/:seedIndex/found-extraction", async (req: AuthedRequest, res) => {
+// ownership is this path's whole gate: you must own the land and the
+// industry must actually be land-gated (requiresTerritory) — any owned
+// territory qualifies for any such industry, no per-resource deposit check
+// (see the recipe-economy plan's "Land = ownership gate" decision).
+territoryRouter.post("/:seedIndex/found", async (req: AuthedRequest, res) => {
   const seedIndex = Number(req.params.seedIndex);
-  const parsed = foundExtractionSchema.safeParse(req.body);
+  const parsed = foundOnTerritorySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request" });
     return;
@@ -265,23 +317,21 @@ territoryRouter.post("/:seedIndex/found-extraction", async (req: AuthedRequest, 
     return;
   }
 
-  const { resource, name } = parsed.data;
-  const richness = seed.resources[resource] ?? 0;
-  if (richness <= 0) {
-    res.status(400).json({ error: `This territory has no ${resource} deposits to extract` });
+  const { industry: industryId, name } = parsed.data;
+  const industry = getConfig().COMPANY_INDUSTRIES[industryId];
+  if (!industry.requiresTerritory) {
+    res.status(400).json({ error: `${industry.name} isn't a land-gated industry — found it through Companies instead` });
     return;
   }
 
-  const industryId = RESOURCE_TO_EXTRACTION_INDUSTRY[resource];
   const existing = await prisma.company.findFirst({
     where: { territorySeedIndex: seedIndex, industry: industryId, closedAt: null },
   });
   if (existing) {
-    res.status(400).json({ error: `You've already founded a ${industryId} company on this territory` });
+    res.status(400).json({ error: `You've already founded a ${industry.name} on this territory` });
     return;
   }
 
-  const industry = getConfig().COMPANY_INDUSTRIES[industryId];
   const settlement = await prisma.settlement.findUnique({ where: { playerId: req.playerId! } });
   if (!settlement) {
     res.status(404).json({ error: "No settlement found for this player" });

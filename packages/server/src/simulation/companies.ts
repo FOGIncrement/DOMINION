@@ -1,21 +1,27 @@
-import { COMPANY_UPGRADE_TUNING, computeCompanyHourlyRates, type CompanyIndustryDef } from "@dominion/shared";
+import { COMPANY_UPGRADE_TUNING, computeCompanyHourlyRates, type CompanyIndustryDef, type MarketResourceType } from "@dominion/shared";
 import type { CompanySnapshot } from "./types.js";
 
 export interface CompanyTickResult {
-  inputStock: number;
-  goodsStock: number;
+  // Positive = produced (added to stock), negative = consumed (subtracted
+  // from stock) — one entry per resource this recipe touches, replacing the
+  // old single inputStock/goodsStock deltas.
+  stockDeltas: Partial<Record<MarketResourceType, number>>;
   cash: number;
-  inputConsumed: number; // feeds the input resource's demand flow
-  goodsProduced: number; // feeds the goods supply flow
   wagesPaid: number; // lifetime expense tracking
 }
 
 /**
- * Production is capped by available inputStock — a company that runs out of
- * raw material just produces less that tick, a real scarcity constraint
- * rather than an unbounded number. Wages are paid regardless of whether
- * production happened (cash can go negative; no forced layoffs/bankruptcy
- * in this pass, see Stage 2 plan).
+ * Production is bottlenecked by whichever input has the least stock
+ * relative to what this tick needs — a recipe can't make 3/4 of a batch by
+ * spending proportionally 3/4 of every ingredient if one ingredient is
+ * fully out; it makes however many whole/fractional batches the scarcest
+ * ingredient allows, and consumes exactly that same fraction of every
+ * ingredient (not `min(desired, stock)` per input independently, which
+ * would overdraw abundant ingredients while a scarce one is still
+ * rationing). An industry with no inputs (a land-gated pure-extraction
+ * company) always has fulfillment 1 — nothing to bottleneck on. Wages are
+ * paid regardless of whether production happened (cash can go negative; no
+ * forced layoffs/bankruptcy in this pass, see companyFailure.ts).
  */
 export function tickCompany(
   company: CompanySnapshot,
@@ -25,26 +31,32 @@ export function tickCompany(
 ): CompanyTickResult {
   const rates = computeCompanyHourlyRates(industry, company.workersAssigned, company.level, upgradeTuning);
 
-  // An extraction industry (no inputResource at all) is never stock-gated —
-  // it produces straight from labor. Only a processing industry that's
-  // temporarily out of input stock falls back to the "no input available"
-  // case below.
-  const desiredInput = rates.inputPerHour * elapsedHours;
-  const actualInput = industry.inputResource ? Math.min(desiredInput, company.inputStock) : 0;
-  const fulfillment = !industry.inputResource ? 1 : desiredInput > 0 ? actualInput / desiredInput : 0;
+  let fulfillment = 1;
+  for (const input of industry.inputs) {
+    const desired = (rates.inputs[input.resource] ?? 0) * elapsedHours;
+    if (desired <= 0) continue;
+    const available = company.stocks[input.resource] ?? 0;
+    fulfillment = Math.min(fulfillment, available / desired);
+  }
+  fulfillment = Math.max(0, Math.min(1, fulfillment));
 
-  // contractOnly (Construction) produces nothing at all, regardless of
-  // whatever goodsPerWorkerPerHour happens to be set to — its revenue is
-  // one-off government zone commissions, not market goods.
-  const goodsProduced = industry.contractOnly ? 0 : rates.goodsPerHour * elapsedHours * fulfillment;
+  const stockDeltas: Partial<Record<MarketResourceType, number>> = {};
+  for (const input of industry.inputs) {
+    const desired = (rates.inputs[input.resource] ?? 0) * elapsedHours;
+    if (desired <= 0) continue;
+    stockDeltas[input.resource] = (stockDeltas[input.resource] ?? 0) - desired * fulfillment;
+  }
+  for (const output of industry.outputs) {
+    const desired = (rates.outputs[output.resource] ?? 0) * elapsedHours;
+    if (desired <= 0) continue;
+    stockDeltas[output.resource] = (stockDeltas[output.resource] ?? 0) + desired * fulfillment;
+  }
+
   const wagesPaid = rates.wagePerHour * elapsedHours;
 
   return {
-    inputStock: company.inputStock - actualInput,
-    goodsStock: company.goodsStock + goodsProduced,
+    stockDeltas,
     cash: company.cash - wagesPaid,
-    inputConsumed: actualInput,
-    goodsProduced,
     wagesPaid,
   };
 }

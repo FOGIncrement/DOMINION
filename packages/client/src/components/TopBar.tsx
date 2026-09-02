@@ -1,20 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import {
-  computeHourlyProduction,
-  POPULATION_TUNING,
-  RESOURCE_LABELS,
-  type BuildingTypeId,
-  type ResourceType,
-} from "@dominion/shared";
+import { CURRENCIES, CURRENCY_CODES, POPULATION_TUNING, RESOURCE_LABELS, type CurrencyCode, type ResourceType } from "@dominion/shared";
 import { api } from "../api/client.js";
-import { useGameState } from "../api/hooks.js";
+import { useGameState, useMe } from "../api/hooks.js";
 import { THEME_IDS, THEME_LABELS, useTheme } from "../theme.js";
 
 const RESOURCE_COLORS: Record<ResourceType, string> = {
   food: "var(--series-food)",
-  wood: "var(--series-wood)",
-  stone: "var(--series-stone)",
   gold: "var(--series-gold)",
 };
 
@@ -38,11 +30,20 @@ export default function TopBar() {
     return () => clearInterval(id);
   }, []);
 
+  const { data: me } = useMe();
+
   const logout = useMutation({
     mutationFn: api.logout,
     onSuccess: () => {
       queryClient.setQueryData(["me"], null);
       queryClient.clear();
+    },
+  });
+
+  const setCurrency = useMutation({
+    mutationFn: (currencyCode: CurrencyCode) => api.setCurrency(currencyCode),
+    onSuccess: (res) => {
+      queryClient.setQueryData(["me"], (prev: typeof me) => (prev ? { ...prev, currencyCode: res.currencyCode } : prev));
     },
   });
 
@@ -55,54 +56,31 @@ export default function TopBar() {
   const lowHappiness = pop ? pop.happiness < 0.5 : false;
 
   // Ticks run once per real minute, so any single resource gain is tiny and
-  // easy to miss. Show the actual hourly rate up front instead of making
-  // players stare at the raw total waiting for it to visibly move.
-  const hourlyProduction = data
-    ? computeHourlyProduction(
-        data.buildings.map((b) => ({
-          type: b.type as BuildingTypeId,
-          workersAssigned: b.workersAssigned,
-          level: b.level,
-        })),
-        data.techIds,
-      )
-    : null;
+  // easy to miss. Food production now comes entirely from companies (the
+  // legacy Farm building is gone), which isn't cheaply knowable client-side
+  // — only the population's own consumption rate is, so that's all this
+  // shows now (as a pure drain, not a net rate).
   const foodConsumptionPerHour = pop ? pop.count * POPULATION_TUNING.foodConsumptionPerCapitaPerHour : 0;
-
-  const netRates: Record<ResourceType, number> | null = hourlyProduction
-    ? {
-        food: hourlyProduction.food - foodConsumptionPerHour,
-        wood: hourlyProduction.wood,
-        stone: hourlyProduction.stone,
-        gold: hourlyProduction.gold,
-      }
-    : null;
+  const currencyCode = me?.currencyCode ?? "EUR";
 
   return (
     <div className="top-bar">
       <span className="top-bar__brand">DOMINION</span>
 
-      {(["food", "wood", "stone", "gold"] as ResourceType[]).map((type) => {
-        const rate = netRates?.[type] ?? 0;
-        const rateClass = rate > 0.05 ? "up" : rate < -0.05 ? "down" : "";
-        const tooltip =
-          type === "food"
-            ? `Producing ${hourlyProduction?.food.toFixed(1) ?? 0} food/hr, population eats ${foodConsumptionPerHour.toFixed(1)}/hr`
-            : `Producing ${(hourlyProduction?.[type] ?? 0).toFixed(1)} ${type}/hr. The tick runs once a minute, so watch the rate, not the number.`;
+      <span className="resource-pill" title={`Population eats ${foodConsumptionPerHour.toFixed(1)}/hr`}>
+        <span className="resource-pill__dot" style={{ background: RESOURCE_COLORS.food }} />
+        <span className="resource-pill__value">{s ? formatNumber(s.food) : "—"}</span>
+        <span className="resource-pill__label">{RESOURCE_LABELS.food}</span>
+        {pop && (
+          <span className="resource-pill__rate resource-pill__rate--down">{formatRate(-foodConsumptionPerHour)}</span>
+        )}
+      </span>
 
-        return (
-          <span className="resource-pill" key={type} title={tooltip}>
-            <span className="resource-pill__dot" style={{ background: RESOURCE_COLORS[type] }} />
-            <span className="resource-pill__value">{s ? formatNumber(s[type]) : "—"}</span>
-            <span className="resource-pill__label">{RESOURCE_LABELS[type]}</span>
-            {netRates && (
-              <span className={`resource-pill__rate${rateClass ? ` resource-pill__rate--${rateClass}` : ""}`}>
-                {formatRate(rate)}
-              </span>
-            )}
-          </span>
-        );
-      })}
+      <span className="resource-pill" title="Company cash, government treasury, and market activity move gold too fast for a single client-side rate">
+        <span className="resource-pill__dot" style={{ background: RESOURCE_COLORS.gold }} />
+        <span className="resource-pill__value">{s ? formatNumber(s.gold) : "—"}</span>
+        <span className="resource-pill__label">{CURRENCIES[currencyCode].symbol}</span>
+      </span>
 
       <span className="resource-pill">
         <span className="resource-pill__value">{pop ? Math.round(pop.count) : "—"}</span>
@@ -111,7 +89,7 @@ export default function TopBar() {
 
       <span
         className="resource-pill"
-        title="Population not assigned to any building or company — found or auto-staff a company, or assign a building, to put them to work."
+        title="Population not assigned to any company — found or auto-staff a company to put them to work."
       >
         <span className={`resource-pill__value${idleAvailable > 0 ? " resource-pill__value--attention" : ""}`}>
           {data ? idleAvailable : "—"}
@@ -131,6 +109,18 @@ export default function TopBar() {
       <div className="top-bar__meta">
         <span>Era {s?.era ?? 1}</span>
         <span>{now.toLocaleTimeString()}</span>
+        <select
+          className="theme-select"
+          value={currencyCode}
+          onChange={(e) => setCurrency.mutate(e.target.value as CurrencyCode)}
+          title="Preferred currency — display only, every currency is 1:1"
+        >
+          {CURRENCY_CODES.map((code) => (
+            <option key={code} value={code}>
+              {CURRENCIES[code].symbol} {code}
+            </option>
+          ))}
+        </select>
         <select
           className="theme-select"
           value={theme}

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { STARTING_TREASURY } from "@dominion/shared";
+import { CURRENCY_CODES, STARTING_TREASURY } from "@dominion/shared";
 import { prisma } from "../db.js";
 import {
   clearSessionCookie,
@@ -75,5 +75,19 @@ authRouter.get("/me", requireAuth, async (req: AuthedRequest, res) => {
     res.status(404).json({ error: "Player not found" });
     return;
   }
-  res.json({ playerId: player.id, email: player.email, isAdmin: player.isAdmin });
+  res.json({ playerId: player.id, email: player.email, isAdmin: player.isAdmin, currencyCode: player.currencyCode });
+});
+
+const currencySchema = z.object({ currencyCode: z.enum(CURRENCY_CODES) });
+
+// Purely a display preference (see shared's CURRENCIES/formatCurrency) —
+// every currency is 1:1, this never touches any numeric field.
+authRouter.patch("/me/currency", requireAuth, async (req: AuthedRequest, res) => {
+  const parsed = currencySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid currency code" });
+    return;
+  }
+  await prisma.player.update({ where: { id: req.playerId! }, data: { currencyCode: parsed.data.currencyCode } });
+  res.json({ ok: true, currencyCode: parsed.data.currencyCode });
 });

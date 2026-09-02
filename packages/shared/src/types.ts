@@ -1,29 +1,26 @@
-export const RESOURCE_TYPES = ["food", "wood", "stone", "gold"] as const;
+// wood/stone removed with the legacy building economy — food is still a
+// real settlement resource (population eats it), gold is the numeraire.
+export const RESOURCE_TYPES = ["food", "gold"] as const;
 export type ResourceType = (typeof RESOURCE_TYPES)[number];
 
 export type ResourceBundle = Partial<Record<ResourceType, number>>;
 
 // Everything the world market prices and trades. A superset of settlement
 // resources (minus gold, the numeraire) plus company-produced goods.
-export const MARKET_RESOURCE_TYPES = ["food", "wood", "stone", "goods"] as const;
+// electricity/fertilizer/wheat/flour/packaging/bread are Slice 1 of the
+// recipe-based production economy (see the Margin recipe-economy plan) —
+// the rest of the user's ~33-company list adds more of these later.
+export const MARKET_RESOURCE_TYPES = [
+  "food",
+  "goods",
+  "electricity",
+  "fertilizer",
+  "wheat",
+  "flour",
+  "packaging",
+  "bread",
+] as const;
 export type MarketResourceType = (typeof MARKET_RESOURCE_TYPES)[number];
-
-export const BUILDING_TYPE_IDS = [
-  "house",
-  "farm",
-  "lumberCamp",
-  "quarry",
-  "marketplace",
-] as const;
-export type BuildingTypeId = (typeof BUILDING_TYPE_IDS)[number];
-
-export const TECH_IDS = [
-  "masonry",
-  "currency",
-  "ironTools",
-  "animalHusbandry",
-] as const;
-export type TechId = (typeof TECH_IDS)[number];
 
 export const NPC_ARCHETYPES = ["agrarian", "mining", "trade"] as const;
 export type NpcArchetype = (typeof NPC_ARCHETYPES)[number];
@@ -31,15 +28,25 @@ export type NpcArchetype = (typeof NPC_ARCHETYPES)[number];
 export const MARKET_SIDES = ["buy", "sell"] as const;
 export type MarketSide = (typeof MARKET_SIDES)[number];
 
+// Slice 1 of the recipe-based production economy (see the Margin
+// recipe-economy plan) — powerPlant/fertilizerPlant/wheatFarm/
+// packagingPlant/farm are land-gated (requiresTerritory), flourMill/bakery
+// are zoning-gated. The other ~27 industries from the user's full list
+// follow in a later pass now that the recipe mechanism exists. farming/
+// logging/quarrying/sawmill/stoneworks/construction are retired; retail is
+// unchanged (it's the population-happiness bridge, not part of the
+// production/recipe catalog). `farm` (added with the legacy-building
+// removal pass) replaces the old Farm building as the settlement's food
+// supply — Land -> Food, same shape as wheatFarm/fertilizerPlant.
 export const COMPANY_INDUSTRY_IDS = [
+  "powerPlant",
+  "fertilizerPlant",
+  "wheatFarm",
+  "packagingPlant",
+  "farm",
+  "flourMill",
   "bakery",
-  "sawmill",
-  "stoneworks",
-  "farming",
-  "logging",
-  "quarrying",
   "retail",
-  "construction",
 ] as const;
 export type CompanyIndustryId = (typeof COMPANY_INDUSTRY_IDS)[number];
 
@@ -58,41 +65,10 @@ export const EVENT_TYPE_IDS = [
 ] as const;
 export type EventTypeId = (typeof EVENT_TYPE_IDS)[number];
 
-export interface BuildingTypeDef {
-  id: BuildingTypeId;
-  name: string;
-  description: string;
-  cost: ResourceBundle;
-  maxWorkers: number;
-  producesResource?: ResourceType;
-  productionPerWorkerPerHour?: number;
-  populationCapacity?: number;
-  requiredTech?: TechId;
-  // Set once a building's role is fully covered by an equivalent company
-  // industry (see COMPANY_INDUSTRIES) — players can no longer construct new
-  // ones, but any they already have keep working exactly as before. No data
-  // migration: this only gates the "build new" path.
-  retiredForConstruction?: boolean;
-}
-
-export interface TechDef {
-  id: TechId;
-  name: string;
-  description: string;
-  cost: ResourceBundle;
-  requiredTech?: TechId;
-  unlocksBuilding?: BuildingTypeId;
-  productionBonus?: {
-    buildingType: BuildingTypeId;
-    multiplier: number;
-  };
-}
-
 export interface NpcArchetypeDef {
   id: NpcArchetype;
   name: string;
   description: string;
-  startingBuildings: Partial<Record<BuildingTypeId, number>>;
 }
 
 export interface EventTemplateDef {
@@ -104,38 +80,39 @@ export interface EventTemplateDef {
   resourceEffect?: ResourceBundle;
 }
 
+// One recipe ingredient or product — a company's full recipe is
+// inputs[] -> outputs[], each entry consumed/produced at
+// perWorkerPerHour * workersAssigned * levelMultiplier (see
+// computeCompanyHourlyRates in companyProduction.ts).
+export interface RecipeComponent {
+  resource: MarketResourceType;
+  perWorkerPerHour: number;
+}
+
 export interface CompanyIndustryDef {
   id: CompanyIndustryId;
   name: string;
   description: string;
-  // Absent for an extraction industry (farming/logging/quarrying) — it
-  // produces its output from labor alone, nothing to buy.
-  inputResource?: "food" | "wood" | "stone";
-  inputPerWorkerPerHour: number;
-  // What gets sold, and how much of it — "goods" for a processing industry,
-  // otherwise whichever raw resource this industry extracts. The field name
-  // stays goodsPerWorkerPerHour even for extraction industries to avoid a
-  // wider rename; it always means "output rate," not literally goods.
-  // Meaningless for a contractOnly industry — required only to satisfy the
-  // type, never actually read once contractOnly is true.
-  outputResource: MarketResourceType;
-  goodsPerWorkerPerHour: number;
+  // Empty for a pure land-extraction industry (e.g. Forestry: nothing to
+  // buy, produces straight from labor + land). tickCompany bottlenecks
+  // production on whichever input has the least stock relative to what's
+  // needed that tick — see simulation/companies.ts.
+  inputs: RecipeComponent[];
+  // Usually one entry; more than one for a industry with multiple real
+  // products (e.g. an oil refinery producing both fuel and chemicals).
+  outputs: RecipeComponent[];
   wagePerWorkerPerHour: number;
   maxWorkers: number;
   foundingCost: number;
-  // NPC_COMPANY_TUNING.goodsSellBuffer (15) is too low for a company whose
-  // real customer is a one-off zone commission rather than steady market
-  // demand — an NPC-run construction company would sell down to 15 every
-  // tick and never accumulate enough to fulfill one. Only construction sets
-  // this today; every other industry falls back to the flat constant.
+  // NPC_COMPANY_TUNING.goodsSellBuffer (15) is too low for some industries'
+  // real sell patterns — set per-industry to override the flat constant.
   goodsSellBuffer?: number;
-  // True for a "contract only" industry (Construction) — it doesn't produce
-  // or sell anything on the open market at all; every gold it earns comes
-  // from one-off government zone commissions instead. Gates goods
-  // production, market-flow tracking, the buy/sell trade route, supply
-  // contract eligibility, and the corresponding client UI. Every other
-  // industry omits this and behaves as a normal goods producer.
-  contractOnly?: boolean;
+  // "Land" in the user's recipe list — this industry can only be founded on
+  // a territory the player owns (routes/territory.ts's POST
+  // /:seedIndex/found), not through the ordinary zoning-gated
+  // routes/companies.ts path. A founding-eligibility gate, not a resource:
+  // any owned territory qualifies, nothing is consumed or tracked for it.
+  requiresTerritory?: boolean;
 }
 
 export interface ZoneDef {

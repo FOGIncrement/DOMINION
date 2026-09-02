@@ -107,14 +107,8 @@ infrastructureRouter.get("/", async (req: AuthedRequest, res) => {
 });
 
 infrastructureRouter.get("/mine", async (req: AuthedRequest, res) => {
-  const companies = await prisma.company.findMany({ where: { ownerId: req.playerId! }, select: { id: true } });
-  const companyIds = companies.map((c) => c.id);
-
   const projects = await prisma.zoneProject.findMany({
-    where: {
-      OR: [{ government: { playerId: req.playerId! } }, { constructionCompanyId: { in: companyIds } }],
-    },
-    include: { constructionCompany: true, government: { include: { player: true } } },
+    where: { government: { playerId: req.playerId! } },
     orderBy: { createdAt: "desc" },
   });
 
@@ -122,10 +116,6 @@ infrastructureRouter.get("/mine", async (req: AuthedRequest, res) => {
     projects: projects.map((p) => ({
       id: p.id,
       zoneType: p.zoneType,
-      constructionCompanyId: p.constructionCompanyId,
-      constructionCompanyName: p.constructionCompany.name,
-      constructionCompanyIsMine: p.constructionCompany.ownerId === req.playerId,
-      governmentIsMine: p.government.playerId === req.playerId,
       treasuryCost: p.treasuryCost,
       zoneX: p.zoneX,
       zoneY: p.zoneY,
@@ -143,7 +133,6 @@ infrastructureRouter.get("/mine", async (req: AuthedRequest, res) => {
 });
 
 const commissionSchema = z.object({
-  constructionCompanyId: z.string(),
   zoneType: z.enum(ZONE_TYPE_IDS),
   treasuryCost: z.number().positive(),
   zoneX: z.number().int().min(0),
@@ -152,10 +141,11 @@ const commissionSchema = z.object({
   zoneHeight: z.number().int().positive(),
 });
 
-// Unlike Contract (either company's controller may propose), commissioning
-// is never symmetric — only the settlement's own government can initiate,
-// so there's no "does the caller control either side" check here at all.
-// The only open question is which side the construction company sits on.
+// Pay the treasury cost, done — no construction-company middleman, no
+// accept/reject negotiation. Still has a build-time delay before the
+// completion sweep (simulation/engine.ts) turns this into a real
+// SettlementZone, just committed the instant it's paid for rather than
+// requiring a second party's acceptance.
 infrastructureRouter.post("/", async (req: AuthedRequest, res) => {
   const parsed = commissionSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -190,48 +180,12 @@ infrastructureRouter.post("/", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const company = await prisma.company.findUnique({ where: { id: parsed.data.constructionCompanyId } });
-  if (!company || company.closedAt) {
-    res.status(404).json({ error: "Construction company not found" });
-    return;
-  }
-  // Deliberately restricted to the construction industry specifically, not
-  // "any company whose outputResource is goods" — the roadmap ask was to
-  // give a *construction* company the contract, and "goods" being fungible
-  // under the hood doesn't mean every goods-producer should qualify.
-  if (company.industry !== "construction") {
-    res.status(400).json({ error: `${company.name} isn't a construction company` });
-    return;
-  }
-
-  const needsOffer = company.ownerId !== null && company.ownerId !== req.playerId;
   const now = new Date();
-
-  if (needsOffer) {
-    const project = await prisma.zoneProject.create({
-      data: {
-        governmentId: government.id,
-        constructionCompanyId: company.id,
-        settlementId: settlement.id,
-        zoneType: def.id,
-        treasuryCost,
-        buildTimeHours: def.buildTimeHours,
-        zoneX,
-        zoneY,
-        zoneWidth,
-        zoneHeight,
-      },
-    });
-    res.status(201).json({ ok: true, projectId: project.id, pending: true });
-    return;
-  }
-
   const completesAt = new Date(now.getTime() + def.buildTimeHours * 60 * 60 * 1000);
   const [project] = await prisma.$transaction([
     prisma.zoneProject.create({
       data: {
         governmentId: government.id,
-        constructionCompanyId: company.id,
         settlementId: settlement.id,
         zoneType: def.id,
         treasuryCost,
@@ -245,92 +199,6 @@ infrastructureRouter.post("/", async (req: AuthedRequest, res) => {
       },
     }),
     prisma.government.update({ where: { id: government.id }, data: { treasury: { decrement: treasuryCost } } }),
-    prisma.company.update({
-      where: { id: company.id },
-      data: {
-        cash: { increment: treasuryCost },
-        totalRevenue: { increment: treasuryCost },
-      },
-    }),
   ]);
-  res.status(201).json({ ok: true, projectId: project.id, pending: false });
-});
-
-infrastructureRouter.post("/:id/accept", async (req: AuthedRequest, res) => {
-  const project = await prisma.zoneProject.findUnique({
-    where: { id: req.params.id },
-    include: { constructionCompany: true, government: true },
-  });
-  if (!project) {
-    res.status(404).json({ error: "Project not found" });
-    return;
-  }
-  // Only the construction company's owner may accept — the commissioning
-  // government is always the proposer here (unlike Contract, this isn't
-  // symmetric) and can never legitimately "accept its own offer": if they
-  // owned the company, this would already have activated immediately.
-  if (project.constructionCompany.ownerId !== req.playerId) {
-    res.status(403).json({ error: "You don't control the construction company on this commission" });
-    return;
-  }
-  if (project.cancelledAt) {
-    res.status(400).json({ error: "This offer was cancelled" });
-    return;
-  }
-  if (project.acceptedAt) {
-    res.status(400).json({ error: "Already accepted" });
-    return;
-  }
-  // Re-validate at accept time, not just at commission time — this is a
-  // synchronous lump-sum transfer that can't partially degrade the way
-  // Contract's per-tick settlement can, so a shortfall here must reject
-  // outright rather than silently transfer less.
-  if (project.government.treasury < project.treasuryCost) {
-    res.status(400).json({ error: "The commissioning government's treasury can no longer cover this" });
-    return;
-  }
-
-  const now = new Date();
-  const completesAt = new Date(now.getTime() + project.buildTimeHours * 60 * 60 * 1000);
-  await prisma.$transaction([
-    prisma.zoneProject.update({ where: { id: project.id }, data: { acceptedAt: now, completesAt } }),
-    prisma.government.update({ where: { id: project.governmentId }, data: { treasury: { decrement: project.treasuryCost } } }),
-    prisma.company.update({
-      where: { id: project.constructionCompanyId },
-      data: {
-        cash: { increment: project.treasuryCost },
-        totalRevenue: { increment: project.treasuryCost },
-      },
-    }),
-  ]);
-  res.json({ ok: true });
-});
-
-// Either party may withdraw/reject a still-pending offer. Once accepted,
-// funds and materials have already moved — no refund path in v1, so
-// cancellation is only available before that point.
-infrastructureRouter.post("/:id/cancel", async (req: AuthedRequest, res) => {
-  const project = await prisma.zoneProject.findUnique({
-    where: { id: req.params.id },
-    include: { constructionCompany: true, government: true },
-  });
-  if (!project) {
-    res.status(404).json({ error: "Project not found" });
-    return;
-  }
-  if (project.government.playerId !== req.playerId && project.constructionCompany.ownerId !== req.playerId) {
-    res.status(403).json({ error: "You aren't a party to this commission" });
-    return;
-  }
-  if (project.cancelledAt) {
-    res.status(400).json({ error: "Already cancelled" });
-    return;
-  }
-  if (project.acceptedAt) {
-    res.status(400).json({ error: "Already accepted — funds and materials have changed hands, this can't be cancelled" });
-    return;
-  }
-
-  await prisma.zoneProject.update({ where: { id: project.id }, data: { cancelledAt: new Date() } });
-  res.json({ ok: true });
+  res.status(201).json({ ok: true, projectId: project.id });
 });

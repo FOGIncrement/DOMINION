@@ -84,6 +84,9 @@ contractsRouter.get("/world", async (req: AuthedRequest, res) => {
 const createSchema = z.object({
   sellerCompanyId: z.string(),
   buyerCompanyId: z.string(),
+  // A company can now have several inputs/outputs (a recipe), so the
+  // proposer has to say which one this contract is for.
+  resourceType: z.string(),
   quantityPerHour: z.number().positive(),
   pricePerUnit: z.number().min(0),
   termHours: z.number().int().positive(),
@@ -132,17 +135,14 @@ contractsRouter.post("/", async (req: AuthedRequest, res) => {
   const config = getConfig();
   const sellerIndustry = config.COMPANY_INDUSTRIES[seller.industry as CompanyIndustryId];
   const buyerIndustry = config.COMPANY_INDUSTRIES[buyer.industry as CompanyIndustryId];
-  if (sellerIndustry.contractOnly) {
-    res.status(400).json({ error: `${sellerIndustry.name} companies don't produce anything to sell under contract` });
+  const { resourceType } = parsed.data;
+  if (!sellerIndustry.outputs.some((o) => o.resource === resourceType)) {
+    res.status(400).json({ error: `${sellerIndustry.name} companies don't produce ${resourceType}` });
     return;
   }
-  if (buyerIndustry.contractOnly) {
-    res.status(400).json({ error: `${buyerIndustry.name} companies don't buy any input to contract for` });
-    return;
-  }
-  if (buyerIndustry.inputResource !== sellerIndustry.outputResource) {
+  if (!buyerIndustry.inputs.some((i) => i.resource === resourceType)) {
     res.status(400).json({
-      error: `${buyerIndustry.name} doesn't use ${sellerIndustry.outputResource} as input — can't contract these two`,
+      error: `${buyerIndustry.name} doesn't use ${resourceType} as input — can't contract these two`,
     });
     return;
   }
@@ -161,7 +161,7 @@ contractsRouter.post("/", async (req: AuthedRequest, res) => {
     const firstHourCost = quantityPerHour * pricePerUnit;
     if (firstHourCost > counterparty.cash) {
       res.status(400).json({
-        error: `${counterparty.name} rejected the offer — ${quantityPerHour} ${sellerIndustry.outputResource}/hr at ${pricePerUnit}g would cost ${firstHourCost.toFixed(1)}g/hr, but they only have ${Math.max(0, counterparty.cash).toFixed(1)}g on hand. Try a lower price or quantity.`,
+        error: `${counterparty.name} rejected the offer — ${quantityPerHour} ${resourceType}/hr at ${pricePerUnit}g would cost ${firstHourCost.toFixed(1)}g/hr, but they only have ${Math.max(0, counterparty.cash).toFixed(1)}g on hand. Try a lower price or quantity.`,
       });
       return;
     }
@@ -174,7 +174,7 @@ contractsRouter.post("/", async (req: AuthedRequest, res) => {
     data: {
       sellerCompanyId,
       buyerCompanyId,
-      resourceType: sellerIndustry.outputResource,
+      resourceType,
       quantityPerHour,
       pricePerUnit,
       termHours,

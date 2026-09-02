@@ -56,10 +56,10 @@ const attackSchema = z.object({ targetSeedIndex: z.number().int() });
 
 // Only contests actively-held land — a target with no Territory row
 // (unclaimed) or whose computed status is "abandoned" is rejected here and
-// pointed at the peaceful claim endpoint instead (territory.ts's
-// POST /:seedIndex/claim), which already handles both of those cases.
-// Combat is specifically for taking land out from under an active/dormant
-// owner. See the Phase 4 plan for the full combat design.
+// pointed at the peaceful acquisition endpoints instead (territory.ts's
+// POST /:seedIndex/claim for a player's first territory, POST
+// /:seedIndex/buy for every one after that). Combat is specifically for
+// taking land out from under an active/dormant owner.
 militaryRouter.post("/attack", async (req: AuthedRequest, res) => {
   const parsed = attackSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -73,7 +73,7 @@ militaryRouter.post("/attack", async (req: AuthedRequest, res) => {
     include: { owner: { select: { id: true, lastSeenAt: true, armyStrength: true } } },
   });
   if (!target) {
-    res.status(400).json({ error: "That territory is unclaimed — claim it peacefully instead" });
+    res.status(400).json({ error: "That territory is unclaimed — buy it instead" });
     return;
   }
   if (target.ownerId === req.playerId!) {
@@ -84,7 +84,7 @@ militaryRouter.post("/attack", async (req: AuthedRequest, res) => {
   const now = new Date();
   const targetStatus = computeStatus(target.owner.lastSeenAt, now);
   if (targetStatus === "abandoned") {
-    res.status(400).json({ error: "This territory is abandoned — claim it peacefully instead" });
+    res.status(400).json({ error: "This territory is abandoned — buy it instead" });
     return;
   }
 

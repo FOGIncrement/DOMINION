@@ -22,9 +22,10 @@ marketRouter.get("/", async (_req, res) => {
 
 marketRouter.use(requireAuth);
 
-// Settlements only ever hold food/wood/stone directly — "goods" is a
-// company-level resource, traded through /api/companies/:id/trade instead.
-const SETTLEMENT_TRADEABLE_RESOURCES = ["food", "wood", "stone"] as const;
+// Settlements only ever hold food directly (wood/stone removed with the
+// legacy building economy) — "goods" is a company-level resource, traded
+// through /api/companies/:id/trade instead.
+const SETTLEMENT_TRADEABLE_RESOURCES = ["food"] as const;
 
 const tradeSchema = z.object({
   resourceType: z.enum(SETTLEMENT_TRADEABLE_RESOURCES),
@@ -42,7 +43,6 @@ marketRouter.post("/trade", async (req: AuthedRequest, res) => {
 
   const settlement = await prisma.settlement.findUnique({
     where: { playerId: req.playerId! },
-    include: { buildings: true },
   });
   if (!settlement) {
     res.status(404).json({ error: "No settlement found for this player" });
@@ -55,9 +55,9 @@ marketRouter.post("/trade", async (req: AuthedRequest, res) => {
     return;
   }
 
-  const hasMarketplace = settlement.buildings.some((b) => b.type === "marketplace");
-  const tradeFee = getConfig().TRADE_FEE;
-  const fee = hasMarketplace ? tradeFee.withMarketplace : tradeFee.base;
+  // Marketplace (the building that used to discount this) is gone along
+  // with the rest of the legacy building economy — a single flat fee now.
+  const fee = getConfig().TRADE_FEE.base;
 
   if (side === "sell") {
     if (settlement[resourceType] < quantity) {

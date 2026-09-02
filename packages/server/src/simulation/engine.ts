@@ -8,8 +8,8 @@ import {
   computeTargetSharePrice,
   computeUnemployment,
   computeWelfareCostPerHour,
-  type BuildingTypeId,
   type CompanyIndustryId,
+  type MarketResourceType,
   type ZoneTypeId,
 } from "@dominion/shared";
 import { prisma } from "../db.js";
@@ -19,18 +19,11 @@ import { tickCompany } from "./companies.js";
 import { autoCloseCompany, shouldAutoClose, shouldForceLayoff } from "./companyFailure.js";
 import { settleContract } from "./contracts.js";
 import { getControllingPlayerId } from "./control.js";
-import { computeConsumption, reconcileWorkersWithPopulation } from "./consumption.js";
+import { computeConsumption } from "./consumption.js";
 import { applyLuxuryGoodsPurchase, maybeBuyFromOwnedRetail } from "./directSales.js";
 import { maybeRollEvent } from "./events.js";
 import { ensureMarketSeeded, TRADEABLE_RESOURCES, tickMarket, type TradeableResource } from "./market.js";
-import {
-  maybeAssignIdleWorkers,
-  maybeCoverFoodShortfall,
-  maybeCoverMaterialShortfall,
-  maybeExpand,
-  settleNpcSurplus,
-  type MutableResources,
-} from "./npcEconomy.js";
+import { maybeCoverFoodShortfall, type MutableResources } from "./npcEconomy.js";
 import {
   maybeExpandCompany,
   maybeFoundNpcCompany,
@@ -40,14 +33,12 @@ import {
   type MutableCompanyState,
 } from "./npcCompanyEconomy.js";
 import { runNpcInvestorTick, type PublicCompanyForInvesting } from "./npcInvestors.js";
-import { computeProduction } from "./production.js";
 import { driftSharePrice, maybeDividend } from "./stocks.js";
 import type { CompanySnapshot, SettlementSnapshot } from "./types.js";
-import { extractionRichnessMultiplier } from "../routes/territory.js";
 
 async function loadSnapshots(): Promise<SettlementSnapshot[]> {
   const settlements = await prisma.settlement.findMany({
-    include: { population: true, buildings: true, techs: true },
+    include: { population: true },
   });
 
   return settlements
@@ -58,8 +49,6 @@ async function loadSnapshots(): Promise<SettlementSnapshot[]> {
       playerId: s.playerId,
       archetype: (s.archetype as SettlementSnapshot["archetype"]) ?? null,
       food: s.food,
-      wood: s.wood,
-      stone: s.stone,
       gold: s.gold,
       storageCap: s.storageCap,
       lastTickAt: s.lastTickAt,
@@ -68,26 +57,31 @@ async function loadSnapshots(): Promise<SettlementSnapshot[]> {
         growthRate: s.population!.growthRate,
         happiness: s.population!.happiness,
       },
-      buildings: s.buildings.map((b) => ({
-        id: b.id,
-        type: b.type as BuildingTypeId,
-        workersAssigned: b.workersAssigned,
-        level: b.level,
-      })),
-      techIds: s.techs.map((t) => t.techId),
     }));
 }
 
 async function loadCompanySnapshots(): Promise<CompanySnapshot[]> {
   const companies = await prisma.company.findMany({ where: { closedAt: null } });
+  // One query for every company's resource stocks, grouped in memory — the
+  // old inputStock/goodsStock scalars lived on Company itself; now each
+  // company can hold several, in CompanyResourceStock.
+  const allStocks = await prisma.companyResourceStock.findMany({
+    where: { companyId: { in: companies.map((c) => c.id) } },
+  });
+  const stocksByCompany = new Map<string, Partial<Record<MarketResourceType, number>>>();
+  for (const row of allStocks) {
+    const bucket = stocksByCompany.get(row.companyId) ?? {};
+    bucket[row.resourceType as MarketResourceType] = row.amount;
+    stocksByCompany.set(row.companyId, bucket);
+  }
+
   return companies.map((c) => ({
     id: c.id,
     name: c.name,
     ownerId: c.ownerId,
     industry: c.industry as CompanyIndustryId,
     cash: c.cash,
-    inputStock: c.inputStock,
-    goodsStock: c.goodsStock,
+    stocks: stocksByCompany.get(c.id) ?? {},
     workersAssigned: c.workersAssigned,
     autoStaff: c.autoStaff,
     level: c.level,
@@ -155,6 +149,13 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
   // company's own update" idiom the loan/deposit ledgers further down use.
   const ownedSaleRevenueByCompanyId = new Map<string, number>();
 
+  // House (the building that used to be the sole source of population
+  // capacity) is gone — capacity now scales with territory count instead
+  // (see consumption.ts's housingCapacity), batched once here rather than
+  // a query per settlement.
+  const territoryCounts = await prisma.territory.groupBy({ by: ["ownerId"], _count: { _all: true } });
+  const territoriesByOwner = new Map(territoryCounts.map((t) => [t.ownerId, t._count._all]));
+
   const config = getConfig();
   const marketRows = await prisma.marketResource.findMany();
   const prices = Object.fromEntries(
@@ -185,17 +186,13 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     const elapsedHours = Math.max(0, Math.min(MAX_CATCHUP_HOURS, rawElapsedHours));
     if (elapsedHours <= 0) continue;
 
-    const production = computeProduction(settlement, elapsedHours, config.BUILDING_TYPES);
-
-    flows.food.supply += production.food;
-    flows.wood.supply += production.wood;
-    flows.stone.supply += production.stone;
-
+    // No more passive building production (see the legacy-building-economy
+    // removal) — food comes entirely from the new land-gated `farm` company
+    // selling into the market, reached here only via maybeCoverFoodShortfall
+    // below, same as every other resource in the recipe economy.
     const state: MutableResources = {
-      food: Math.min(settlement.storageCap, settlement.food + production.food),
-      wood: Math.min(settlement.storageCap, settlement.wood + production.wood),
-      stone: Math.min(settlement.storageCap, settlement.stone + production.stone),
-      gold: settlement.gold + production.gold,
+      food: settlement.food,
+      gold: settlement.gold,
     };
 
     if (settlement.playerId) {
@@ -212,79 +209,38 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     // maybeCoverFoodShortfall in npcEconomy.ts for why.
     await maybeCoverFoodShortfall(state, prices);
 
-    const consumption = computeConsumption(settlement, state.food, elapsedHours);
+    const territoriesOwned = settlement.playerId ? (territoriesByOwner.get(settlement.playerId) ?? 0) : 0;
+    const consumption = computeConsumption(settlement, state.food, elapsedHours, territoriesOwned);
     state.food = Math.max(0, state.food - consumption.foodConsumed);
 
     flows.food.demand += consumption.foodConsumed;
-    flows.wood.demand +=
-      settlement.population.count * config.WORLD_DEMAND_TUNING.woodDemandPerCapitaPerHour * elapsedHours;
-    flows.stone.demand +=
-      settlement.population.count * config.WORLD_DEMAND_TUNING.stoneDemandPerCapitaPerHour * elapsedHours;
     flows.goods.demand +=
       settlement.population.count * config.WORLD_DEMAND_TUNING.goodsDemandPerCapitaPerHour * elapsedHours;
 
-    // Every settlement, not just NPCs — maybeExpand/settleNpcSurplus (below)
-    // stay NPC-only since nothing player-side acts on materials this way,
-    // but there's no reason to withhold the purchase itself.
-    await maybeCoverMaterialShortfall(state, prices);
-
-    if (!settlement.playerId) {
-      await maybeExpand(settlement, state);
-      await settleNpcSurplus(state, prices);
-    }
-
-    // Player settlements only: spend surplus gold on Bakery-made goods for
-    // a happiness boost beyond plain food sufficiency (see directSales.ts).
-    // NPC settlements deliberately get no equivalent lever — this is a
-    // treasury-spending decision, and NPCs' existing gold-spending
-    // behaviors (maybeExpand, maybeCoverMaterialShortfall) were never tuned
-    // to compete against a third consumer of the same gold pool.
+    // Player settlements only: spend surplus gold on "goods" from the open
+    // market for a happiness boost beyond plain food sufficiency (see
+    // directSales.ts) — market-only now that Bakery produces "bread," not
+    // "goods" (see the recipe-economy plan). NPC settlements deliberately
+    // get no equivalent lever — this is a treasury-spending decision.
     let finalHappiness = consumption.newHappiness;
     if (settlement.playerId) {
-      const bakeryCompanies = ownedCompaniesByOwnerAndIndustry.get(`${settlement.playerId}:bakery`) ?? [];
-      const luxury = await applyLuxuryGoodsPurchase(settlement, state, prices, bakeryCompanies, elapsedHours);
+      const luxury = await applyLuxuryGoodsPurchase(settlement, state, prices, elapsedHours);
       finalHappiness = Math.min(1, finalHappiness + luxury.happinessBoost);
-      if (luxury.sale) {
-        ownedSaleRevenueByCompanyId.set(
-          luxury.sale.companyId,
-          (ownedSaleRevenueByCompanyId.get(luxury.sale.companyId) ?? 0) + luxury.sale.revenue,
-        );
-      }
-    }
-
-    const workerAdjustments = reconcileWorkersWithPopulation(settlement, consumption.newPopulationCount);
-    for (const adjustment of workerAdjustments) {
-      await prisma.building.update({
-        where: { id: adjustment.buildingId },
-        data: { workersAssigned: adjustment.workersAssigned },
-      });
-    }
-
-    if (!settlement.playerId) {
-      const currentAssignments = new Map(settlement.buildings.map((b) => [b.id, b.workersAssigned]));
-      for (const adjustment of workerAdjustments) {
-        currentAssignments.set(adjustment.buildingId, adjustment.workersAssigned);
-      }
-      await maybeAssignIdleWorkers(settlement, currentAssignments, consumption.newPopulationCount, consumption.wellFed);
     }
 
     if (settlement.playerId) {
-      const buildingWorkers = settlement.buildings.reduce((sum, b) => sum + b.workersAssigned, 0);
-
       // Organic hiring: idle population fills the open slots of any company
-      // this player opted into auto-staffing (Company.autoStaff), mirroring
-      // maybeAssignIdleWorkers for NPC buildings above but opt-in per
-      // company since a player may be deliberately running one lean.
-      // Mutates the CompanySnapshot objects in place rather than writing to
-      // the DB directly — the company tick loop later in this same
-      // runTick() persists workersAssigned unconditionally from these same
-      // snapshot references every tick, so a direct write here would just
-      // get clobbered back to its pre-hire value (same constraint
-      // directSales.ts already works around for retail/luxury purchases).
+      // this player opted into auto-staffing (Company.autoStaff). Mutates
+      // the CompanySnapshot objects in place rather than writing to the DB
+      // directly — the company tick loop later in this same runTick()
+      // persists workersAssigned unconditionally from these same snapshot
+      // references every tick, so a direct write here would just get
+      // clobbered back to its pre-hire value (same constraint directSales.ts
+      // already works around for retail/luxury purchases).
       const ownedCompanies = ownedCompaniesByOwner.get(settlement.playerId) ?? [];
       let idleForHiring = Math.max(
         0,
-        consumption.newPopulationCount - buildingWorkers - (companyWorkersByOwner.get(settlement.playerId) ?? 0),
+        consumption.newPopulationCount - (companyWorkersByOwner.get(settlement.playerId) ?? 0),
       );
       if (idleForHiring > 0) {
         for (const company of ownedCompanies) {
@@ -306,7 +262,7 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
       }
 
       const companyWorkers = companyWorkersByOwner.get(settlement.playerId) ?? 0;
-      const unemployed = computeUnemployment(consumption.newPopulationCount, buildingWorkers + companyWorkers);
+      const unemployed = computeUnemployment(consumption.newPopulationCount, companyWorkers);
 
       if (unemployed > 0) {
         const government = await prisma.government.findUnique({ where: { playerId: settlement.playerId } });
@@ -325,8 +281,6 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
       where: { id: settlement.id },
       data: {
         food: Math.min(settlement.storageCap, state.food),
-        wood: Math.min(settlement.storageCap, state.wood),
-        stone: Math.min(settlement.storageCap, state.stone),
         gold: state.gold,
         lastTickAt: now,
         population: {
@@ -344,30 +298,25 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     const elapsedHours = Math.max(0, Math.min(MAX_CATCHUP_HOURS, rawElapsedHours));
     if (elapsedHours <= 0) continue;
 
-    const baseIndustry = config.COMPANY_INDUSTRIES[company.industry];
-    const industry =
-      company.territorySeedIndex != null
-        ? {
-            ...baseIndustry,
-            goodsPerWorkerPerHour:
-              baseIndustry.goodsPerWorkerPerHour *
-              extractionRichnessMultiplier(company.territorySeedIndex, baseIndustry.outputResource),
-          }
-        : baseIndustry;
+    const industry = config.COMPANY_INDUSTRIES[company.industry];
     const result = tickCompany(company, elapsedHours, industry, config.COMPANY_UPGRADE_TUNING);
 
-    if (industry.inputResource) {
-      flows[industry.inputResource].demand += result.inputConsumed;
-    }
-    if (!industry.contractOnly) {
-      flows[industry.outputResource].supply += result.goodsProduced;
+    // Every resource the recipe touched this tick feeds the market's
+    // supply/demand accounting — negative deltas are consumption, positive
+    // are production. Replaces the old single inputResource/outputResource
+    // writes now that a company can touch several resources at once.
+    for (const [resource, delta] of Object.entries(result.stockDeltas)) {
+      const r = resource as MarketResourceType;
+      if (delta < 0) flows[r].demand += -delta;
+      else if (delta > 0) flows[r].supply += delta;
     }
 
-    const state: MutableCompanyState = {
-      cash: result.cash,
-      inputStock: result.inputStock,
-      goodsStock: result.goodsStock,
-    };
+    const stocks: Partial<Record<MarketResourceType, number>> = { ...company.stocks };
+    for (const [resource, delta] of Object.entries(result.stockDeltas)) {
+      const r = resource as MarketResourceType;
+      stocks[r] = (stocks[r] ?? 0) + delta;
+    }
+    const state: MutableCompanyState = { cash: result.cash, stocks };
 
     // Gate on actual control, not raw ownership — a company a founding
     // player still technically "owns" but has lost majority control of (an
@@ -402,18 +351,25 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
       ? company.workersAssigned - 1
       : company.workersAssigned;
 
-    await prisma.company.update({
-      where: { id: company.id },
-      data: {
-        cash: state.cash,
-        inputStock: state.inputStock,
-        goodsStock: state.goodsStock,
-        workersAssigned,
-        lastTickAt: now,
-        totalExpenses: { increment: result.wagesPaid },
-        totalRevenue: { increment: revenue },
-      },
-    });
+    await prisma.$transaction([
+      prisma.company.update({
+        where: { id: company.id },
+        data: {
+          cash: state.cash,
+          workersAssigned,
+          lastTickAt: now,
+          totalExpenses: { increment: result.wagesPaid },
+          totalRevenue: { increment: revenue },
+        },
+      }),
+      ...Object.entries(state.stocks).map(([resource, amount]) =>
+        prisma.companyResourceStock.upsert({
+          where: { companyId_resourceType: { companyId: company.id, resourceType: resource } },
+          create: { companyId: company.id, resourceType: resource, amount: amount ?? 0 },
+          update: { amount: amount ?? 0 },
+        }),
+      ),
+    ]);
   }
 
   // Loans: accrue compounding interest and check for default. Loans move
@@ -548,27 +504,39 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
   }
 
   // Contracts: settle standing supply agreements between companies, capped
-  // by scarcity (seller's goodsStock, buyer's cash) — see settleContract.
-  // Goods and gold move directly between the two companies, outside the
-  // market's flows accumulator, same as how a manual trade moves cash but a
-  // contract additionally moves the resource without touching market price.
+  // by scarcity (seller's stock of the contract's own resourceType, buyer's
+  // cash) — see settleContract. Goods and gold move directly between the
+  // two companies, outside the market's flows accumulator, same as how a
+  // manual trade moves cash but a contract additionally moves the resource
+  // without touching market price.
   const activeContracts = await prisma.contract.findMany({
     where: { cancelledAt: null, acceptedAt: { not: null }, expiresAt: { gt: now } },
     include: { seller: true, buyer: true },
   });
 
+  // Every seller's current stock of exactly the resource its contract(s)
+  // trade — a contract only ever concerns one resourceType, so this is a
+  // single lookup per (company, resource) pair, not the whole stock table.
+  const sellerStockRows = await prisma.companyResourceStock.findMany({
+    where: {
+      OR: activeContracts.map((c) => ({ companyId: c.sellerCompanyId, resourceType: c.resourceType })),
+    },
+  });
+  const sellerStockKey = (companyId: string, resourceType: string) => `${companyId}:${resourceType}`;
+  const sellerStockByKey = new Map(sellerStockRows.map((r) => [sellerStockKey(r.companyId, r.resourceType), r.amount]));
+
   // Two contracts can share the same seller (or buyer) and both get settled
-  // in this same loop. contract.seller/buyer are a snapshot from the
-  // findMany above, taken once before any of them settle — using that
-  // snapshot's goodsStock/cash directly would let every contract on that
-  // company check scarcity against the same start-of-tick number, so their
-  // transfers stack past what the company actually has (goodsStock can go
-  // negative even though no single contract over-asked). This ledger tracks
-  // the running balance across the loop so the second contract on a company
-  // sees what the first one already took.
-  const goodsStockLedger = new Map<string, number>();
+  // in this same loop. The stock/cash rows queried above are a snapshot
+  // taken once before any of them settle — using that snapshot directly
+  // would let every contract on that company check scarcity against the
+  // same start-of-tick number, so their transfers stack past what the
+  // company actually has. These ledgers track the running balance across
+  // the loop so the second contract on a company sees what the first one
+  // already took.
+  const stockLedger = new Map<string, number>();
   const cashLedger = new Map<string, number>();
-  const ledgerGoods = (companyId: string, fallback: number) => goodsStockLedger.get(companyId) ?? fallback;
+  const ledgerStock = (companyId: string, resourceType: string, fallback: number) =>
+    stockLedger.get(sellerStockKey(companyId, resourceType)) ?? fallback;
   const ledgerCash = (companyId: string, fallback: number) => cashLedger.get(companyId) ?? fallback;
 
   for (const contract of activeContracts) {
@@ -576,10 +544,14 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     const elapsedHours = Math.max(0, Math.min(MAX_CATCHUP_HOURS, rawElapsedHours));
     if (elapsedHours <= 0) continue;
 
-    const sellerGoodsStock = ledgerGoods(contract.sellerCompanyId, contract.seller.goodsStock);
+    const sellerStock = ledgerStock(
+      contract.sellerCompanyId,
+      contract.resourceType,
+      sellerStockByKey.get(sellerStockKey(contract.sellerCompanyId, contract.resourceType)) ?? 0,
+    );
     const buyerCash = ledgerCash(contract.buyerCompanyId, contract.buyer.cash);
 
-    const { transferred, grossCost } = settleContract(contract, elapsedHours, sellerGoodsStock, buyerCash);
+    const { transferred, grossCost } = settleContract(contract, elapsedHours, sellerStock, buyerCash);
     if (transferred <= 0) {
       await prisma.contract.update({ where: { id: contract.id }, data: { lastSettledAt: now } });
       continue;
@@ -591,18 +563,28 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     const tax = sellerGovernment ? grossCost * sellerGovernment.corporateTaxRate : 0;
     const netProceeds = grossCost - tax;
 
-    goodsStockLedger.set(contract.sellerCompanyId, sellerGoodsStock - transferred);
+    stockLedger.set(sellerStockKey(contract.sellerCompanyId, contract.resourceType), sellerStock - transferred);
     cashLedger.set(contract.buyerCompanyId, buyerCash - grossCost);
     cashLedger.set(contract.sellerCompanyId, ledgerCash(contract.sellerCompanyId, contract.seller.cash) + netProceeds);
 
     await prisma.$transaction([
+      prisma.companyResourceStock.upsert({
+        where: { companyId_resourceType: { companyId: contract.sellerCompanyId, resourceType: contract.resourceType } },
+        create: { companyId: contract.sellerCompanyId, resourceType: contract.resourceType, amount: sellerStock - transferred },
+        update: { amount: sellerStock - transferred },
+      }),
       prisma.company.update({
         where: { id: contract.sellerCompanyId },
-        data: { goodsStock: { decrement: transferred }, cash: { increment: netProceeds }, totalRevenue: { increment: netProceeds } },
+        data: { cash: { increment: netProceeds }, totalRevenue: { increment: netProceeds } },
+      }),
+      prisma.companyResourceStock.upsert({
+        where: { companyId_resourceType: { companyId: contract.buyerCompanyId, resourceType: contract.resourceType } },
+        create: { companyId: contract.buyerCompanyId, resourceType: contract.resourceType, amount: transferred },
+        update: { amount: { increment: transferred } },
       }),
       prisma.company.update({
         where: { id: contract.buyerCompanyId },
-        data: { inputStock: { increment: transferred }, cash: { decrement: grossCost } },
+        data: { cash: { decrement: grossCost } },
       }),
       prisma.contract.update({ where: { id: contract.id }, data: { lastSettledAt: now } }),
     ]);

@@ -4,6 +4,7 @@ import {
   computeCompanyMaxWorkers,
   computeCompanyUpgradeCost,
   type CompanyIndustryId,
+  type MarketResourceType,
 } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { getConfig } from "../gameConfigStore.js";
@@ -12,16 +13,18 @@ import type { CompanySnapshot } from "./types.js";
 
 export interface MutableCompanyState {
   cash: number;
-  inputStock: number;
-  goodsStock: number;
+  // One entry per resource this company holds any stock of — replaces the
+  // old single inputStock/goodsStock scalars, see the recipe-economy plan.
+  stocks: Partial<Record<MarketResourceType, number>>;
 }
 
 /**
- * NPC-owned companies auto-trade every tick: top up input stock when low,
- * sell off goods held above a working buffer. Directly parallel to
- * settleNpcSurplus for NPC settlements. Returns revenue earned this tick so
- * the caller can credit totalRevenue — without this, NPC company P&L (and
- * therefore stock valuation) never reflects their actual goods sales.
+ * NPC-owned companies auto-trade every tick: top up every input resource
+ * when low, sell off every output held above a working buffer. Directly
+ * parallel to settleNpcSurplus for NPC settlements. Returns revenue earned
+ * this tick so the caller can credit totalRevenue — without this, NPC
+ * company P&L (and therefore stock valuation) never reflects their actual
+ * sales.
  */
 export async function settleNpcCompanyTrading(
   company: CompanySnapshot,
@@ -32,28 +35,30 @@ export async function settleNpcCompanyTrading(
   const industry = config.COMPANY_INDUSTRIES[company.industry];
   let revenue = 0;
 
-  if (industry.inputResource && state.inputStock < config.NPC_COMPANY_TUNING.inputBuffer && state.cash > 0) {
-    const inputPrice = prices[industry.inputResource];
-    const need = config.NPC_COMPANY_TUNING.inputBuffer - state.inputStock;
+  for (const input of industry.inputs) {
+    const stock = state.stocks[input.resource] ?? 0;
+    if (stock >= config.NPC_COMPANY_TUNING.inputBuffer || state.cash <= 0) continue;
+    const inputPrice = prices[input.resource];
+    const need = config.NPC_COMPANY_TUNING.inputBuffer - stock;
     const affordable = state.cash / inputPrice;
     const toBuy = Math.max(0, Math.min(need, affordable));
     if (toBuy > 0.01) {
-      state.inputStock += toBuy;
+      state.stocks[input.resource] = stock + toBuy;
       state.cash -= toBuy * inputPrice;
-      await applyTradeImpact(industry.inputResource, "buy", toBuy);
+      await applyTradeImpact(input.resource, "buy", toBuy);
     }
   }
 
-  // contractOnly (Construction) never produces goods, so this whole
-  // sell-off never applies — its revenue is one-off government zone
-  // commissions instead of market sales.
   const goodsSellBuffer = industry.goodsSellBuffer ?? config.NPC_COMPANY_TUNING.goodsSellBuffer;
-  if (!industry.contractOnly && state.goodsStock > goodsSellBuffer) {
-    const excess = state.goodsStock - goodsSellBuffer;
-    state.goodsStock -= excess;
-    revenue = excess * prices[industry.outputResource];
-    state.cash += revenue;
-    await applyTradeImpact(industry.outputResource, "sell", excess);
+  for (const output of industry.outputs) {
+    const stock = state.stocks[output.resource] ?? 0;
+    if (stock <= goodsSellBuffer) continue;
+    const excess = stock - goodsSellBuffer;
+    state.stocks[output.resource] = stock - excess;
+    const saleRevenue = excess * prices[output.resource];
+    revenue += saleRevenue;
+    state.cash += saleRevenue;
+    await applyTradeImpact(output.resource, "sell", excess);
   }
 
   return revenue;
@@ -138,14 +143,14 @@ const NPC_COMPANY_NAME_PREFIXES = [
 ];
 
 const NPC_COMPANY_NAME_SUFFIXES: Record<CompanyIndustryId, string[]> = {
+  powerPlant: ["Power Plant", "Energy Co.", "Power Station"],
+  fertilizerPlant: ["Fertilizer Plant", "Soil Works", "AgroChem Co."],
+  farm: ["Farm", "Farmstead", "Growers"],
+  wheatFarm: ["Wheat Farm", "Farmstead", "Grain Growers"],
+  packagingPlant: ["Packaging Plant", "Packing Co.", "Container Works"],
+  flourMill: ["Flour Mill", "Milling Co.", "Grain Works"],
   bakery: ["Bakery", "Bread Co.", "Baking House"],
-  sawmill: ["Sawmill", "Timber Co.", "Lumber Works"],
-  stoneworks: ["Stoneworks", "Masonry Co.", "Quarry Works"],
-  farming: ["Farm", "Farmstead", "Growers"],
-  logging: ["Logging Camp", "Timber Camp", "Woodcutters"],
-  quarrying: ["Quarry", "Stone Pit", "Extraction Co."],
   retail: ["Retail Co.", "General Store", "Trading Post"],
-  construction: ["Construction Co.", "Builders Guild", "Masonry Works"],
 };
 
 function generateNpcCompanyName(industry: CompanyIndustryId): string {
@@ -169,7 +174,11 @@ export async function maybeFoundNpcCompany(settlementCount: number): Promise<voi
   const openNpcCompanyCount = await prisma.company.count({ where: { ownerId: null, closedAt: null } });
   if (openNpcCompanyCount >= settlementCount * config.NPC_COMPANY_TUNING.maxCompaniesPerSettlement) return;
 
-  const industryId = COMPANY_INDUSTRY_IDS[Math.floor(Math.random() * COMPANY_INDUSTRY_IDS.length)];
+  // NPC settlements have no Player/territory of their own — land-gated
+  // industries (requiresTerritory) are excluded here, same as the existing
+  // NPC bypass of zone capacity only applying to non-land-gated founding.
+  const eligible = COMPANY_INDUSTRY_IDS.filter((id) => !config.COMPANY_INDUSTRIES[id].requiresTerritory);
+  const industryId = eligible[Math.floor(Math.random() * eligible.length)];
   const industry = config.COMPANY_INDUSTRIES[industryId];
 
   await prisma.company.create({

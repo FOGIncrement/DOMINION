@@ -4,7 +4,7 @@ import NavBar from "./components/NavBar.js";
 import OfflineSummaryModal from "./components/OfflineSummaryModal.js";
 import TopBar from "./components/TopBar.js";
 import TutorialOverlay from "./components/TutorialOverlay.js";
-import { useMe } from "./api/hooks.js";
+import { useMe, useMyTerritories } from "./api/hooks.js";
 import Login from "./pages/Login.js";
 import Dashboard from "./pages/Dashboard.js";
 import Banking from "./pages/Banking.js";
@@ -22,6 +22,7 @@ import AdminAnnouncements from "./pages/AdminAnnouncements.js";
 
 export default function App() {
   const { data: me, isLoading, isError } = useMe();
+  const { data: territories, isLoading: territoriesLoading } = useMyTerritories();
 
   if (isLoading) {
     return (
@@ -35,25 +36,38 @@ export default function App() {
     return <Login />;
   }
 
+  // Every player picks exactly one territory to start — no more auto-grant.
+  // Until they've picked, every route renders the Continent picker instead
+  // of its real destination (same gating idiom NavBar already uses for the
+  // tutorial's Government lock). Held back while the territory list is
+  // still loading so this doesn't flash the picker before data arrives.
+  const needsStartingTerritory = !territoriesLoading && territories?.territories.length === 0;
+
   return (
     <div className="app-shell">
       <TopBar />
-      <NavBar />
+      <NavBar territoryLocked={needsStartingTerritory} />
       <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/companies" element={<Companies />} />
-        <Route path="/supply-chain" element={<SupplyChain />} />
-        <Route path="/market" element={<Market />} />
-        <Route path="/stocks" element={<StockMarket />} />
-        <Route path="/banking" element={<Banking />} />
-        <Route path="/government" element={<Government />} />
-        <Route path="/map" element={<Map />} />
-        <Route path="/continent" element={<Continent />} />
-        <Route path="/world" element={<World />} />
-        <Route path="/news" element={<News />} />
-        {me.isAdmin && <Route path="/admin/config" element={<AdminConfig />} />}
-        {me.isAdmin && <Route path="/admin/announcements" element={<AdminAnnouncements />} />}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {needsStartingTerritory ? (
+          <Route path="*" element={<Continent pickingMode />} />
+        ) : (
+          <>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/companies" element={<Companies />} />
+            <Route path="/supply-chain" element={<SupplyChain />} />
+            <Route path="/market" element={<Market />} />
+            <Route path="/stocks" element={<StockMarket />} />
+            <Route path="/banking" element={<Banking />} />
+            <Route path="/government" element={<Government />} />
+            <Route path="/map" element={<Map />} />
+            <Route path="/continent" element={<Continent />} />
+            <Route path="/world" element={<World />} />
+            <Route path="/news" element={<News />} />
+            {me.isAdmin && <Route path="/admin/config" element={<AdminConfig />} />}
+            {me.isAdmin && <Route path="/admin/announcements" element={<AdminAnnouncements />} />}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </>
+        )}
       </Routes>
       <OfflineSummaryModal />
       <CheatMenu />

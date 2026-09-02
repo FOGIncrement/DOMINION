@@ -23,24 +23,8 @@ export function useWorldMap() {
   return useQuery({ queryKey: ["worldMap"], queryFn: api.worldMap, refetchInterval: POLL_MS });
 }
 
-// Gated on `enabled` (only polled while the World Map's detail view for this
-// settlement is actually open) — unlike the rest of this file's queries,
-// this one is expensive to leave running in the background for no reason.
-export function useSettlementDetail(settlementId: string | null, options?: { enabled?: boolean }) {
-  return useQuery({
-    queryKey: ["settlementDetail", settlementId],
-    queryFn: () => api.settlementDetail(settlementId!),
-    enabled: !!settlementId && (options?.enabled ?? true),
-    refetchInterval: POLL_MS,
-  });
-}
-
 export function useNews() {
   return useQuery({ queryKey: ["news"], queryFn: api.news, refetchInterval: POLL_MS });
-}
-
-export function useTechs() {
-  return useQuery({ queryKey: ["techs"], queryFn: api.techs, refetchInterval: POLL_MS });
 }
 
 export function useMyCompanies() {
@@ -160,6 +144,19 @@ export function useTerritoryClaims() {
 
 export function useMyTerritories() {
   return useQuery({ queryKey: ["myTerritories"], queryFn: api.myTerritories, refetchInterval: POLL_MS });
+}
+
+// staleTime: Infinity, same reasoning as useMapPreview — the underlying
+// native-resolution raster this crops never changes without a worldgen
+// rerun + restart; only invalidated explicitly after gaining/losing land.
+export function useMyTerritoryDetail(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ["myTerritoryDetail"],
+    queryFn: api.myTerritoryDetail,
+    staleTime: Infinity,
+    retry: false,
+    enabled: options?.enabled ?? true,
+  });
 }
 
 export function useMyMilitary() {

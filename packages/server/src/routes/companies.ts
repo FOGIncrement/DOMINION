@@ -10,6 +10,7 @@ import {
   computeTargetSharePrice,
   zoneCategoryForIndustry,
   type CompanyIndustryId,
+  type MarketResourceType,
 } from "@dominion/shared";
 import { prisma } from "../db.js";
 import { requireAuth, type AuthedRequest } from "../auth/index.js";
@@ -18,7 +19,6 @@ import { applyTradeImpact } from "../simulation/market.js";
 import { getControllerLabel, getControllingPlayerId } from "../simulation/control.js";
 import { buildCorporateBondClosureOps } from "../simulation/corporateBonds.js";
 import { computeZoneCategoryUsage } from "./infrastructure.js";
-import { extractionRichnessMultiplier } from "./territory.js";
 
 export const companiesRouter = Router();
 
@@ -64,6 +64,18 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
     where: { closedAt: null, OR: [{ ownerId: playerId }, { id: { in: acquiredIds } }] },
   });
 
+  // One query for every owned company's resource stocks, grouped in memory
+  // — replaces the old single inputStock/goodsStock scalars.
+  const stockRows = await prisma.companyResourceStock.findMany({
+    where: { companyId: { in: companies.map((c) => c.id) } },
+  });
+  const stocksByCompany = new Map<string, Partial<Record<MarketResourceType, number>>>();
+  for (const row of stockRows) {
+    const bucket = stocksByCompany.get(row.companyId) ?? {};
+    bucket[row.resourceType as MarketResourceType] = row.amount;
+    stocksByCompany.set(row.companyId, bucket);
+  }
+
   const withControl = await Promise.all(
     companies.map(async (c) => {
       const industry = config.COMPANY_INDUSTRIES[c.industry as CompanyIndustryId];
@@ -75,8 +87,7 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
         industry: c.industry,
         territorySeedIndex: c.territorySeedIndex,
         cash: c.cash,
-        inputStock: c.inputStock,
-        goodsStock: c.goodsStock,
+        stocks: stocksByCompany.get(c.id) ?? {},
         workersAssigned: c.workersAssigned,
         autoStaff: c.autoStaff,
         maxWorkers: computeCompanyMaxWorkers(industry, c.level, config.COMPANY_UPGRADE_TUNING, c.facilityCount),
@@ -87,18 +98,7 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
         totalRevenue: c.totalRevenue,
         totalExpenses: c.totalExpenses,
         foundedAt: c.foundedAt,
-        // Territory-linked extraction companies produce at a
-        // richness-scaled rate (see simulation/engine.ts's tick loop) — the
-        // displayed rate has to use the same scaled industry def, or it'd
-        // show the flat default and never match actual production.
-        rates: computeCompanyHourlyRates(
-          c.territorySeedIndex != null
-            ? { ...industry, goodsPerWorkerPerHour: industry.goodsPerWorkerPerHour * extractionRichnessMultiplier(c.territorySeedIndex, industry.outputResource) }
-            : industry,
-          c.workersAssigned,
-          c.level,
-          config.COMPANY_UPGRADE_TUNING,
-        ),
+        rates: computeCompanyHourlyRates(industry, c.workersAssigned, c.level, config.COMPANY_UPGRADE_TUNING),
         isPublic: c.isPublic,
         sharePrice: c.sharePrice,
         sharesOutstanding: c.sharesOutstanding,
@@ -136,6 +136,16 @@ companiesRouter.post("/", async (req: AuthedRequest, res) => {
   }
 
   const industry = getConfig().COMPANY_INDUSTRIES[parsed.data.industry];
+
+  // Land-gated industries (Power Plant, Wheat Farm, etc.) are founded on a
+  // specific owned territory instead — see routes/territory.ts's POST
+  // /:seedIndex/found. zoneCategoryForIndustry below would throw for one of
+  // these (they're deliberately absent from every ZONE_TYPES.industries
+  // list), so this has to be checked first.
+  if (industry.requiresTerritory) {
+    res.status(400).json({ error: `${industry.name} must be founded on a territory you own, not through zoning` });
+    return;
+  }
 
   // Founding capacity is shared per zone category (industrial vs. retail),
   // not per individual industry — a baseline free allowance plus whatever
@@ -224,27 +234,25 @@ companiesRouter.post("/:id/workers", async (req: AuthedRequest, res) => {
     computeCompanyMaxWorkers(industry, company.level, config.COMPANY_UPGRADE_TUNING, company.facilityCount),
   );
 
-  // Same population cap /game/workers enforces on the building side, and
-  // the same "decreasing is always allowed" exception. Drawn from the
-  // FOUNDER's population (company.ownerId), not whoever currently controls
-  // it — a company's jobs belong to whoever founded it, same idiom the tick
-  // engine's employment/welfare accounting already uses. A company with no
-  // owner (NPC-founded) never counted toward any player's population, so
-  // there's nothing to check here.
+  // Population cap, with the same "decreasing is always allowed" exception.
+  // Drawn from the FOUNDER's population (company.ownerId), not whoever
+  // currently controls it — a company's jobs belong to whoever founded it,
+  // same idiom the tick engine's employment/welfare accounting already
+  // uses. A company with no owner (NPC-founded) never counted toward any
+  // player's population, so there's nothing to check here.
   if (company.ownerId && workersAssigned > company.workersAssigned) {
     const settlement = await prisma.settlement.findUnique({
       where: { playerId: company.ownerId },
-      include: { population: true, buildings: true },
+      include: { population: true },
     });
     if (settlement?.population) {
-      const buildingWorkers = settlement.buildings.reduce((sum, b) => sum + b.workersAssigned, 0);
       const otherCompanies = await prisma.company.findMany({
         where: { ownerId: company.ownerId, closedAt: null, id: { not: company.id } },
         select: { workersAssigned: true },
       });
       const otherCompanyWorkers = otherCompanies.reduce((sum, c) => sum + c.workersAssigned, 0);
 
-      if (buildingWorkers + otherCompanyWorkers + workersAssigned > settlement.population.count) {
+      if (otherCompanyWorkers + workersAssigned > settlement.population.count) {
         res.status(400).json({ error: "Not enough available population for that many workers" });
         return;
       }
@@ -346,7 +354,14 @@ companiesRouter.post("/:id/expand", async (req: AuthedRequest, res) => {
   res.json({ ok: true, facilityCount, cost });
 });
 
-const tradeSchema = z.object({ side: z.enum(["buy", "sell"]), quantity: z.number().positive() });
+// A company can now hold several resources (its full recipe's inputs and
+// outputs), so a trade has to say which one — buy is only valid for one of
+// the industry's actual inputs, sell only for one of its actual outputs.
+const tradeSchema = z.object({
+  side: z.enum(["buy", "sell"]),
+  resource: z.string(),
+  quantity: z.number().positive(),
+});
 
 companiesRouter.post("/:id/trade", async (req: AuthedRequest, res) => {
   const parsed = tradeSchema.safeParse(req.body);
@@ -363,23 +378,15 @@ companiesRouter.post("/:id/trade", async (req: AuthedRequest, res) => {
 
   const industry = getConfig().COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
   const { side, quantity } = parsed.data;
-
-  if (industry.contractOnly) {
-    res.status(400).json({
-      error: `${industry.name} companies don't trade goods — they earn revenue by fulfilling government zone commissions instead`,
-    });
-    return;
-  }
+  const resource = parsed.data.resource as MarketResourceType;
 
   if (side === "buy") {
-    if (!industry.inputResource) {
-      res.status(400).json({
-        error: `${industry.name} companies don't buy any input — they produce ${industry.outputResource} directly`,
-      });
+    if (!industry.inputs.some((i) => i.resource === resource)) {
+      res.status(400).json({ error: `${industry.name} companies don't use ${resource} as an input` });
       return;
     }
 
-    const market = await prisma.marketResource.findUnique({ where: { resourceType: industry.inputResource } });
+    const market = await prisma.marketResource.findUnique({ where: { resourceType: resource } });
     if (!market) {
       res.status(404).json({ error: "Market not initialized yet" });
       return;
@@ -391,24 +398,34 @@ companiesRouter.post("/:id/trade", async (req: AuthedRequest, res) => {
     }
 
     await prisma.$transaction([
-      prisma.company.update({
-        where: { id: company.id },
-        data: { cash: company.cash - cost, inputStock: company.inputStock + quantity },
+      prisma.company.update({ where: { id: company.id }, data: { cash: company.cash - cost } }),
+      prisma.companyResourceStock.upsert({
+        where: { companyId_resourceType: { companyId: company.id, resourceType: resource } },
+        create: { companyId: company.id, resourceType: resource, amount: quantity },
+        update: { amount: { increment: quantity } },
       }),
       prisma.marketTrade.create({
-        data: { companyId: company.id, resourceType: industry.inputResource, side, quantity, price: market.price },
+        data: { companyId: company.id, resourceType: resource, side, quantity, price: market.price },
       }),
     ]);
-    const newPrice = await applyTradeImpact(industry.inputResource, "buy", quantity);
+    const newPrice = await applyTradeImpact(resource, "buy", quantity);
     res.json({ ok: true, cost, newPrice });
     return;
   }
 
-  if (company.goodsStock < quantity) {
-    res.status(400).json({ error: `Not enough ${industry.outputResource} in stock to sell` });
+  if (!industry.outputs.some((o) => o.resource === resource)) {
+    res.status(400).json({ error: `${industry.name} companies don't produce ${resource}` });
     return;
   }
-  const market = await prisma.marketResource.findUnique({ where: { resourceType: industry.outputResource } });
+  const stockRow = await prisma.companyResourceStock.findUnique({
+    where: { companyId_resourceType: { companyId: company.id, resourceType: resource } },
+  });
+  const currentStock = stockRow?.amount ?? 0;
+  if (currentStock < quantity) {
+    res.status(400).json({ error: `Not enough ${resource} in stock to sell` });
+    return;
+  }
+  const market = await prisma.marketResource.findUnique({ where: { resourceType: resource } });
   if (!market) {
     res.status(404).json({ error: "Market not initialized yet" });
     return;
@@ -424,13 +441,16 @@ companiesRouter.post("/:id/trade", async (req: AuthedRequest, res) => {
       where: { id: company.id },
       data: {
         cash: company.cash + proceeds,
-        goodsStock: company.goodsStock - quantity,
         totalRevenue: { increment: grossProceeds },
         totalExpenses: { increment: tax },
       },
     }),
+    prisma.companyResourceStock.update({
+      where: { companyId_resourceType: { companyId: company.id, resourceType: resource } },
+      data: { amount: { decrement: quantity } },
+    }),
     prisma.marketTrade.create({
-      data: { companyId: company.id, resourceType: industry.outputResource, side, quantity, price: market.price },
+      data: { companyId: company.id, resourceType: resource, side, quantity, price: market.price },
     }),
   ];
   if (government && tax > 0) {
@@ -438,7 +458,7 @@ companiesRouter.post("/:id/trade", async (req: AuthedRequest, res) => {
   }
 
   await prisma.$transaction(updates);
-  const newPrice = await applyTradeImpact(industry.outputResource, "sell", quantity);
+  const newPrice = await applyTradeImpact(resource, "sell", quantity);
   res.json({ ok: true, proceeds, tax, newPrice });
 });
 

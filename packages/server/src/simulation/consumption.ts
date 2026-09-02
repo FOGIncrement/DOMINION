@@ -1,4 +1,3 @@
-import { BASE_HOUSING_CAPACITY } from "@dominion/shared";
 import { getConfig } from "../gameConfigStore.js";
 import type { SettlementSnapshot } from "./types.js";
 
@@ -9,28 +8,27 @@ export interface ConsumptionResult {
   wellFed: boolean;
 }
 
-export function housingCapacity(settlement: SettlementSnapshot): number {
-  const buildingTypes = getConfig().BUILDING_TYPES;
-  let capacity = BASE_HOUSING_CAPACITY;
-  for (const building of settlement.buildings) {
-    const def = buildingTypes[building.type];
-    if (def.populationCapacity) {
-      capacity += def.populationCapacity * building.level;
-    }
-  }
-  return capacity;
+// House (the building that used to be the only source of population
+// capacity) is gone along with the rest of the legacy building economy —
+// capacity is now a flat base plus a bonus per territory the settlement's
+// own player owns (0 for NPC settlements, which don't own territory). Reads
+// through getConfig() (not a static import) so it picks up live admin edits.
+export function housingCapacity(territoriesOwned: number): number {
+  const tuning = getConfig().HOUSING_TUNING;
+  return tuning.base + territoriesOwned * tuning.perTerritory;
 }
 
 export function computeConsumption(
   settlement: SettlementSnapshot,
   foodAvailableAfterProduction: number,
   elapsedHours: number,
+  territoriesOwned: number,
 ): ConsumptionResult {
   const populationTuning = getConfig().POPULATION_TUNING;
   const { count, happiness } = settlement.population;
   const foodNeeded = count * populationTuning.foodConsumptionPerCapitaPerHour * elapsedHours;
   const wellFed = foodAvailableAfterProduction >= foodNeeded;
-  const capacity = housingCapacity(settlement);
+  const capacity = housingCapacity(territoriesOwned);
 
   let newPopulationCount = count;
   let newHappiness = happiness;
@@ -58,34 +56,3 @@ export function computeConsumption(
   };
 }
 
-export interface WorkerAdjustment {
-  buildingId: string;
-  workersAssigned: number;
-}
-
-/**
- * If population has shrunk below the total workers currently assigned
- * across all buildings (e.g. starvation), proportionally lay off workers so
- * the two stay consistent. Without this, buildings keep holding workers the
- * settlement no longer has, and the player can't even unassign them — the
- * population cap check on increasing workers blocks decreasing too since
- * the existing total already exceeds it.
- */
-export function reconcileWorkersWithPopulation(
-  settlement: SettlementSnapshot,
-  newPopulationCount: number,
-): WorkerAdjustment[] {
-  const totalAssigned = settlement.buildings.reduce((sum, b) => sum + b.workersAssigned, 0);
-  if (totalAssigned <= newPopulationCount) return [];
-
-  const scale = newPopulationCount / totalAssigned;
-  const adjustments: WorkerAdjustment[] = [];
-  for (const building of settlement.buildings) {
-    if (building.workersAssigned <= 0) continue;
-    const newCount = Math.floor(building.workersAssigned * scale);
-    if (newCount !== building.workersAssigned) {
-      adjustments.push({ buildingId: building.id, workersAssigned: newCount });
-    }
-  }
-  return adjustments;
-}

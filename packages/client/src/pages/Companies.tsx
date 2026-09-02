@@ -26,10 +26,45 @@ import {
 } from "../api/hooks.js";
 import { CompanyAvatar, INDUSTRY_META } from "../industryMeta.js";
 
-// RESOURCE_LABELS covers settlement-holdable resources only — "goods" is a
-// market resource with no settlement equivalent, so it needs its own entry
-// here (mirrors the same extension Market.tsx already does).
-const OUTPUT_LABELS: Record<MarketResourceType, string> = { ...RESOURCE_LABELS, goods: "Goods" };
+// RESOURCE_LABELS covers settlement-holdable resources only — everything
+// else is a market-only resource (recipe economy Slice 1) with no
+// settlement equivalent, so those need their own entries here (mirrors the
+// same extension SupplyChain.tsx and Market.tsx already do).
+const OUTPUT_LABELS: Record<MarketResourceType, string> = {
+  ...RESOURCE_LABELS,
+  goods: "Goods",
+  electricity: "Electricity",
+  fertilizer: "Fertilizer",
+  wheat: "Wheat",
+  flour: "Flour",
+  packaging: "Packaging",
+  bread: "Bread",
+};
+
+// Formats a recipe's inputs[]/outputs[] as a per-worker-per-hour summary —
+// used on the founding form, before any company (and thus any worker count
+// or rates.*) exists yet.
+function formatRecipe(components: { resource: MarketResourceType; perWorkerPerHour: number }[]): string {
+  if (components.length === 0) return "nothing";
+  return components.map((c) => `${c.perWorkerPerHour} ${OUTPUT_LABELS[c.resource].toLowerCase()}`).join(" + ");
+}
+
+// A company can now buy several distinct inputs and sell several distinct
+// outputs, so a supply contract needs to know which single resource +
+// direction it's about — one option per resource this industry either
+// sells (an output) or buys (an input).
+interface ResourceOption {
+  key: string; // `${role}:${resource}`, unique across an industry's whole recipe
+  role: "sell" | "buy";
+  resource: MarketResourceType;
+}
+
+function resourceOptionsFor(industry: CompanyIndustryDef): ResourceOption[] {
+  return [
+    ...industry.outputs.map((o) => ({ key: `sell:${o.resource}`, role: "sell" as const, resource: o.resource })),
+    ...industry.inputs.map((i) => ({ key: `buy:${i.resource}`, role: "buy" as const, resource: i.resource })),
+  ];
+}
 
 type Status = "healthy" | "attention" | "critical" | "neutral";
 
@@ -64,16 +99,17 @@ function deriveAlerts(company: MyCompany, industry: CompanyIndustryDef, contract
     alerts.push({ text: `Cash is negative — ${Math.abs(company.cash).toFixed(0)}g owed`, severity: "critical" });
   }
   if (company.maxWorkers > 0 && company.workersAssigned === 0) {
-    alerts.push({
-      text: industry.contractOnly ? "No workers assigned — not staffed for contracts" : "No workers assigned — producing nothing",
-      severity: "attention",
-    });
+    alerts.push({ text: "No workers assigned — producing nothing", severity: "attention" });
   }
-  if (industry.inputResource && company.rates.inputPerHour > 0 && company.inputStock < company.rates.inputPerHour) {
-    alerts.push({
-      text: `${RESOURCE_LABELS[industry.inputResource as ResourceType]} stock critically low — production will stall soon`,
-      severity: "critical",
-    });
+  for (const input of industry.inputs) {
+    const rate = company.rates.inputs[input.resource] ?? 0;
+    const stock = company.stocks[input.resource] ?? 0;
+    if (rate > 0 && stock < rate) {
+      alerts.push({
+        text: `${OUTPUT_LABELS[input.resource]} stock critically low — production will stall soon`,
+        severity: "critical",
+      });
+    }
   }
   if (company.maxWorkers > 0 && company.workersAssigned >= company.maxWorkers && company.upgradeCost !== null) {
     alerts.push({ text: "Workforce at capacity — upgrade to grow further", severity: "attention" });
@@ -109,6 +145,8 @@ function CompanyActions({ company }: { company: MyCompany }) {
   const industry = COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
   const queryClient = useQueryClient();
   const { data: gameState } = useGameState();
+  const [buyResource, setBuyResource] = useState<MarketResourceType | "">(industry.inputs[0]?.resource ?? "");
+  const [sellResource, setSellResource] = useState<MarketResourceType | "">(industry.outputs[0]?.resource ?? "");
   const [buyQty, setBuyQty] = useState(20);
   const [sellQty, setSellQty] = useState(10);
   const [withdrawAmt, setWithdrawAmt] = useState(10);
@@ -124,21 +162,21 @@ function CompanyActions({ company }: { company: MyCompany }) {
   };
 
   const buy = useMutation({
-    mutationFn: () => api.tradeCompany(company.id, "buy", buyQty),
+    mutationFn: () => api.tradeCompany(company.id, "buy", buyResource as MarketResourceType, buyQty),
     onSuccess: (res) => {
       setError(null);
-      setMessage(`Bought ${buyQty} ${industry.inputResource ? OUTPUT_LABELS[industry.inputResource] : ""} for ${res.cost?.toFixed(0)} gold.`);
+      setMessage(`Bought ${buyQty} ${buyResource ? OUTPUT_LABELS[buyResource].toLowerCase() : ""} for ${res.cost?.toFixed(0)} gold.`);
       invalidate();
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "Buy failed"),
   });
 
   const sell = useMutation({
-    mutationFn: () => api.tradeCompany(company.id, "sell", sellQty),
+    mutationFn: () => api.tradeCompany(company.id, "sell", sellResource as MarketResourceType, sellQty),
     onSuccess: (res) => {
       setError(null);
       const taxNote = res.tax && res.tax > 0 ? ` (${res.tax.toFixed(0)}g corporate tax)` : "";
-      setMessage(`Sold ${sellQty} ${OUTPUT_LABELS[industry.outputResource]} for ${res.proceeds?.toFixed(0)} gold${taxNote}.`);
+      setMessage(`Sold ${sellQty} ${sellResource ? OUTPUT_LABELS[sellResource].toLowerCase() : ""} for ${res.proceeds?.toFixed(0)} gold${taxNote}.`);
       invalidate();
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "Sell failed"),
@@ -220,26 +258,54 @@ function CompanyActions({ company }: { company: MyCompany }) {
       {error && <div className="auth-error">{error}</div>}
       {message && !error && <div className="suggestion">{message}</div>}
 
-      {!industry.contractOnly && (
-        <div className="company-card__actions">
-          {industry.inputResource ? (
-            <div className="trade-row">
-              <input type="number" min={1} value={buyQty} onChange={(e) => setBuyQty(Math.max(1, Number(e.target.value)))} />
-              <button className="btn" disabled={buy.isPending} onClick={() => buy.mutate()}>
-                Buy {industry.inputResource}
-              </button>
-            </div>
-          ) : (
-            <div />
-          )}
+      <div className="company-card__actions">
+        {industry.inputs.length > 0 ? (
           <div className="trade-row">
-            <input type="number" min={1} value={sellQty} onChange={(e) => setSellQty(Math.max(1, Number(e.target.value)))} />
-            <button className="btn" disabled={sell.isPending} onClick={() => sell.mutate()}>
-              Sell {OUTPUT_LABELS[industry.outputResource].toLowerCase()}
+            {industry.inputs.length > 1 ? (
+              <select value={buyResource} onChange={(e) => setBuyResource(e.target.value as MarketResourceType)}>
+                {industry.inputs.map((i) => (
+                  <option key={i.resource} value={i.resource}>
+                    {OUTPUT_LABELS[i.resource]}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="suggestion" style={{ padding: 0, border: "none" }}>
+                Buy {OUTPUT_LABELS[industry.inputs[0].resource].toLowerCase()}
+              </span>
+            )}
+            <input type="number" min={1} value={buyQty} onChange={(e) => setBuyQty(Math.max(1, Number(e.target.value)))} />
+            <button className="btn" disabled={buy.isPending || !buyResource} onClick={() => buy.mutate()}>
+              Buy
             </button>
           </div>
-        </div>
-      )}
+        ) : (
+          <div />
+        )}
+        {industry.outputs.length > 0 ? (
+          <div className="trade-row">
+            {industry.outputs.length > 1 ? (
+              <select value={sellResource} onChange={(e) => setSellResource(e.target.value as MarketResourceType)}>
+                {industry.outputs.map((o) => (
+                  <option key={o.resource} value={o.resource}>
+                    {OUTPUT_LABELS[o.resource]}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="suggestion" style={{ padding: 0, border: "none" }}>
+                Sell {OUTPUT_LABELS[industry.outputs[0].resource].toLowerCase()}
+              </span>
+            )}
+            <input type="number" min={1} value={sellQty} onChange={(e) => setSellQty(Math.max(1, Number(e.target.value)))} />
+            <button className="btn" disabled={sell.isPending || !sellResource} onClick={() => sell.mutate()}>
+              Sell
+            </button>
+          </div>
+        ) : (
+          <div />
+        )}
+      </div>
 
       <div className="trade-row" style={{ flexWrap: "wrap" }}>
         <input type="number" min={1} value={withdrawAmt} onChange={(e) => setWithdrawAmt(Math.max(1, Number(e.target.value)))} style={{ width: 90 }} />
@@ -312,28 +378,24 @@ function OverviewTab({ company, contracts, onGoToWorkforce }: { company: MyCompa
             {Math.floor(company.cash)}g
           </div>
         </div>
-        {industry.inputResource && (
-          <div className="cc-stat-tile">
-            <div className="cc-stat-tile__label">{RESOURCE_LABELS[industry.inputResource as ResourceType]} stock</div>
-            <div className="cc-stat-tile__value">{Math.floor(company.inputStock)}</div>
+        {(Object.entries(company.stocks) as [MarketResourceType, number][]).map(([resource, amount]) => (
+          <div className="cc-stat-tile" key={resource}>
+            <div className="cc-stat-tile__label">{OUTPUT_LABELS[resource]} stock</div>
+            <div className="cc-stat-tile__value">{Math.floor(amount)}</div>
           </div>
-        )}
-        {!industry.contractOnly && (
-          <div className="cc-stat-tile">
-            <div className="cc-stat-tile__label">{OUTPUT_LABELS[industry.outputResource]} stock</div>
-            <div className="cc-stat-tile__value">{Math.floor(company.goodsStock)}</div>
-          </div>
-        )}
+        ))}
         <div className="cc-stat-tile">
           <div className="cc-stat-tile__label">Lifetime profit</div>
           <div className="cc-stat-tile__value" style={{ color: netProfit >= 0 ? "var(--success)" : "var(--critical)" }}>
             {netProfit.toFixed(0)}g
           </div>
         </div>
-        {!industry.contractOnly && (
+        {industry.outputs.length > 0 && (
           <div className="cc-stat-tile">
             <div className="cc-stat-tile__label">Production</div>
-            <div className="cc-stat-tile__value">{company.rates.goodsPerHour.toFixed(1)}/hr</div>
+            <div className="cc-stat-tile__value">
+              {industry.outputs.map((o) => `${(company.rates.outputs[o.resource] ?? 0).toFixed(1)}/hr`).join(", ")}
+            </div>
           </div>
         )}
         <div className="cc-stat-tile">
@@ -363,7 +425,6 @@ function OverviewTab({ company, contracts, onGoToWorkforce }: { company: MyCompa
 }
 
 function LostControlOverview({ company }: { company: MyCompany }) {
-  const industry = COMPANY_INDUSTRIES[company.industry as CompanyIndustryId];
   const netProfit = company.totalRevenue - company.totalExpenses;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -376,12 +437,12 @@ function LostControlOverview({ company }: { company: MyCompany }) {
           <div className="cc-stat-tile__label">Cash</div>
           <div className="cc-stat-tile__value">{Math.floor(company.cash)}g</div>
         </div>
-        {!industry.contractOnly && (
-          <div className="cc-stat-tile">
-            <div className="cc-stat-tile__label">{OUTPUT_LABELS[industry.outputResource]} stock</div>
-            <div className="cc-stat-tile__value">{Math.floor(company.goodsStock)}</div>
+        {(Object.entries(company.stocks) as [MarketResourceType, number][]).map(([resource, amount]) => (
+          <div className="cc-stat-tile" key={resource}>
+            <div className="cc-stat-tile__label">{OUTPUT_LABELS[resource]} stock</div>
+            <div className="cc-stat-tile__value">{Math.floor(amount)}</div>
           </div>
-        )}
+        ))}
         <div className="cc-stat-tile">
           <div className="cc-stat-tile__label">Lifetime profit</div>
           <div className="cc-stat-tile__value" style={{ color: netProfit >= 0 ? "var(--success)" : "var(--critical)" }}>
@@ -508,9 +569,11 @@ function WorkforceTab({ company }: { company: MyCompany }) {
         <p className="suggestion">No available population to hire — everyone's already assigned to a building or company.</p>
       )}
       <p className="suggestion">
-        {industry.contractOnly
-          ? "Workers keep this company staffed and ready to fulfill government zone commissions."
-          : `Each worker produces ${(company.rates.goodsPerHour / Math.max(1, company.workersAssigned)).toFixed(2)} ${OUTPUT_LABELS[industry.outputResource].toLowerCase()}/hr on average.`}
+        {industry.outputs.length > 0
+          ? `Each worker produces ${industry.outputs
+              .map((o) => `${((company.rates.outputs[o.resource] ?? 0) / Math.max(1, company.workersAssigned)).toFixed(2)} ${OUTPUT_LABELS[o.resource].toLowerCase()}`)
+              .join(", ")}/hr on average.`
+          : "Workers keep this company staffed."}
       </p>
     </div>
   );
@@ -824,13 +887,17 @@ function CommandCenter({ onProposeTo, jumpToId, onJumpHandled }: CommandCenterPr
 
               {activeTab === "overview" &&
                 (selectedMine?.controlledByMe ? (
-                  <OverviewTab company={selectedMine} contracts={contracts} onGoToWorkforce={() => setActiveTab("workforce")} />
+                  // Keyed on company id so CompanyActions' buy/sell resource
+                  // picker (initialized once from this company's industry)
+                  // resets cleanly instead of carrying over a resource that
+                  // may not exist on whichever company is selected next.
+                  <OverviewTab key={selectedMine.id} company={selectedMine} contracts={contracts} onGoToWorkforce={() => setActiveTab("workforce")} />
                 ) : selectedMine ? (
                   <LostControlOverview company={selectedMine} />
                 ) : (
                   <RivalOverview company={selectedRival!} onPropose={() => onProposeTo(selectedRival!.id)} />
                 ))}
-              {activeTab === "workforce" && selectedMine?.controlledByMe && <WorkforceTab company={selectedMine} />}
+              {activeTab === "workforce" && selectedMine?.controlledByMe && <WorkforceTab key={selectedMine.id} company={selectedMine} />}
               {activeTab === "contracts" && (
                 <ContractsTab
                   companyId={(selectedMine ?? selectedRival)!.id}
@@ -852,8 +919,13 @@ function FoundCompanyForm() {
   const { data: gameState } = useGameState();
   const { data: zones } = useZones();
   const { data: tutorial } = useTutorial();
+  // Land-gated industries (powerPlant, fertilizerPlant, wheatFarm,
+  // packagingPlant) are founded on owned territory via the Continent page's
+  // LandCompanyFounder, not here — this form only offers the zoning-gated
+  // ones, matching what routes/companies.ts's POST / actually accepts.
+  const zoningGatedIndustries = COMPANY_INDUSTRY_IDS.filter((id) => !COMPANY_INDUSTRIES[id].requiresTerritory);
   const [name, setName] = useState("");
-  const [industry, setIndustry] = useState<CompanyIndustryId>("bakery");
+  const [industry, setIndustry] = useState<CompanyIndustryId>("retail");
   const [seedMoney, setSeedMoney] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
@@ -864,7 +936,7 @@ function FoundCompanyForm() {
   useEffect(() => {
     if (!appliedTutorialDefault.current && tutorial?.step === "found_company") {
       appliedTutorialDefault.current = true;
-      setIndustry("construction");
+      setIndustry("retail");
     }
   }, [tutorial?.step]);
 
@@ -879,7 +951,7 @@ function FoundCompanyForm() {
       queryClient.invalidateQueries({ queryKey: ["gameState"] });
       queryClient.invalidateQueries({ queryKey: ["allCompanies"] });
       queryClient.invalidateQueries({ queryKey: ["zones"] });
-      if (tutorial?.step === "found_company" && industry === "construction") {
+      if (tutorial?.step === "found_company" && industry === "retail") {
         api.tutorialAdvance("found_company").then(() => queryClient.invalidateQueries({ queryKey: ["tutorial"] }));
       }
     },
@@ -906,9 +978,9 @@ function FoundCompanyForm() {
           style={{ width: 200 }}
         />
         <select value={industry} onChange={(e) => setIndustry(e.target.value as CompanyIndustryId)}>
-          {Object.values(COMPANY_INDUSTRIES).map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.name}
+          {zoningGatedIndustries.map((id) => (
+            <option key={id} value={id}>
+              {COMPANY_INDUSTRIES[id].name}
             </option>
           ))}
         </select>
@@ -933,8 +1005,9 @@ function FoundCompanyForm() {
         </button>
       </div>
       <p className="suggestion" style={{ marginTop: 8 }}>
-        {def.description} Seed money is extra starting cash beyond the {def.foundingCost}g founding
-        cost — a cushion against payroll going negative. {!canAfford && "Not enough gold yet."}
+        {def.description} Recipe: {formatRecipe(def.inputs)} → {formatRecipe(def.outputs)} per worker/hr. Seed money
+        is extra starting cash beyond the {def.foundingCost}g founding cost — a cushion against payroll going
+        negative. {!canAfford && "Not enough gold yet."}
       </p>
       {zoneCapacity && (
         <p className="suggestion" style={{ marginTop: 4, color: atCapacity ? "var(--critical)" : undefined }}>
@@ -952,6 +1025,7 @@ function SupplyContractForm({ presetCounterpartyId }: { presetCounterpartyId: st
   const { data: allCompanies } = useAllCompanies();
   const { data: market } = useMarket();
   const [myCompanyId, setMyCompanyId] = useState("");
+  const [resourceKey, setResourceKey] = useState("");
   const [counterpartyId, setCounterpartyId] = useState("");
   const [quantityPerHour, setQuantityPerHour] = useState(5);
   const [pricePerUnit, setPricePerUnit] = useState(1);
@@ -959,63 +1033,40 @@ function SupplyContractForm({ presetCounterpartyId }: { presetCounterpartyId: st
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  // Contract-only companies (Construction) don't produce or buy anything —
-  // they earn revenue exclusively through government zone commissions, not
-  // supply contracts — so they're excluded from "my company" entirely,
-  // not just left to fall through to "no eligible counterparties."
-  const companies = (myCompanies?.companies ?? []).filter(
-    (c) => !COMPANY_INDUSTRIES[c.industry as CompanyIndustryId].contractOnly,
-  );
-  const world = (allCompanies?.companies ?? []).filter(
-    (c) => !COMPANY_INDUSTRIES[c.industry as CompanyIndustryId].contractOnly,
-  );
+  const companies = myCompanies?.companies ?? [];
+  const world = allCompanies?.companies ?? [];
   const myCompanyIds = new Set(companies.map((c) => c.id));
 
   const mine = companies.find((c) => c.id === myCompanyId);
   const mineIndustry = mine ? COMPANY_INDUSTRIES[mine.industry as CompanyIndustryId] : null;
-  // An extraction industry (no inputResource) can only ever be a seller; a
-  // processing industry (has inputResource) is treated here as only ever a
-  // buyer of that input. Retail is the one exception this simplification
-  // doesn't fully cover — it has an inputResource (buys wholesale food) but
-  // could conceptually also sell food — so a Contract where "my company" is
-  // a Retail store can only be proposed in the buyer role from this side.
-  // Not a hard block: the same Contract is still createable by picking the
-  // counterparty as "my company" instead (eligibleCounterparties below
-  // already matches correctly either way).
-  const mineIsSeller = mineIndustry ? !mineIndustry.inputResource : false;
-  const contractResource = mineIndustry ? (mineIsSeller ? mineIndustry.outputResource : mineIndustry.inputResource) : null;
-  const marketRate = contractResource
-    ? (market?.resources.find((r) => r.resourceType === contractResource)?.price ?? null)
-    : null;
-
-  const eligibleCounterparties = world.filter((c) => {
-    if (c.id === myCompanyId) return false;
-    const industry = COMPANY_INDUSTRIES[c.industry as CompanyIndustryId];
-    if (!mineIndustry) return false;
-    return mineIsSeller ? industry.inputResource === mineIndustry.outputResource : industry.outputResource === mineIndustry.inputResource;
-  });
 
   const presetCounterparty = presetCounterpartyId ? world.find((c) => c.id === presetCounterpartyId) : undefined;
+  const presetCounterpartyIndustry = presetCounterparty ? COMPANY_INDUSTRIES[presetCounterparty.industry as CompanyIndustryId] : null;
   // Jumping in from "Propose Contract" on a specific company's detail page
-  // already tells us the counterparty — narrow "My company..." to only
-  // companies that could actually deal with it. The counterparty dropdown's
-  // own options are derived from mineIndustry (below), so it can only ever
-  // show this preset value once myCompanyId is one of these — that's why
-  // this list, not the full roster, drives the "My company..." select
-  // whenever a preset is active.
-  const eligibleForPreset = presetCounterparty
-    ? companies.filter((c) => {
+  // already tells us the counterparty — every (my company, resource,
+  // buy/sell direction) combination that could actually deal with them,
+  // computed once so both the company dropdown and the resource dropdown
+  // can narrow to only real matches.
+  const presetMatches: { companyId: string; option: ResourceOption }[] = presetCounterpartyIndustry
+    ? companies.flatMap((c) => {
         const industry = COMPANY_INDUSTRIES[c.industry as CompanyIndustryId];
-        const counterpartyIndustry = COMPANY_INDUSTRIES[presetCounterparty.industry as CompanyIndustryId];
-        const isSeller = !industry.inputResource;
-        return isSeller ? industry.outputResource === counterpartyIndustry.inputResource : industry.inputResource === counterpartyIndustry.outputResource;
+        return resourceOptionsFor(industry)
+          .filter((opt) =>
+            opt.role === "sell"
+              ? presetCounterpartyIndustry.inputs.some((i) => i.resource === opt.resource)
+              : presetCounterpartyIndustry.outputs.some((o) => o.resource === opt.resource),
+          )
+          .map((option) => ({ companyId: c.id, option }));
       })
-    : null;
+    : [];
 
   useEffect(() => {
-    if (!presetCounterpartyId || !eligibleForPreset) return;
+    if (!presetCounterpartyId || presetMatches.length === 0) return;
     setCounterpartyId(presetCounterpartyId);
-    if (eligibleForPreset.length === 1) setMyCompanyId(eligibleForPreset[0].id);
+    if (presetMatches.length === 1) {
+      setMyCompanyId(presetMatches[0].companyId);
+      setResourceKey(presetMatches[0].option.key);
+    }
     document.getElementById("supply-contract-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
     // Deliberately re-run only when the preset target changes, not on every
     // companies/world refetch — otherwise a manual myCompanyId choice the
@@ -1024,13 +1075,36 @@ function SupplyContractForm({ presetCounterpartyId }: { presetCounterpartyId: st
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetCounterpartyId]);
 
-  const myCompanyOptions = presetCounterparty ? eligibleForPreset ?? [] : companies;
+  const myCompanyOptions = presetCounterparty ? companies.filter((c) => presetMatches.some((m) => m.companyId === c.id)) : companies;
+
+  const resourceOptions = presetCounterparty
+    ? presetMatches.filter((m) => m.companyId === myCompanyId).map((m) => m.option)
+    : mineIndustry
+      ? resourceOptionsFor(mineIndustry)
+      : [];
+
+  const selectedOption = resourceOptions.find((o) => o.key === resourceKey) ?? null;
+  const mineIsSeller = selectedOption?.role === "sell";
+  const contractResource = selectedOption?.resource ?? null;
+
+  const marketRate = contractResource
+    ? (market?.resources.find((r) => r.resourceType === contractResource)?.price ?? null)
+    : null;
+
+  const eligibleCounterparties = world.filter((c) => {
+    if (c.id === myCompanyId || !contractResource) return false;
+    const industry = COMPANY_INDUSTRIES[c.industry as CompanyIndustryId];
+    return mineIsSeller
+      ? industry.inputs.some((i) => i.resource === contractResource)
+      : industry.outputs.some((o) => o.resource === contractResource);
+  });
 
   const create = useMutation({
     mutationFn: () => {
+      if (!contractResource) throw new Error("Pick a resource first");
       const sellerCompanyId = mineIsSeller ? myCompanyId : counterpartyId;
       const buyerCompanyId = mineIsSeller ? counterpartyId : myCompanyId;
-      return api.createContract(sellerCompanyId, buyerCompanyId, quantityPerHour, pricePerUnit, termHours);
+      return api.createContract(sellerCompanyId, buyerCompanyId, contractResource, quantityPerHour, pricePerUnit, termHours);
     },
     onSuccess: (res) => {
       setError(null);
@@ -1056,8 +1130,8 @@ function SupplyContractForm({ presetCounterpartyId }: { presetCounterpartyId: st
       {message && !error && <div className="suggestion">{message}</div>}
       {presetCounterparty && (
         <div className="suggestion">
-          {eligibleForPreset && eligibleForPreset.length > 0
-            ? `Proposing to ${presetCounterparty.name} — pick which of your companies deals with them.`
+          {presetMatches.length > 0
+            ? `Proposing to ${presetCounterparty.name} — pick which of your companies (and which resource) deals with them.`
             : `None of your companies can deal with ${presetCounterparty.name} right now.`}
         </div>
       )}
@@ -1066,6 +1140,7 @@ function SupplyContractForm({ presetCounterpartyId }: { presetCounterpartyId: st
           value={myCompanyId}
           onChange={(e) => {
             setMyCompanyId(e.target.value);
+            setResourceKey("");
             if (!presetCounterparty) setCounterpartyId("");
           }}
         >
@@ -1076,8 +1151,23 @@ function SupplyContractForm({ presetCounterpartyId }: { presetCounterpartyId: st
             </option>
           ))}
         </select>
-        <span className="suggestion">{mine ? (mineIsSeller ? "sells to" : "buys from") : ""}</span>
-        <select value={counterpartyId} onChange={(e) => setCounterpartyId(e.target.value)} disabled={!myCompanyId}>
+        <select
+          value={resourceKey}
+          onChange={(e) => {
+            setResourceKey(e.target.value);
+            if (!presetCounterparty) setCounterpartyId("");
+          }}
+          disabled={!myCompanyId}
+        >
+          <option value="">Resource...</option>
+          {resourceOptions.map((o) => (
+            <option key={o.key} value={o.key}>
+              {o.role === "sell" ? "Sell" : "Buy"} {OUTPUT_LABELS[o.resource]}
+            </option>
+          ))}
+        </select>
+        <span className="suggestion">{selectedOption ? (mineIsSeller ? "sells to" : "buys from") : ""}</span>
+        <select value={counterpartyId} onChange={(e) => setCounterpartyId(e.target.value)} disabled={!contractResource}>
           <option value="">Counterparty company...</option>
           {eligibleCounterparties.map((c) => (
             <option key={c.id} value={c.id}>
@@ -1111,17 +1201,15 @@ function SupplyContractForm({ presetCounterpartyId }: { presetCounterpartyId: st
         </select>
         <button
           className="btn btn--accent"
-          disabled={!myCompanyId || !counterpartyId || create.isPending}
+          disabled={!myCompanyId || !contractResource || !counterpartyId || create.isPending}
           onClick={() => create.mutate()}
         >
           Propose Contract
         </button>
       </div>
-      {myCompanyId && eligibleCounterparties.length === 0 && (
+      {contractResource && eligibleCounterparties.length === 0 && (
         <p className="suggestion" style={{ marginTop: 8 }}>
-          No company in the world can {mineIsSeller ? "use" : "supply"}{" "}
-          {mineIndustry ? OUTPUT_LABELS[mineIsSeller ? mineIndustry.outputResource : mineIndustry.inputResource!] : "this"}{" "}
-          right now.
+          No company in the world can {mineIsSeller ? "use" : "supply"} {OUTPUT_LABELS[contractResource]} right now.
         </p>
       )}
       <p className="suggestion" style={{ marginTop: 8 }}>

@@ -27,15 +27,13 @@ governmentRouter.get("/mine", async (req: AuthedRequest, res) => {
 
   const settlement = await prisma.settlement.findUnique({
     where: { playerId },
-    include: { population: true, buildings: true },
+    include: { population: true },
   });
   const companies = await prisma.company.findMany({ where: { ownerId: playerId, closedAt: null } });
 
-  const buildingWorkers = settlement?.buildings.reduce((sum, b) => sum + b.workersAssigned, 0) ?? 0;
   const companyWorkers = companies.reduce((sum, c) => sum + c.workersAssigned, 0);
   const populationCount = settlement?.population?.count ?? 0;
-  const employedCount = buildingWorkers + companyWorkers;
-  const unemployedCount = computeUnemployment(populationCount, employedCount);
+  const unemployedCount = computeUnemployment(populationCount, companyWorkers);
 
   res.json({
     treasury: government.treasury,
@@ -45,7 +43,7 @@ governmentRouter.get("/mine", async (req: AuthedRequest, res) => {
     maxRate: MAX_RATE,
     maxWelfareRate: MAX_WELFARE_RATE,
     populationCount,
-    employedCount,
+    employedCount: companyWorkers,
     unemployedCount,
     welfareCostPerHour: computeWelfareCostPerHour(unemployedCount, government.welfareRatePerUnemployedPerHour),
   });

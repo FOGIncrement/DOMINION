@@ -1,6 +1,4 @@
 import type {
-  BuildingTypeDef,
-  BuildingTypeId,
   CompanyIndustryDef,
   CompanyIndustryId,
   EventTemplateDef,
@@ -8,19 +6,20 @@ import type {
   NpcArchetypeDef,
   NpcArchetype,
   ResourceType,
-  TechDef,
-  TechId,
   ZoneDef,
   ZoneTypeId,
 } from "./types.js";
 import type { BiomeId } from "./continentTerrain.js";
 
+// Realistic-scale balance pass (2026-09-03): starting cash needs to cover
+// founding one Farm + one Power Plant (see COMPANY_INDUSTRIES below,
+// foundingCost 4000 each) plus a wage cushion once the player picks their
+// one starting territory (see TERRITORY_TUNING.extractionStarterGrant) —
+// 2000 here + 7000 from that grant = 9000 available, ~1000 left over.
 export const STARTING_SETTLEMENT = {
   population: 25,
   food: 140,
-  wood: 80,
-  stone: 40,
-  gold: 300,
+  gold: 2000,
   storageCap: 500,
 };
 
@@ -28,8 +27,9 @@ export const STARTING_SETTLEMENT = {
 // a real starting seed here, a brand-new government can't afford to
 // commission anything at all, since it has no organic income yet (tax
 // collection and bond issuance both need real trade activity or another
-// player first).
-export const STARTING_TREASURY = 250;
+// player first). Also the pool territory purchases (see TERRITORY_TUNING.
+// buyPricePerKm2) and army-raising spend from.
+export const STARTING_TREASURY = 3000;
 
 // Two-level grid for the shared territory map: every settlement (player or
 // NPC) claims exactly one same-sized slot on the shared WORLD_PLOT grid
@@ -49,184 +49,154 @@ export const PLOT_ZONING_SIZE = 10;
 // this can still be retuned later without touching every call site.
 export const CELLS_PER_ZONE_SLOT = 1;
 
-export const BUILDING_TYPES: Record<BuildingTypeId, BuildingTypeDef> = {
-  house: {
-    id: "house",
-    name: "House",
-    description: "Provides housing so your population can grow further.",
-    cost: { wood: 20 },
-    maxWorkers: 0,
-    populationCapacity: 10,
+// Slice 1 of the recipe-based production economy. Land-gated industries
+// (requiresTerritory: true) are founded via routes/territory.ts's POST
+// /:seedIndex/found, one per owned territory, no zoning capacity needed —
+// zoning-gated ones (flourMill, bakery, retail) still go through the
+// ordinary routes/companies.ts founding path. The other ~27 industries
+// from the user's full list (mines, wells, processing plants, and
+// manufacturers) follow in a later pass now that the recipe mechanism
+// itself is proven on this one real chain: wheat -> flour -> bread, with
+// power/fertilizer/packaging filling gaps the user's list didn't specify a
+// producer for. `farm` was added alongside the legacy building-economy
+// removal (2026-09-03) to replace the old Farm building as the settlement's
+// food supply. Every land-gated producer except powerPlant itself now also
+// draws electricity — "each company type should have a cost for total
+// energy required to run it" — powerPlant is exempt since it produces
+// electricity and shouldn't consume its own output. Founding costs, wages,
+// and market prices are realistic-scale Euros (see STARTING_SETTLEMENT/
+// STARTING_TREASURY above for how starting cash is sized against these).
+export const COMPANY_INDUSTRIES: Record<CompanyIndustryId, CompanyIndustryDef> = {
+  powerPlant: {
+    id: "powerPlant",
+    name: "Power Plant",
+    description: "Generates electricity on your own land — no input required.",
+    inputs: [],
+    outputs: [{ resource: "electricity", perWorkerPerHour: 4 }],
+    wagePerWorkerPerHour: 18,
+    maxWorkers: 4,
+    foundingCost: 4000,
+    requiresTerritory: true,
   },
+  // Replaces the old Farm building as the settlement's food supply — Land
+  // -> Food, same shape as wheatFarm. wheatFarm's `wheat` commodity chain
+  // (-> flour -> bread) stays separate and unaffected; this produces the
+  // settlement-consumable `food` resource directly.
   farm: {
     id: "farm",
     name: "Farm",
-    description: "Assign workers to grow food for your settlement.",
-    cost: { wood: 30 },
-    maxWorkers: 3,
-    producesResource: "food",
-    productionPerWorkerPerHour: 4,
-    retiredForConstruction: true,
+    description: "Grows food on your own land to feed your settlement (and sell on the open market).",
+    inputs: [{ resource: "electricity", perWorkerPerHour: 1.5 }],
+    outputs: [{ resource: "food", perWorkerPerHour: 4 }],
+    wagePerWorkerPerHour: 18,
+    maxWorkers: 4,
+    foundingCost: 4000,
+    requiresTerritory: true,
   },
-  lumberCamp: {
-    id: "lumberCamp",
-    name: "Lumber Camp",
-    description: "Assign workers to harvest wood from nearby forest.",
-    cost: { wood: 15, stone: 5 },
-    maxWorkers: 3,
-    producesResource: "wood",
-    productionPerWorkerPerHour: 3,
-    retiredForConstruction: true,
+  // Simplified stand-in recipe for this slice — the real chain (natural
+  // gas + chemicals + electricity) needs oil/gas wells and a chemical
+  // plant that don't exist yet. Revisit once that tree is built.
+  fertilizerPlant: {
+    id: "fertilizerPlant",
+    name: "Fertilizer Plant",
+    description: "Produces fertilizer on your own land (simplified recipe for now).",
+    inputs: [{ resource: "electricity", perWorkerPerHour: 2 }],
+    outputs: [{ resource: "fertilizer", perWorkerPerHour: 3 }],
+    wagePerWorkerPerHour: 18,
+    maxWorkers: 4,
+    foundingCost: 4000,
+    requiresTerritory: true,
   },
-  quarry: {
-    id: "quarry",
-    name: "Quarry",
-    description: "Assign workers to extract stone.",
-    cost: { wood: 25, stone: 10 },
-    maxWorkers: 3,
-    producesResource: "stone",
-    productionPerWorkerPerHour: 2,
-    requiredTech: "masonry",
-    retiredForConstruction: true,
+  // Water is treated as an ambient, always-available input for now (like
+  // land itself) rather than a tracked/traded resource — see the recipe-
+  // economy plan.
+  wheatFarm: {
+    id: "wheatFarm",
+    name: "Wheat Farm",
+    description: "Grows wheat on your own land using fertilizer and electricity (water is always available).",
+    inputs: [
+      { resource: "fertilizer", perWorkerPerHour: 1 },
+      { resource: "electricity", perWorkerPerHour: 1.5 },
+    ],
+    outputs: [{ resource: "wheat", perWorkerPerHour: 4 }],
+    wagePerWorkerPerHour: 18,
+    maxWorkers: 4,
+    foundingCost: 4000,
+    requiresTerritory: true,
   },
-  marketplace: {
-    id: "marketplace",
-    name: "Marketplace",
-    description:
-      "Reduces the fee you pay when trading on the world market. Trading itself never requires this building.",
-    cost: { wood: 40, stone: 20 },
-    maxWorkers: 2,
-    requiredTech: "currency",
+  // Simplified stand-in, same reasoning as fertilizerPlant — the eventual
+  // recipe (paper or plastic) needs a much deeper chain.
+  packagingPlant: {
+    id: "packagingPlant",
+    name: "Packaging Plant",
+    description: "Produces packaging materials on your own land (simplified recipe for now).",
+    inputs: [{ resource: "electricity", perWorkerPerHour: 2 }],
+    outputs: [{ resource: "packaging", perWorkerPerHour: 3 }],
+    wagePerWorkerPerHour: 18,
+    maxWorkers: 4,
+    foundingCost: 4000,
+    requiresTerritory: true,
   },
-};
-
-export const COMPANY_INDUSTRIES: Record<CompanyIndustryId, CompanyIndustryDef> = {
+  flourMill: {
+    id: "flourMill",
+    name: "Flour Mill",
+    description: "Buys wheat and electricity, sells flour.",
+    inputs: [
+      { resource: "wheat", perWorkerPerHour: 2 },
+      { resource: "electricity", perWorkerPerHour: 1 },
+    ],
+    outputs: [{ resource: "flour", perWorkerPerHour: 1.5 }],
+    wagePerWorkerPerHour: 18,
+    maxWorkers: 4,
+    foundingCost: 8000,
+  },
   bakery: {
     id: "bakery",
     name: "Bakery",
-    description: "Buys food, sells baked goods at a markup.",
-    inputResource: "food",
-    inputPerWorkerPerHour: 2.5,
-    outputResource: "goods",
-    goodsPerWorkerPerHour: 1,
-    wagePerWorkerPerHour: 1.5,
+    description: "Buys flour, electricity, and packaging, sells bread.",
+    inputs: [
+      { resource: "flour", perWorkerPerHour: 2 },
+      { resource: "electricity", perWorkerPerHour: 0.5 },
+      { resource: "packaging", perWorkerPerHour: 0.5 },
+    ],
+    outputs: [{ resource: "bread", perWorkerPerHour: 1 }],
+    wagePerWorkerPerHour: 18,
     maxWorkers: 4,
-    foundingCost: 150,
-  },
-  sawmill: {
-    id: "sawmill",
-    name: "Sawmill",
-    description: "Buys wood, sells finished lumber goods at a markup.",
-    inputResource: "wood",
-    inputPerWorkerPerHour: 1.5,
-    outputResource: "goods",
-    goodsPerWorkerPerHour: 1,
-    wagePerWorkerPerHour: 1.5,
-    maxWorkers: 4,
-    foundingCost: 150,
-  },
-  stoneworks: {
-    id: "stoneworks",
-    name: "Stoneworks",
-    description: "Buys stone, sells dressed masonry goods at a markup.",
-    inputResource: "stone",
-    inputPerWorkerPerHour: 1.2,
-    outputResource: "goods",
-    goodsPerWorkerPerHour: 1,
-    wagePerWorkerPerHour: 1.5,
-    maxWorkers: 4,
-    foundingCost: 150,
+    foundingCost: 12000,
   },
   // Buys wholesale food and resells it — not to the open market, but
   // directly to its own founder's settlement population (see
-  // maybeBuyFromOwnedRetail in simulation/directSales.ts). Deliberately
-  // outputs "food" rather than "goods": reselling the same resource type is
-  // what makes it a shop rather than a transformation industry like the
-  // three above, and it's what gives Retail a reason to exist distinct from
-  // Farming (which also outputs food, but from labor alone with no
-  // customer relationship).
+  // maybeBuyFromOwnedRetail in simulation/directSales.ts). The one industry
+  // kept outside the recipe-catalog replacement: it's the sole existing
+  // bridge between company output and population happiness, not a
+  // production/recipe company.
   retail: {
     id: "retail",
     name: "Retail Store",
     description: "Buys wholesale food and resells it directly to the settlement's own population.",
-    inputResource: "food",
-    inputPerWorkerPerHour: 3,
-    outputResource: "food",
-    goodsPerWorkerPerHour: 3,
-    wagePerWorkerPerHour: 1.5,
+    inputs: [
+      { resource: "food", perWorkerPerHour: 3 },
+      { resource: "electricity", perWorkerPerHour: 1.5 },
+    ],
+    outputs: [{ resource: "food", perWorkerPerHour: 3 }],
+    wagePerWorkerPerHour: 18,
     maxWorkers: 4,
-    foundingCost: 150,
-  },
-  // Extraction industries: labor in, raw resource out, nothing to buy.
-  // Output rates match the equivalent settlement building exactly
-  // (BUILDING_TYPES.farm/lumberCamp/quarry) so a company is a direct
-  // commercial alternative to building one yourself, not a different deal.
-  farming: {
-    id: "farming",
-    name: "Farm",
-    description: "Grows food to sell on the open market — no input required.",
-    inputPerWorkerPerHour: 0,
-    outputResource: "food",
-    goodsPerWorkerPerHour: 4,
-    wagePerWorkerPerHour: 1.5,
-    maxWorkers: 4,
-    foundingCost: 150,
-  },
-  logging: {
-    id: "logging",
-    name: "Logging Camp",
-    description: "Harvests wood to sell on the open market — no input required.",
-    inputPerWorkerPerHour: 0,
-    outputResource: "wood",
-    goodsPerWorkerPerHour: 3,
-    wagePerWorkerPerHour: 1.5,
-    maxWorkers: 4,
-    foundingCost: 150,
-  },
-  quarrying: {
-    id: "quarrying",
-    name: "Quarry",
-    description: "Extracts stone to sell on the open market — no input required.",
-    inputPerWorkerPerHour: 0,
-    outputResource: "stone",
-    goodsPerWorkerPerHour: 2,
-    wagePerWorkerPerHour: 1.5,
-    maxWorkers: 4,
-    foundingCost: 150,
-  },
-  // A "contract only" industry — see CompanyIndustryDef.contractOnly. It
-  // doesn't buy input or sell goods on the open market at all; its whole
-  // revenue is one-off government zone commissions, paid directly from the
-  // treasury with no goods stockpile required. outputResource/
-  // goodsPerWorkerPerHour are required-but-unused placeholders — every real
-  // read site is gated on contractOnly first.
-  construction: {
-    id: "construction",
-    name: "Construction Co.",
-    description: "A contract-only company — hire workers, then fulfill government zone commissions for a treasury payment.",
-    inputPerWorkerPerHour: 0,
-    outputResource: "goods",
-    goodsPerWorkerPerHour: 0,
-    wagePerWorkerPerHour: 1.5,
-    maxWorkers: 4,
-    foundingCost: 150,
-    contractOnly: true,
+    foundingCost: 12000,
   },
 };
 
-// A settlement can commission a construction company to build a zone,
-// which grants founding capacity for a category of company industries —
-// see ZONE_BASELINE_FREE_SLOTS and the capacity check in routes/companies.ts.
-// Deliberately just two categories mirroring the user's own framing:
-// "industrial zone for the production companies and then retail zones etc
-// for buyers to come along" — retail is the one industry whose customer is
-// the settlement's own population, everything else lives in industrial.
+// A settlement can commission a zone to open founding capacity for a
+// category of (non-land-gated) company industries — see
+// ZONE_BASELINE_FREE_SLOTS and the capacity check in routes/companies.ts.
+// Land-gated industries (COMPANY_INDUSTRIES entries with
+// requiresTerritory: true) never appear here — they're gated by territory
+// ownership instead, see routes/territory.ts.
 export const ZONE_TYPES: Record<ZoneTypeId, ZoneDef> = {
   industrial: {
     id: "industrial",
     name: "Industrial Zone",
-    description: "Opens capacity to found production and extraction companies — farms, quarries, sawmills, and more.",
-    industries: ["farming", "logging", "quarrying", "bakery", "sawmill", "stoneworks", "construction"],
+    description: "Opens capacity to found processing and manufacturing companies — mills, factories, and more.",
+    industries: ["flourMill", "bakery"],
     suggestedTreasuryCost: 200,
     buildTimeHours: 4,
     slotsGranted: 2,
@@ -259,68 +229,21 @@ export function zoneCategoryForIndustry(industry: CompanyIndustryId): ZoneTypeId
   return entry.id;
 }
 
-// Which of the three existing extraction industries (farming/logging/
-// quarrying — "labor in, raw resource out," see COMPANY_INDUSTRIES above)
-// a territory-linked extraction company uses for a given resource. Shared
-// by routes/territory.ts's found-extraction founding path and the
-// Continent page's founding UI, so both agree on the mapping.
-export const RESOURCE_TO_EXTRACTION_INDUSTRY: Record<"food" | "wood" | "stone", CompanyIndustryId> = {
-  food: "farming",
-  wood: "logging",
-  stone: "quarrying",
-};
-
-export const TECHS: Record<TechId, TechDef> = {
-  masonry: {
-    id: "masonry",
-    name: "Masonry",
-    description: "Unlocks the Quarry, letting you extract stone efficiently.",
-    cost: { gold: 50, stone: 20 },
-    unlocksBuilding: "quarry",
-  },
-  currency: {
-    id: "currency",
-    name: "Currency",
-    description:
-      "Unlocks the Marketplace, lowering the fee on all your world market trades.",
-    cost: { gold: 80 },
-    unlocksBuilding: "marketplace",
-  },
-  ironTools: {
-    id: "ironTools",
-    name: "Iron Tools",
-    description: "Stone and wood production increase by 20%.",
-    cost: { gold: 120, stone: 30 },
-    requiredTech: "masonry",
-    productionBonus: { buildingType: "quarry", multiplier: 1.2 },
-  },
-  animalHusbandry: {
-    id: "animalHusbandry",
-    name: "Animal Husbandry",
-    description: "Farm production increases by 15%.",
-    cost: { gold: 60, food: 50 },
-    productionBonus: { buildingType: "farm", multiplier: 1.15 },
-  },
-};
-
 export const NPC_ARCHETYPE_DEFS: Record<NpcArchetype, NpcArchetypeDef> = {
   agrarian: {
     id: "agrarian",
     name: "Agrarian",
     description: "A farming community focused on feeding its people and neighbors.",
-    startingBuildings: { house: 2, farm: 3, lumberCamp: 1 },
   },
   mining: {
     id: "mining",
     name: "Mining",
-    description: "A settlement built around stone and timber extraction.",
-    startingBuildings: { house: 2, quarry: 2, lumberCamp: 2, farm: 1 },
+    description: "A settlement built around resource extraction.",
   },
   trade: {
     id: "trade",
     name: "Trade",
     description: "A mercantile settlement that thrives on buying low and selling high.",
-    startingBuildings: { house: 2, marketplace: 2, farm: 1, lumberCamp: 1 },
   },
 };
 
@@ -336,10 +259,10 @@ export const EVENT_TEMPLATES: EventTemplateDef[] = [
   {
     id: "harsh_storm",
     title: "Harsh Storm",
-    description: "A storm damaged stockpiles, spoiling some food and timber.",
+    description: "A storm damaged food stockpiles.",
     weight: 2,
     scope: "settlement",
-    resourceEffect: { food: -25, wood: -10 },
+    resourceEffect: { food: -25 },
   },
   {
     id: "tech_breakthrough",
@@ -365,12 +288,24 @@ export const EVENT_TEMPLATES: EventTemplateDef[] = [
   },
 ];
 
+// Marketplace (the building that used to discount this) is gone along with
+// the rest of the legacy building economy — a single flat fee now, on the
+// food-only settlement trade route (see routes/market.ts).
 export const TRADE_FEE = {
   base: 0.05,
-  withMarketplace: 0.02,
 };
 
-export const BASE_HOUSING_CAPACITY = 20;
+// House (the building that used to be the only source of population
+// capacity) is gone along with the rest of the legacy building economy —
+// this flat base plus a per-territory bonus (see simulation/consumption.ts's
+// housingCapacity()) is now the sole capacity source, giving territory
+// expansion a second reason to matter. A proper tuning group (not bare
+// scalars) so it's live-editable from the admin balance panel like every
+// other ongoing pacing lever.
+export const HOUSING_TUNING = {
+  base: 100,
+  perTerritory: 50,
+};
 
 export const POPULATION_TUNING = {
   foodConsumptionPerCapitaPerHour: 0.08,
@@ -401,22 +336,26 @@ export const LUXURY_GOODS_TUNING = {
   happinessBoostPerHour: 0.02, // scaled by fulfillment fraction; comparable to happinessDeclinePerHourWhenHungry so it's a meaningful bump
 };
 
-// Wood/stone have no direct population upkeep in this MVP model (no building
-// decay yet), so a small per-capita "world economic activity" demand keeps
-// their markets from collapsing to the price floor for lack of any buyer.
-// Goods (company output) get the same treatment: population is the organic
-// consumer market for manufactured goods.
+// Goods (company output) have no direct population upkeep, so a small
+// per-capita "world economic activity" demand keeps the market from
+// collapsing to the price floor for lack of any buyer — population is the
+// organic consumer market for manufactured goods.
 export const WORLD_DEMAND_TUNING = {
-  woodDemandPerCapitaPerHour: 0.02,
-  stoneDemandPerCapitaPerHour: 0.015,
   goodsDemandPerCapitaPerHour: 0.05,
 };
 
+// Realistic-scale balance pass (2026-09-03) — roughly real per-unit
+// commodity/retail Euro pricing rather than the earlier 1-10 placeholder
+// scale.
 export const BASE_PRICES: Record<MarketResourceType, number> = {
-  food: 2,
-  wood: 3,
-  stone: 4,
+  food: 3,
   goods: 9,
+  electricity: 0.3,
+  fertilizer: 2,
+  wheat: 0.4,
+  flour: 1.2,
+  packaging: 1.5,
+  bread: 3.5,
 };
 
 export const MARKET_TUNING = {
@@ -571,15 +510,6 @@ export const CORPORATE_BOND_TUNING = {
   maxRiskPremium: 1.2, // rate multiplier added at 100% issuance-to-capacity utilization
 };
 
-// Same idiom as COMPANY_UPGRADE_TUNING — a level directly multiplies output
-// (see computeHourlyProduction in production.ts), so this just prices that
-// multiplier. Lives here (not production.ts) so it's reachable from the
-// same tuning-group registry as everything else.
-export const BUILDING_UPGRADE_TUNING = {
-  maxLevel: 5,
-  costMultiplierPerLevel: 1.8, // upgrade cost = building's founding cost * multiplier^currentLevel
-};
-
 export const EVENT_TUNING = {
   chancePerTick: 0.15,
 };
@@ -606,24 +536,24 @@ export const TERRITORY_TUNING = {
   // scaling down to 1x (no extra toll) at zero flow — a trickling stream
   // barely taxes a border, a major river is a real obstacle.
   riverFlowTollMax: 2,
-  // One-time gold grant when a player gains a new territory (claim,
-  // auto-assignment, or a won attack) — matches farming/logging/quarrying's
-  // own foundingCost exactly, so it's always "enough for your first
-  // extraction company on this land," never a passive income source. See
-  // routes/territory.ts's grantExtractionStarterBundle.
-  extractionStarterGrant: 150,
-  // Territory-linked extraction companies (routes/territory.ts's
-  // found-extraction) scale goodsPerWorkerPerHour by
-  // clamp(0.5 + richness/extractionRichnessDivisor, min, max) — divisor
-  // chosen against real observed deposit averages (single digits to ~20 in
-  // practice, not the theoretical 0-255 scale), so a middling territory
-  // sits near 1x and a rich one meaningfully outperforms a poor one.
-  extractionRichnessDivisor: 20,
-  extractionMultiplierMin: 0.5,
-  extractionMultiplierMax: 2.5,
+  // One-time gold grant when a player gains a new territory (their one free
+  // starting pick, or a won attack — see the territory-acquisition rework)
+  // — sized to cover founding one Farm + one Power Plant (4000 each) plus a
+  // wage cushion. See routes/territory.ts's grantExtractionStarterBundle.
+  // No richness/yield scaling by territory quality in the recipe-economy
+  // slice — land is a flat founding-eligibility gate, not a stocked
+  // resource; see the recipe-economy plan for why.
+  extractionStarterGrant: 7000,
+  // Price (Government treasury, not settlement gold — buying land is a
+  // civic/state action, same pool army-raising spends from) for POST
+  // /:seedIndex/buy — unclaimed/abandoned land once a player already owns
+  // territory. Picked so a typical ~20,000km² territory costs roughly the
+  // same order of magnitude as founding a company (~€8,000), not a literal
+  // real-world land price (which would dwarf every other number here).
+  buyPricePerKm2: 0.4,
 };
 
-// Structural data, not a pacing lever (same treatment ZONE_TYPES/TECHS/
+// Structural data, not a pacing lever (same treatment ZONE_TYPES/
 // NPC_ARCHETYPE_DEFS already get — deliberately NOT in FLAT_GROUPS, see
 // gameConfigStore.ts's own comment on that registry). The terrain-cost
 // lookup for the territory-partition multi-source Dijkstra: "every point
@@ -663,13 +593,5 @@ export const MILITARY_TUNING = {
 
 export const RESOURCE_LABELS: Record<ResourceType, string> = {
   food: "Food",
-  wood: "Wood",
-  stone: "Stone",
   gold: "Gold",
 };
-
-export function buildingsRequiringNoTech(): BuildingTypeId[] {
-  return Object.values(BUILDING_TYPES)
-    .filter((b) => !b.requiredTech)
-    .map((b) => b.id);
-}

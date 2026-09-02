@@ -5,16 +5,15 @@ import { api, ApiError } from "../api/client.js";
 import { useGameState, useMarket } from "../api/hooks.js";
 import Sparkline from "../components/Sparkline.js";
 
-type MarketDisplayResource = "food" | "wood" | "stone" | "goods";
-type SettlementTradeResource = "food" | "wood" | "stone";
+// Settlements only ever hold food directly now (wood/stone removed with the
+// legacy building economy) — every other market commodity trades through
+// companies (Companies page) instead.
+type MarketDisplayResource = "food" | "goods";
 
-const DISPLAY_RESOURCES: MarketDisplayResource[] = ["food", "wood", "stone", "goods"];
-const TRADE_RESOURCES: SettlementTradeResource[] = ["food", "wood", "stone"];
+const DISPLAY_RESOURCES: MarketDisplayResource[] = ["food", "goods"];
 
 const ACCENT: Record<MarketDisplayResource, string> = {
   food: "var(--series-food)",
-  wood: "var(--series-wood)",
-  stone: "var(--series-stone)",
   goods: "var(--series-goods)",
 };
 
@@ -28,7 +27,7 @@ export default function Market() {
   const { data: gameState } = useGameState();
   const queryClient = useQueryClient();
 
-  const [resourceType, setResourceType] = useState<SettlementTradeResource>("wood");
+  const resourceType = "food" as const;
   const [side, setSide] = useState<"buy" | "sell">("sell");
   const [quantity, setQuantity] = useState(10);
   const [result, setResult] = useState<string | null>(null);
@@ -102,13 +101,9 @@ export default function Market() {
           {error && <div className="auth-error">{error}</div>}
           {result && <div className="suggestion">{result}</div>}
           <div className="trade-row">
-            <select value={resourceType} onChange={(e) => setResourceType(e.target.value as SettlementTradeResource)}>
-              {TRADE_RESOURCES.map((r) => (
-                <option key={r} value={r}>
-                  {RESOURCE_LABELS[r]}
-                </option>
-              ))}
-            </select>
+            <span className="suggestion" style={{ padding: 0, border: "none" }}>
+              {RESOURCE_LABELS.food}
+            </span>
             <select value={side} onChange={(e) => setSide(e.target.value as "buy" | "sell")}>
               <option value="sell">Sell</option>
               <option value="buy">Buy</option>

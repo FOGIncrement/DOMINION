@@ -28,21 +28,21 @@ const NPC_COMPANIES: {
   name: string;
   industry: CompanyIndustryId;
   cash: number;
-  inputStock?: number; // omit for an extraction industry — it has no input to seed
+  // Starting resource stock per resource type — omit entries a company has
+  // no input for (a land-gated pure-extraction industry has none).
+  stocks?: Record<string, number>;
   workersAssigned: number;
   ipo?: boolean;
 }[] = [
-  { name: "Millstone Bakery", industry: "bakery", cash: 420, inputStock: 20, workersAssigned: 3, ipo: true },
-  { name: "Golden Crust Baking Co.", industry: "bakery", cash: 180, inputStock: 10, workersAssigned: 1 },
-  { name: "Hearth & Home Bakery", industry: "bakery", cash: 260, inputStock: 15, workersAssigned: 2 },
-  { name: "Cedar & Co. Sawmill", industry: "sawmill", cash: 500, inputStock: 20, workersAssigned: 3, ipo: true },
-  { name: "Riverbend Timber", industry: "sawmill", cash: 210, inputStock: 10, workersAssigned: 2 },
-  { name: "Ironvein Stoneworks", industry: "stoneworks", cash: 460, inputStock: 20, workersAssigned: 3, ipo: true },
-  { name: "Graystone Masonry", industry: "stoneworks", cash: 190, inputStock: 10, workersAssigned: 1 },
-  // contractOnly — no input to seed, its cash is what actually funds
-  // fulfilling government zone commissions.
-  { name: "Ashford Construction Co.", industry: "construction", cash: 600, workersAssigned: 4, ipo: true },
-  { name: "Millbrook Builders Guild", industry: "construction", cash: 300, workersAssigned: 2 },
+  { name: "Sunfield Power Plant", industry: "powerPlant", cash: 400, workersAssigned: 3, ipo: true },
+  { name: "Ridgeline Power Co.", industry: "powerPlant", cash: 200, workersAssigned: 2 },
+  { name: "Greenfields Fertilizer", industry: "fertilizerPlant", cash: 350, workersAssigned: 2 },
+  { name: "Golden Acres Wheat Farm", industry: "wheatFarm", cash: 300, stocks: { fertilizer: 20 }, workersAssigned: 3, ipo: true },
+  { name: "Harvest Row Farms", industry: "wheatFarm", cash: 180, stocks: { fertilizer: 10 }, workersAssigned: 2 },
+  { name: "Crestpoint Packaging", industry: "packagingPlant", cash: 250, workersAssigned: 2 },
+  { name: "Millstone Flour Mill", industry: "flourMill", cash: 420, stocks: { wheat: 20, electricity: 15 }, workersAssigned: 3, ipo: true },
+  { name: "Golden Crust Bakery", industry: "bakery", cash: 380, stocks: { flour: 15, electricity: 10, packaging: 10 }, workersAssigned: 3, ipo: true },
+  { name: "Hearth & Home Bakery", industry: "bakery", cash: 260, stocks: { flour: 10, electricity: 5, packaging: 5 }, workersAssigned: 2 },
 ];
 
 const NPC_INVESTORS: { name: string; archetype: InvestorArchetype; cash: number }[] = [
@@ -92,12 +92,14 @@ async function main() {
           name: npc.name,
           industry: npc.industry,
           cash: npc.cash,
-          inputStock: npc.inputStock ?? 0,
           workersAssigned: npc.workersAssigned,
           isPublic: !!npc.ipo,
           sharesOutstanding,
           sharePrice,
           ipoAt: npc.ipo ? new Date() : null,
+          resourceStocks: npc.stocks
+            ? { create: Object.entries(npc.stocks).map(([resourceType, amount]) => ({ resourceType, amount })) }
+            : undefined,
         },
       });
       console.log(`[seed] created NPC company ${npc.name} (${npc.industry})${npc.ipo ? " [public]" : ""}`);

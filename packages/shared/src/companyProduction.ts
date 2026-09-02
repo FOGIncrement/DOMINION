@@ -1,18 +1,20 @@
 import { COMPANY_FACILITY_TUNING, COMPANY_UPGRADE_TUNING } from "./gameConfig.js";
-import type { CompanyIndustryDef } from "./types.js";
+import type { CompanyIndustryDef, MarketResourceType } from "./types.js";
 
 export interface CompanyHourlyRates {
-  inputPerHour: number;
-  goodsPerHour: number;
+  inputs: Partial<Record<MarketResourceType, number>>;
+  outputs: Partial<Record<MarketResourceType, number>>;
   wagePerHour: number;
 }
 
 /**
  * Hourly rates for a company at its current headcount and level, before
- * elapsed time or input-stock scarcity are applied. Shared by the server
- * tick (which applies both) and the client (which shows the rate directly),
- * same reasoning as computeHourlyProduction for settlement buildings. Level
- * raises input/output efficiency; wages scale with headcount only.
+ * elapsed time or input-stock scarcity are applied — one entry per recipe
+ * component now, not a single input/output pair. Shared by the server tick
+ * (which applies both) and the client (which shows the rate directly), same
+ * reasoning as computeHourlyProduction for settlement buildings. Level
+ * raises input/output efficiency uniformly across every component; wages
+ * scale with headcount only.
  */
 export function computeCompanyHourlyRates(
   industry: CompanyIndustryDef,
@@ -21,9 +23,13 @@ export function computeCompanyHourlyRates(
   upgradeTuning: typeof COMPANY_UPGRADE_TUNING = COMPANY_UPGRADE_TUNING,
 ): CompanyHourlyRates {
   const outputMultiplier = 1 + (level - 1) * upgradeTuning.outputBonusPerLevel;
+  const inputs: Partial<Record<MarketResourceType, number>> = {};
+  for (const c of industry.inputs) inputs[c.resource] = c.perWorkerPerHour * workersAssigned * outputMultiplier;
+  const outputs: Partial<Record<MarketResourceType, number>> = {};
+  for (const c of industry.outputs) outputs[c.resource] = c.perWorkerPerHour * workersAssigned * outputMultiplier;
   return {
-    inputPerHour: industry.inputPerWorkerPerHour * workersAssigned * outputMultiplier,
-    goodsPerHour: industry.goodsPerWorkerPerHour * workersAssigned * outputMultiplier,
+    inputs,
+    outputs,
     wagePerHour: industry.wagePerWorkerPerHour * workersAssigned,
   };
 }

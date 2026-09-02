@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { PLOT_ZONING_SIZE } from "@dominion/shared";
 import { api, ApiError, type ZoneRect } from "../api/client.js";
-import { useAllCompanies, useGovernment, useMyCompanies, useMyZoneProjects, useTutorial, useWorldMap, useZones } from "../api/hooks.js";
+import { useGovernment, useMyCompanies, useMyZoneProjects, useTutorial, useWorldMap, useZones } from "../api/hooks.js";
 
 // A modest default footprint for players commissioning straight from this
 // form instead of dragging on the Map page — 4 cells (2x2), matching
@@ -37,20 +37,16 @@ function invalidateGovernment(queryClient: ReturnType<typeof useQueryClient>) {
 }
 
 const ZONE_STATUS_LABELS: Record<string, string> = {
-  pending: "Awaiting acceptance",
   building: "Building",
   completed: "Completed",
-  cancelled: "Cancelled",
 };
 
 function ZoneCommissionForm() {
   const queryClient = useQueryClient();
   const { data: zones } = useZones();
-  const { data: allCompanies } = useAllCompanies();
   const { data: tutorial } = useTutorial();
   const { data: worldMap } = useWorldMap();
   const [zoneType, setZoneType] = useState("");
-  const [constructionCompanyId, setConstructionCompanyId] = useState("");
   const [treasuryCost, setTreasuryCost] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -71,16 +67,16 @@ function ZoneCommissionForm() {
     mutationFn: () => {
       const spot = findFirstOpenRect(worldMap?.myZones ?? [], DEFAULT_ZONE_SIZE, DEFAULT_ZONE_SIZE);
       if (!spot) throw new Error("No open space left on your plot — free up room on the Map page first.");
-      return api.commissionZone(constructionCompanyId, zoneType, treasuryCost, {
+      return api.commissionZone(zoneType, treasuryCost, {
         zoneX: spot.x,
         zoneY: spot.y,
         zoneWidth: DEFAULT_ZONE_SIZE,
         zoneHeight: DEFAULT_ZONE_SIZE,
       });
     },
-    onSuccess: (res) => {
+    onSuccess: () => {
       setError(null);
-      setMessage(res.pending ? "Commission sent — awaiting the construction company's acceptance." : "Commissioned — zone under construction.");
+      setMessage("Commissioned — zone under construction.");
       invalidateGovernment(queryClient);
       queryClient.invalidateQueries({ queryKey: ["worldMap"] });
       if (tutorial?.step === "government_unlock") {
@@ -92,8 +88,6 @@ function ZoneCommissionForm() {
     },
     onError: (err) => setError(err instanceof Error ? err.message : "Commission failed"),
   });
-
-  const constructionCompanies = (allCompanies?.companies ?? []).filter((c) => c.industry === "construction");
 
   if (zoneList.length === 0) {
     return (
@@ -118,19 +112,11 @@ function ZoneCommissionForm() {
             </option>
           ))}
         </select>
-        <select value={constructionCompanyId} onChange={(e) => setConstructionCompanyId(e.target.value)}>
-          <option value="">Construction company...</option>
-          {constructionCompanies.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name} {c.isPlayerOwned ? "" : "(NPC/other player)"}
-            </option>
-          ))}
-        </select>
       </div>
       {selectedZone && (
         <div className="trade-row" style={{ flexWrap: "wrap", marginTop: 8 }}>
           <label className="suggestion" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            Treasury offer
+            Treasury cost
             <input
               type="number"
               min={0}
@@ -143,7 +129,7 @@ function ZoneCommissionForm() {
           </label>
           <button
             className="btn btn--accent"
-            disabled={!zoneType || !constructionCompanyId || treasuryCost <= 0 || commission.isPending}
+            disabled={!zoneType || treasuryCost <= 0 || commission.isPending}
             onClick={() => commission.mutate()}
           >
             Commission
@@ -153,17 +139,10 @@ function ZoneCommissionForm() {
       {selectedZone && (
         <p className="suggestion" style={{ marginTop: 8 }}>
           {selectedZone.description} Suggested treasury payment is {selectedZone.suggestedTreasuryCost}g — edit above
-          to propose a different amount. Funded entirely from your treasury; the construction company doesn't need
-          to stockpile any materials first. Takes {selectedZone.buildTimeHours}h to build once accepted. Commissioning
-          here places a default {DEFAULT_ZONE_SIZE}×{DEFAULT_ZONE_SIZE} zone in the first open space on your plot,
-          granting founding capacity for {selectedZone.industries.join(", ")} companies based on its size once
-          complete — visit the Map page to size and place it yourself instead. If the company isn't yours, they'll
-          need to accept the offer first.
-        </p>
-      )}
-      {constructionCompanies.length === 0 && (
-        <p className="suggestion" style={{ marginTop: 8 }}>
-          No construction companies exist yet — found one on the Companies page, or wait for an NPC to found one.
+          to propose a different amount. Paid immediately from your treasury; takes {selectedZone.buildTimeHours}h to
+          build. Commissioning here places a default {DEFAULT_ZONE_SIZE}×{DEFAULT_ZONE_SIZE} zone in the first open
+          space on your plot, granting founding capacity for {selectedZone.industries.join(", ")} companies based on
+          its size once complete — visit the Map page to size and place it yourself instead.
         </p>
       )}
     </div>
@@ -171,27 +150,7 @@ function ZoneCommissionForm() {
 }
 
 function MyZoneProjectsList() {
-  const queryClient = useQueryClient();
   const { data } = useMyZoneProjects();
-  const [error, setError] = useState<string | null>(null);
-
-  const accept = useMutation({
-    mutationFn: (id: string) => api.acceptZoneProject(id),
-    onSuccess: () => {
-      setError(null);
-      invalidateGovernment(queryClient);
-    },
-    onError: (err) => setError(err instanceof ApiError ? err.message : "Couldn't accept"),
-  });
-
-  const cancel = useMutation({
-    mutationFn: (id: string) => api.cancelZoneProject(id),
-    onSuccess: () => {
-      setError(null);
-      invalidateGovernment(queryClient);
-    },
-    onError: (err) => setError(err instanceof ApiError ? err.message : "Couldn't cancel"),
-  });
 
   if (!data || data.projects.length === 0) {
     return (
@@ -205,36 +164,20 @@ function MyZoneProjectsList() {
   return (
     <div className="card">
       <h2 className="card__title">Zone Projects</h2>
-      {error && <div className="auth-error">{error}</div>}
       <table className="settlement-table">
         <thead>
           <tr>
             <th>Zone</th>
-            <th>Construction Co.</th>
             <th>Cost</th>
             <th>Status</th>
-            <th></th>
           </tr>
         </thead>
         <tbody>
           {data.projects.map((p) => (
             <tr key={p.id}>
               <td>{p.zoneType}</td>
-              <td>{p.constructionCompanyName}</td>
               <td>{p.treasuryCost}g</td>
               <td>{ZONE_STATUS_LABELS[p.status] ?? p.status}</td>
-              <td>
-                {p.status === "pending" && p.constructionCompanyIsMine && (
-                  <button className="btn" disabled={accept.isPending} onClick={() => accept.mutate(p.id)}>
-                    Accept
-                  </button>
-                )}
-                {p.status === "pending" && (p.governmentIsMine || p.constructionCompanyIsMine) && (
-                  <button className="btn btn--danger" disabled={cancel.isPending} onClick={() => cancel.mutate(p.id)}>
-                    Cancel
-                  </button>
-                )}
-              </td>
             </tr>
           ))}
         </tbody>

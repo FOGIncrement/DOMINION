@@ -44,8 +44,6 @@ cheatsRouter.use(requireAdmin);
 
 const resourceSchema = z.object({
   food: z.number().optional(),
-  wood: z.number().optional(),
-  stone: z.number().optional(),
   gold: z.number().optional(),
 });
 

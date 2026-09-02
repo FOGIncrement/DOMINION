@@ -4,15 +4,13 @@ export const OFFLINE_THRESHOLD_SECONDS = 90;
 
 export interface ResourceSnapshot {
   food: number;
-  wood: number;
-  stone: number;
   gold: number;
   population: number;
 }
 
 export interface OfflineSummary {
   awaySeconds: number;
-  resourceDeltas: { food: number; wood: number; stone: number; gold: number };
+  resourceDeltas: { food: number; gold: number };
   populationDelta: number;
   events: { id: string; title: string; description: string; occurredAt: Date }[];
 }
@@ -50,8 +48,6 @@ export async function computeOfflineSummaryAndAdvance(
       awaySeconds: Math.round(gapSeconds),
       resourceDeltas: {
         food: current.food - prev.food,
-        wood: current.wood - prev.wood,
-        stone: current.stone - prev.stone,
         gold: current.gold - prev.gold,
       },
       populationDelta: current.population - prev.population,

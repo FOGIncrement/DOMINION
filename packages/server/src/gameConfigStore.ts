@@ -13,8 +13,6 @@ import {
   BANK_TUNING,
   BASE_PRICES,
   BOND_TUNING,
-  BUILDING_TYPES,
-  BUILDING_UPGRADE_TUNING,
   COMPANY_FACILITY_TUNING,
   COMPANY_FAILURE_TUNING,
   COMPANY_INDUSTRIES,
@@ -23,6 +21,7 @@ import {
   DEPOSIT_TUNING,
   DIVIDEND_TUNING,
   EVENT_TUNING,
+  HOUSING_TUNING,
   LUXURY_GOODS_TUNING,
   MARKET_TUNING,
   MILITARY_TUNING,
@@ -40,14 +39,17 @@ import {
 import { prisma } from "./db.js";
 
 // Every field on every one of these is a plain number — merge is a trivial
-// per-field shallow overlay. (BASE_HOUSING_CAPACITY, MAX_CATCHUP_HOURS, and
-// the catalog/one-time-read groups — ZONE_TYPES, TECHS, NPC_ARCHETYPE_DEFS,
-// EVENT_TEMPLATES, STARTING_SETTLEMENT — are deliberately not in this
-// registry: not ongoing-pacing levers, or bare scalars that don't fit the
-// group shape. Extend this object using the exact same pattern if any of
-// those need to become tunable later.)
+// per-field shallow overlay. (MAX_CATCHUP_HOURS, and the catalog/one-time-
+// read groups — ZONE_TYPES, NPC_ARCHETYPE_DEFS, EVENT_TEMPLATES,
+// STARTING_SETTLEMENT, STARTING_TREASURY — are deliberately not in this
+// registry: not ongoing-pacing levers, or one-time creation-time values
+// that wouldn't retroactively affect existing settlements/players anyway.
+// Extend this object using the exact same pattern if any of those need to
+// become tunable later — and add a matching entry to FLAT_GROUP_DESCRIPTIONS
+// below so the admin panel keeps explaining what it changes.)
 const FLAT_GROUPS = {
   POPULATION_TUNING,
+  HOUSING_TUNING,
   MARKET_TUNING,
   NPC_GROWTH_TUNING,
   COMPANY_UPGRADE_TUNING,
@@ -67,7 +69,6 @@ const FLAT_GROUPS = {
   COMPANY_FAILURE_TUNING,
   NPC_COMPANY_TUNING,
   EVENT_TUNING,
-  BUILDING_UPGRADE_TUNING,
   BASE_PRICES,
   TERRITORY_TUNING,
   MILITARY_TUNING,
@@ -75,44 +76,73 @@ const FLAT_GROUPS = {
 
 type FlatGroupName = keyof typeof FLAT_GROUPS;
 
-// COMPANY_INDUSTRIES / BUILDING_TYPES mix tunable rate fields with
-// structural/identity fields (inputResource, outputResource, contractOnly,
-// name, cost, requiredTech) that other code branches on — an explicit
-// numeric-field allowlist per entry, never a blind recursive merge, so a
-// malformed edit can only ever change how fast an industry/building runs,
-// never what it fundamentally is.
+// One plain-language sentence per group, shown in the admin balance panel
+// next to its fields — kept here (not duplicated client-side) so it can
+// never drift out of sync with the actual registry above, same reasoning as
+// getConfigRegistryMeta's flatGroups/companyIndustryFields already being
+// server-computed rather than hardcoded in the client.
+const FLAT_GROUP_DESCRIPTIONS: Record<FlatGroupName, string> = {
+  POPULATION_TUNING: "How fast population grows when fed, shrinks when starving, and how happiness reacts to both.",
+  HOUSING_TUNING: "Population capacity — a flat base plus a bonus per territory a player owns.",
+  MARKET_TUNING: "How world commodity prices react to supply/demand imbalance and how fast they move each tick.",
+  NPC_GROWTH_TUNING: "How often and how easily a cash-rich NPC settlement reinvests to grow.",
+  COMPANY_UPGRADE_TUNING: "Cost and payoff of leveling up a company (more workers, better per-worker output).",
+  COMPANY_FACILITY_TUNING: "Cost and cap for adding extra facilities to a company (a second worker-cap multiplier, separate from level).",
+  STOCK_TUNING: "How a public company's share price is valued and how fast it drifts toward that value.",
+  DIVIDEND_TUNING: "How often and how much cash a public company pays out to shareholders.",
+  NPC_INVESTOR_TUNING: "How often and how aggressively NPC investors buy/sell shares.",
+  BANK_TUNING: "Bank founding cost and lending limits/rates for company loans.",
+  NPC_BANKING_TUNING: "How often NPC companies borrow from or repay banks.",
+  DEPOSIT_TUNING: "What fraction of a bank's lending rate a depositor earns.",
+  BOND_TUNING: "Base interest rate on government bonds.",
+  CORPORATE_BOND_TUNING: "Risk premium added to a corporate bond's rate as issuance approaches a company's capacity.",
+  RETAIL_TUNING: "Markup a Retail company charges its own settlement over the wholesale food price.",
+  LUXURY_GOODS_TUNING: "How much surplus gold a settlement spends on \"goods\" for a happiness boost beyond plain food sufficiency.",
+  WORLD_DEMAND_TUNING: "Baseline per-capita demand for manufactured goods, keeping that market from collapsing for lack of a buyer.",
+  TRADE_FEE: "Flat fee charged on the settlement-level food trade route.",
+  COMPANY_FAILURE_TUNING: "How deep in debt (as a multiple of founding cost) a company can go before it's auto-closed.",
+  NPC_COMPANY_TUNING: "How NPC companies stock inputs/outputs and decide to hire, upgrade, expand, or found new companies.",
+  EVENT_TUNING: "How often a random world/settlement event (harvest, storm, etc.) fires.",
+  BASE_PRICES: "Starting price for every tradeable resource before supply/demand moves it.",
+  TERRITORY_TUNING: "Territory sizing, dormant/abandoned timing, the one-time starter grant, and the price to buy unclaimed land.",
+  MILITARY_TUNING: "Army strength, attack cooldown, and combat odds for conquering territory by force.",
+};
+
+// COMPANY_INDUSTRIES mixes tunable rate fields with structural/identity
+// fields (inputs/outputs recipe arrays, name, requiresTerritory) that other
+// code branches on — an explicit numeric-field allowlist per entry, never a
+// blind recursive merge, so a malformed edit can only ever change how fast
+// an industry runs, never what it fundamentally is. Note: the recipe-based
+// inputs[]/outputs[] arrays (added with the recipe-economy rework) aren't
+// reachable through this flat allowlist mechanism — only the scalar rate
+// fields below are admin-editable; a per-recipe-component editor is future
+// work if that's ever needed.
 const COMPANY_INDUSTRY_EDITABLE_FIELDS = [
-  "inputPerWorkerPerHour",
-  "goodsPerWorkerPerHour",
   "wagePerWorkerPerHour",
   "maxWorkers",
   "foundingCost",
 ] as const;
-
-const BUILDING_TYPE_EDITABLE_FIELDS = ["productionPerWorkerPerHour", "maxWorkers", "populationCapacity"] as const;
 
 type NumericPatch = Record<string, number>;
 
 interface GameConfigOverrides {
   flat?: Partial<Record<FlatGroupName, NumericPatch>>;
   COMPANY_INDUSTRIES?: Record<string, NumericPatch>;
-  BUILDING_TYPES?: Record<string, NumericPatch>;
 }
 
 export type MergedGameConfig = {
   [K in FlatGroupName]: (typeof FLAT_GROUPS)[K];
 } & {
   COMPANY_INDUSTRIES: typeof COMPANY_INDUSTRIES;
-  BUILDING_TYPES: typeof BUILDING_TYPES;
 };
 
 let persistedOverrides: GameConfigOverrides = {};
 let mergedCache: MergedGameConfig;
 
-// Record-shape config groups (COMPANY_INDUSTRIES/BUILDING_TYPES) are keyed
-// by a specific string-literal union (CompanyIndustryId/BuildingTypeId),
-// which TS won't structurally match against a generic Record<string, ...>
-// constraint — this is a runtime merge utility, not something that needs
+// COMPANY_INDUSTRIES is keyed by a specific string-literal union
+// (CompanyIndustryId), which TS won't structurally match against a generic
+// Record<string, ...> constraint — this is a runtime merge utility, not
+// something that needs
 // (or can cleanly have) compile-time key-safety, so it takes `unknown` in
 // and the caller casts the result back to the concrete defaults type,
 // which is always correct since every key in `defaults` is preserved.
@@ -155,11 +185,6 @@ function recompute(): void {
       persistedOverrides.COMPANY_INDUSTRIES,
       COMPANY_INDUSTRY_EDITABLE_FIELDS,
     ) as unknown as typeof COMPANY_INDUSTRIES,
-    BUILDING_TYPES: mergeRecordGroup(
-      BUILDING_TYPES,
-      persistedOverrides.BUILDING_TYPES,
-      BUILDING_TYPE_EDITABLE_FIELDS,
-    ) as unknown as typeof BUILDING_TYPES,
   } as unknown as MergedGameConfig;
 }
 
@@ -199,12 +224,12 @@ export async function setFlatOverrides(group: FlatGroupName, patch: NumericPatch
 }
 
 export async function setRecordOverrides(
-  group: "COMPANY_INDUSTRIES" | "BUILDING_TYPES",
+  group: "COMPANY_INDUSTRIES",
   entryId: string,
   patch: NumericPatch,
 ): Promise<MergedGameConfig> {
-  const allowedFields = group === "COMPANY_INDUSTRIES" ? COMPANY_INDUSTRY_EDITABLE_FIELDS : BUILDING_TYPE_EDITABLE_FIELDS;
-  const defaults = group === "COMPANY_INDUSTRIES" ? COMPANY_INDUSTRIES : BUILDING_TYPES;
+  const allowedFields = COMPANY_INDUSTRY_EDITABLE_FIELDS;
+  const defaults = COMPANY_INDUSTRIES;
   if (!(entryId in defaults)) throw new Error(`Unknown ${group} entry: ${entryId}`);
   const filtered: NumericPatch = {};
   for (const [key, value] of Object.entries(patch)) {
@@ -226,7 +251,7 @@ export async function resetFlatGroup(group: FlatGroupName): Promise<MergedGameCo
   return mergedCache;
 }
 
-export async function resetRecordEntry(group: "COMPANY_INDUSTRIES" | "BUILDING_TYPES", entryId: string): Promise<MergedGameConfig> {
+export async function resetRecordEntry(group: "COMPANY_INDUSTRIES", entryId: string): Promise<MergedGameConfig> {
   if (persistedOverrides[group]) delete persistedOverrides[group]![entryId];
   await persist();
   recompute();
@@ -240,17 +265,27 @@ export async function resetAll(): Promise<MergedGameConfig> {
   return mergedCache;
 }
 
+// Shown once above the COMPANY_INDUSTRIES table in the admin panel — the
+// per-field labels (Wage Per Worker Per Hour, Max Workers, Founding Cost)
+// are already self-explanatory, so this only needs to explain the table as
+// a whole plus the one thing it can't reach.
+const COMPANY_INDUSTRIES_DESCRIPTION =
+  "Per-industry wages, worker cap, and founding cost — one row per company type, including land-gated ones (Power Plant, Farm, etc). Recipe quantities (which resources an industry buys/sells and how much) aren't editable here, only these three rates.";
+
 // Field-name metadata so the client can render an editor generically
 // instead of hardcoding a second copy of the group/field list that could
 // drift out of sync with this file.
 export function getConfigRegistryMeta() {
   const flatGroups: Record<string, string[]> = {};
+  const flatGroupDescriptions: Record<string, string> = {};
   for (const groupName of Object.keys(FLAT_GROUPS) as FlatGroupName[]) {
     flatGroups[groupName] = Object.keys(FLAT_GROUPS[groupName]);
+    flatGroupDescriptions[groupName] = FLAT_GROUP_DESCRIPTIONS[groupName];
   }
   return {
     flatGroups,
+    flatGroupDescriptions,
     companyIndustryFields: COMPANY_INDUSTRY_EDITABLE_FIELDS,
-    buildingTypeFields: BUILDING_TYPE_EDITABLE_FIELDS,
+    companyIndustriesDescription: COMPANY_INDUSTRIES_DESCRIPTION,
   };
 }

@@ -2,21 +2,33 @@ import { RESOURCE_LABELS, type MarketResourceType } from "@dominion/shared";
 import { useWorldContracts } from "../api/hooks.js";
 import type { WorldContract } from "../api/client.js";
 
-// The contract system only ever links a raw-extraction industry (output, no
-// input) to the processing industry that consumes it, so the whole world's
-// supply chain is structurally two columns, not an arbitrary graph — this
-// mirrors that shape instead of reaching for a general force-layout library.
-const PRODUCER_INDUSTRY_ORDER = ["farming", "logging", "quarrying"];
-const PROCESSOR_INDUSTRY_ORDER = ["bakery", "sawmill", "stoneworks"];
+// Two columns: land-gated raw producers on the left, zoning-gated
+// processors on the right — same simplified two-column shape as before,
+// though the real chain now has a third tier (Flour Mill feeds Bakery, both
+// zoning-gated) that this simplified layout doesn't distinguish; a
+// flourMill<->bakery contract still functions, it just renders in the same
+// column. Revisit if/when the full ~33-company catalog needs a real
+// multi-tier layout.
+const PRODUCER_INDUSTRY_ORDER = ["powerPlant", "fertilizerPlant", "wheatFarm", "packagingPlant"];
+const PROCESSOR_INDUSTRY_ORDER = ["flourMill", "bakery"];
 const INDUSTRY_LABELS: Record<string, string> = {
-  farming: "Farming",
-  logging: "Logging",
-  quarrying: "Quarrying",
+  powerPlant: "Power Plant",
+  fertilizerPlant: "Fertilizer Plant",
+  wheatFarm: "Wheat Farm",
+  packagingPlant: "Packaging Plant",
+  flourMill: "Flour Mill",
   bakery: "Bakery",
-  sawmill: "Sawmill",
-  stoneworks: "Stoneworks",
 };
-const OUTPUT_LABELS: Record<MarketResourceType, string> = { ...RESOURCE_LABELS, goods: "Goods" };
+const OUTPUT_LABELS: Record<MarketResourceType, string> = {
+  ...RESOURCE_LABELS,
+  goods: "Goods",
+  electricity: "Electricity",
+  fertilizer: "Fertilizer",
+  wheat: "Wheat",
+  flour: "Flour",
+  packaging: "Packaging",
+  bread: "Bread",
+};
 
 const OWNER_LABELS: Record<WorldContract["sellerOwner"], string> = {
   you: "You",

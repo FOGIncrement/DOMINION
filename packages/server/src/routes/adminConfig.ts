@@ -48,7 +48,7 @@ adminConfigRouter.post("/flat/:group/reset", async (req, res) => {
   }
 });
 
-const recordGroupSchema = z.enum(["COMPANY_INDUSTRIES", "BUILDING_TYPES"]);
+const recordGroupSchema = z.enum(["COMPANY_INDUSTRIES"]);
 
 adminConfigRouter.post("/record/:group/:entryId", async (req, res) => {
   const groupParsed = recordGroupSchema.safeParse(req.params.group);
