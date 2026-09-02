@@ -43,29 +43,6 @@ import { runNpcInvestorTick, type PublicCompanyForInvesting } from "./npcInvesto
 import { computeProduction } from "./production.js";
 import { driftSharePrice, maybeDividend } from "./stocks.js";
 import type { CompanySnapshot, SettlementSnapshot } from "./types.js";
-import { getSeedByIndex } from "../worldgen/loadedTerritoryData.js";
-
-// Sums every player's owned territories' baked deposit richness into a
-// per-owner food/wood/stone/gold total, used below to add a small resource
-// trickle alongside building production each tick (see TERRITORY_TUNING.
-// resourceIncomeRate). One query for the whole (small) Territory table
-// rather than per-settlement — territory count is nowhere near settlement
-// count, so this is cheap regardless of playerbase size.
-async function loadTerritoryResourceTotals(): Promise<Map<string, { food: number; wood: number; stone: number; gold: number }>> {
-  const territories = await prisma.territory.findMany({ select: { seedIndex: true, ownerId: true } });
-  const totals = new Map<string, { food: number; wood: number; stone: number; gold: number }>();
-  for (const t of territories) {
-    const seed = getSeedByIndex(t.seedIndex);
-    if (!seed) continue;
-    const existing = totals.get(t.ownerId) ?? { food: 0, wood: 0, stone: 0, gold: 0 };
-    existing.food += seed.resources.food ?? 0;
-    existing.wood += seed.resources.wood ?? 0;
-    existing.stone += seed.resources.stone ?? 0;
-    existing.gold += seed.resources.gold ?? 0;
-    totals.set(t.ownerId, existing);
-  }
-  return totals;
-}
 
 async function loadSnapshots(): Promise<SettlementSnapshot[]> {
   const settlements = await prisma.settlement.findMany({
@@ -177,7 +154,6 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
   const ownedSaleRevenueByCompanyId = new Map<string, number>();
 
   const config = getConfig();
-  const territoryResourceTotals = await loadTerritoryResourceTotals();
   const marketRows = await prisma.marketResource.findMany();
   const prices = Object.fromEntries(
     TRADEABLE_RESOURCES.map((r) => [r, marketRows.find((m) => m.resourceType === r)?.price ?? config.BASE_PRICES[r]]),
@@ -209,30 +185,15 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
 
     const production = computeProduction(settlement, elapsedHours, config.BUILDING_TYPES);
 
-    // Territory resource income — a small trickle from every territory this
-    // player owns, alongside building production. NPC settlements have no
-    // playerId and therefore never own territory (ensurePlayerTerritory is
-    // keyed on Player.id), so this is naturally player-only.
-    const territoryTotals = settlement.playerId ? territoryResourceTotals.get(settlement.playerId) : undefined;
-    const territoryRate = config.TERRITORY_TUNING.resourceIncomeRate * elapsedHours;
-    const territoryIncome = territoryTotals
-      ? {
-          food: territoryTotals.food * territoryRate,
-          wood: territoryTotals.wood * territoryRate,
-          stone: territoryTotals.stone * territoryRate,
-          gold: territoryTotals.gold * territoryRate,
-        }
-      : { food: 0, wood: 0, stone: 0, gold: 0 };
-
-    flows.food.supply += production.food + territoryIncome.food;
-    flows.wood.supply += production.wood + territoryIncome.wood;
-    flows.stone.supply += production.stone + territoryIncome.stone;
+    flows.food.supply += production.food;
+    flows.wood.supply += production.wood;
+    flows.stone.supply += production.stone;
 
     const state: MutableResources = {
-      food: Math.min(settlement.storageCap, settlement.food + production.food + territoryIncome.food),
-      wood: Math.min(settlement.storageCap, settlement.wood + production.wood + territoryIncome.wood),
-      stone: Math.min(settlement.storageCap, settlement.stone + production.stone + territoryIncome.stone),
-      gold: settlement.gold + production.gold + territoryIncome.gold,
+      food: Math.min(settlement.storageCap, settlement.food + production.food),
+      wood: Math.min(settlement.storageCap, settlement.wood + production.wood),
+      stone: Math.min(settlement.storageCap, settlement.stone + production.stone),
+      gold: settlement.gold + production.gold,
     };
 
     if (settlement.playerId) {
