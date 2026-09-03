@@ -65,25 +65,24 @@ function renderTerritory(ctx: CanvasRenderingContext2D, geometry: Geometry, mySe
 
       const s = seed[idx];
       const isMine = s !== noSeedSentinel && mySeedIndexes.has(s);
-      if (isMine) {
-        r = r * 0.7 + accentRgb[0] * 0.3;
-        g = g * 0.7 + accentRgb[1] * 0.3;
-        b = b * 0.7 + accentRgb[2] * 0.3;
-      } else {
-        // Dim land that isn't the player's own, so "my territory" pops —
-        // this page is deliberately scoped to the player's own land, with
-        // just enough surrounding context (per the crop's margin) to see
-        // it's part of a larger continent.
-        r *= 0.55;
-        g *= 0.55;
-        b *= 0.55;
-      }
-
       const p = idx * 4;
-      data[p] = r;
-      data[p + 1] = g;
-      data[p + 2] = b;
-      data[p + 3] = 255;
+      if (isMine) {
+        data[p] = r * 0.7 + accentRgb[0] * 0.3;
+        data[p + 1] = g * 0.7 + accentRgb[1] * 0.3;
+        data[p + 2] = b * 0.7 + accentRgb[2] * 0.3;
+        data[p + 3] = 255;
+      } else {
+        // Fully transparent, not dimmed — an exact cutout of the player's
+        // own border shape against the page background, "as if nothing else
+        // around exists," rather than a continent view with everything else
+        // faded. The crop's margin (see loadedTerritoryCrop.ts) still frames
+        // the shape with breathing room; those margin cells just render
+        // invisible now instead of as dimmed context.
+        data[p] = 0;
+        data[p + 1] = 0;
+        data[p + 2] = 0;
+        data[p + 3] = 0;
+      }
     }
   }
   ctx.putImageData(image, 0, 0);
@@ -242,10 +241,16 @@ const TerritoryCanvas = forwardRef<
     if (!viewport) return;
     const fitZoom = Math.min(viewport.clientWidth / nativeW, viewport.clientHeight / nativeH, 1);
     minZoomRef.current = Math.min(1, Math.max(0.05, fitZoom));
-    zoomRef.current = clamp(CENTER_ZOOM, minZoomRef.current, ZOOM_MAX);
+    // Default view fits the whole cropped shape (island + dark-void margin)
+    // in frame, not zoomed into the zone grid — the point of this page is
+    // to read as "your territory, cut out, at a glance" on first load. The
+    // zone grid still gets its own dedicated zoom via the "Center on Zone
+    // Grid" button (see centerOnZoneGrid below) for when a player actually
+    // wants to draw a zone.
+    zoomRef.current = clamp(fitZoom, minZoomRef.current, ZOOM_MAX);
     panRef.current = {
-      x: viewport.clientWidth / 2 - (zoneGridLeft + zoneGridSizePx / 2) * zoomRef.current,
-      y: viewport.clientHeight / 2 - (zoneGridTop + zoneGridSizePx / 2) * zoomRef.current,
+      x: (viewport.clientWidth - nativeW * zoomRef.current) / 2,
+      y: (viewport.clientHeight - nativeH * zoomRef.current) / 2,
     };
     applyTransform();
     // eslint-disable-next-line react-hooks/exhaustive-deps
