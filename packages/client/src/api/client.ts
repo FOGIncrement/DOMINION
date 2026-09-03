@@ -612,7 +612,9 @@ export interface AdminConfigResponse {
   meta: {
     flatGroups: Record<string, string[]>;
     flatGroupDescriptions: Record<string, string>;
-    companyIndustryFields: string[];
+    // Per-entry, not a single shared list like flatGroups — each industry's
+    // recipe fields differ (Power Plant has no inputs, Bakery has three).
+    companyIndustryFields: Record<string, string[]>;
     companyIndustriesDescription: string;
   };
 }

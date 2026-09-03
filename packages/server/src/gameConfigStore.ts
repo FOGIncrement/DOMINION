@@ -109,19 +109,35 @@ const FLAT_GROUP_DESCRIPTIONS: Record<FlatGroupName, string> = {
 };
 
 // COMPANY_INDUSTRIES mixes tunable rate fields with structural/identity
-// fields (inputs/outputs recipe arrays, name, requiresTerritory) that other
-// code branches on — an explicit numeric-field allowlist per entry, never a
-// blind recursive merge, so a malformed edit can only ever change how fast
-// an industry runs, never what it fundamentally is. Note: the recipe-based
-// inputs[]/outputs[] arrays (added with the recipe-economy rework) aren't
-// reachable through this flat allowlist mechanism — only the scalar rate
-// fields below are admin-editable; a per-recipe-component editor is future
-// work if that's ever needed.
-const COMPANY_INDUSTRY_EDITABLE_FIELDS = [
-  "wagePerWorkerPerHour",
-  "maxWorkers",
-  "foundingCost",
-] as const;
+// fields (resource, name, requiresTerritory) that other code branches on —
+// an explicit numeric-field allowlist per entry, never a blind recursive
+// merge, so a malformed edit can only ever change how fast an industry
+// runs, never what it fundamentally is.
+const COMPANY_INDUSTRY_BASE_FIELDS = ["wagePerWorkerPerHour", "maxWorkers", "foundingCost"] as const;
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// Each industry's inputs[]/outputs[] recipe arrays hold a different set of
+// resources (Power Plant has one output and no inputs; Bakery has three
+// inputs and one output) — not a uniform column set like the base fields
+// above, so each recipe component gets its own synthetic field name instead
+// of a nested editor. "input"/"output" + capitalized resource name (e.g.
+// "inputElectricity", "outputFood") deliberately reuses AdminConfig.tsx's
+// existing formatFieldLabel (camelCase -> "Input Electricity") with zero
+// client-side special-casing needed.
+function recipeFieldKey(direction: "input" | "output", resource: string): string {
+  return `${direction}${capitalize(resource)}`;
+}
+
+function companyIndustryAllowedFields(entry: (typeof COMPANY_INDUSTRIES)[keyof typeof COMPANY_INDUSTRIES]): string[] {
+  return [
+    ...COMPANY_INDUSTRY_BASE_FIELDS,
+    ...entry.inputs.map((c) => recipeFieldKey("input", c.resource)),
+    ...entry.outputs.map((c) => recipeFieldKey("output", c.resource)),
+  ];
+}
 
 type NumericPatch = Record<string, number>;
 
@@ -142,27 +158,39 @@ let mergedCache: MergedGameConfig;
 // COMPANY_INDUSTRIES is keyed by a specific string-literal union
 // (CompanyIndustryId), which TS won't structurally match against a generic
 // Record<string, ...> constraint — this is a runtime merge utility, not
-// something that needs
-// (or can cleanly have) compile-time key-safety, so it takes `unknown` in
-// and the caller casts the result back to the concrete defaults type,
-// which is always correct since every key in `defaults` is preserved.
-function mergeRecordGroup(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  defaults: Record<string, any>,
+// something that needs (or can cleanly have) compile-time key-safety, so it
+// takes `unknown` in and the caller casts the result back to the concrete
+// defaults type, which is always correct since every key in `defaults` is
+// preserved. Rebuilds inputs[]/outputs[] per component (see recipeFieldKey)
+// on top of the base-field overlay, rather than a shallow spread — a recipe
+// array can't be patched by spreading a flat override object over it.
+function mergeCompanyIndustries(
+  defaults: typeof COMPANY_INDUSTRIES,
   overrides: Record<string, NumericPatch> | undefined,
-  allowedFields: readonly string[],
-): Record<string, Record<string, unknown>> {
-  const merged: Record<string, Record<string, unknown>> = {};
-  for (const [id, entry] of Object.entries(defaults) as [string, Record<string, unknown>][]) {
+): typeof COMPANY_INDUSTRIES {
+  const merged: Record<string, unknown> = {};
+  for (const [id, entry] of Object.entries(defaults)) {
     const entryOverride = overrides?.[id] ?? {};
-    const filtered: NumericPatch = {};
-    for (const field of allowedFields) {
+    const baseFiltered: NumericPatch = {};
+    for (const field of COMPANY_INDUSTRY_BASE_FIELDS) {
       const value = entryOverride[field];
-      if (typeof value === "number" && Number.isFinite(value)) filtered[field] = value;
+      if (typeof value === "number" && Number.isFinite(value)) baseFiltered[field] = value;
     }
-    merged[id] = { ...entry, ...filtered };
+    const inputs = entry.inputs.map((component) => {
+      const override = entryOverride[recipeFieldKey("input", component.resource)];
+      return typeof override === "number" && Number.isFinite(override)
+        ? { ...component, perWorkerPerHour: override }
+        : component;
+    });
+    const outputs = entry.outputs.map((component) => {
+      const override = entryOverride[recipeFieldKey("output", component.resource)];
+      return typeof override === "number" && Number.isFinite(override)
+        ? { ...component, perWorkerPerHour: override }
+        : component;
+    });
+    merged[id] = { ...entry, ...baseFiltered, inputs, outputs };
   }
-  return merged;
+  return merged as unknown as typeof COMPANY_INDUSTRIES;
 }
 
 function recompute(): void {
@@ -180,11 +208,7 @@ function recompute(): void {
   }
   mergedCache = {
     ...flat,
-    COMPANY_INDUSTRIES: mergeRecordGroup(
-      COMPANY_INDUSTRIES,
-      persistedOverrides.COMPANY_INDUSTRIES,
-      COMPANY_INDUSTRY_EDITABLE_FIELDS,
-    ) as unknown as typeof COMPANY_INDUSTRIES,
+    COMPANY_INDUSTRIES: mergeCompanyIndustries(COMPANY_INDUSTRIES, persistedOverrides.COMPANY_INDUSTRIES),
   } as unknown as MergedGameConfig;
 }
 
@@ -228,12 +252,14 @@ export async function setRecordOverrides(
   entryId: string,
   patch: NumericPatch,
 ): Promise<MergedGameConfig> {
-  const allowedFields = COMPANY_INDUSTRY_EDITABLE_FIELDS;
   const defaults = COMPANY_INDUSTRIES;
   if (!(entryId in defaults)) throw new Error(`Unknown ${group} entry: ${entryId}`);
+  const allowedFields = new Set(
+    companyIndustryAllowedFields(defaults[entryId as keyof typeof COMPANY_INDUSTRIES]),
+  );
   const filtered: NumericPatch = {};
   for (const [key, value] of Object.entries(patch)) {
-    if ((allowedFields as readonly string[]).includes(key) && typeof value === "number" && Number.isFinite(value)) {
+    if (allowedFields.has(key) && typeof value === "number" && Number.isFinite(value)) {
       filtered[key] = value;
     }
   }
@@ -265,16 +291,18 @@ export async function resetAll(): Promise<MergedGameConfig> {
   return mergedCache;
 }
 
-// Shown once above the COMPANY_INDUSTRIES table in the admin panel — the
-// per-field labels (Wage Per Worker Per Hour, Max Workers, Founding Cost)
-// are already self-explanatory, so this only needs to explain the table as
-// a whole plus the one thing it can't reach.
+// Shown once above the Company Industries cards in the admin panel — the
+// per-field labels (Wage Per Worker Per Hour, Max Workers, Founding Cost,
+// Input Electricity, Output Food, ...) are already self-explanatory, so
+// this only needs to explain the section as a whole.
 const COMPANY_INDUSTRIES_DESCRIPTION =
-  "Per-industry wages, worker cap, and founding cost — one row per company type, including land-gated ones (Power Plant, Farm, etc). Recipe quantities (which resources an industry buys/sells and how much) aren't editable here, only these three rates.";
+  "One card per company type, including land-gated ones (Power Plant, Farm, etc). Wages, worker cap, and founding cost, plus how much of each resource a single worker buys/sells per hour — the recipe's shape (which resources, how many inputs/outputs) isn't editable here, only the rates.";
 
 // Field-name metadata so the client can render an editor generically
 // instead of hardcoding a second copy of the group/field list that could
-// drift out of sync with this file.
+// drift out of sync with this file. companyIndustryFields is per-entry
+// (unlike flatGroups) because each industry's recipe fields differ — Power
+// Plant has no inputs, Bakery has three.
 export function getConfigRegistryMeta() {
   const flatGroups: Record<string, string[]> = {};
   const flatGroupDescriptions: Record<string, string> = {};
@@ -282,10 +310,14 @@ export function getConfigRegistryMeta() {
     flatGroups[groupName] = Object.keys(FLAT_GROUPS[groupName]);
     flatGroupDescriptions[groupName] = FLAT_GROUP_DESCRIPTIONS[groupName];
   }
+  const companyIndustryFields: Record<string, string[]> = {};
+  for (const [id, entry] of Object.entries(COMPANY_INDUSTRIES)) {
+    companyIndustryFields[id] = companyIndustryAllowedFields(entry);
+  }
   return {
     flatGroups,
     flatGroupDescriptions,
-    companyIndustryFields: COMPANY_INDUSTRY_EDITABLE_FIELDS,
+    companyIndustryFields,
     companyIndustriesDescription: COMPANY_INDUSTRIES_DESCRIPTION,
   };
 }

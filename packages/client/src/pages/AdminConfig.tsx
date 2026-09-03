@@ -136,114 +136,131 @@ function TuningGroupCard({
   );
 }
 
-function RecordGroupTable({
-  title,
-  description,
-  group,
+// entry (a merged config.COMPANY_INDUSTRIES[id] record) only has the base
+// fields (wagePerWorkerPerHour, etc.) as flat properties — the recipe rates
+// live nested in entry.inputs[]/entry.outputs[], each {resource,
+// perWorkerPerHour}. The synthetic field names in `fields` (e.g.
+// "inputFlour", "outputElectricity") only exist server-side as a naming
+// convention (see gameConfigStore.ts's recipeFieldKey) for validating
+// patches — reading entry["inputFlour"] directly is always undefined. This
+// rebuilds the same flat lookup client-side so the draft/dirty logic below
+// can treat every field uniformly, base and recipe alike.
+function flattenIndustryEntry(entry: Record<string, unknown>): Record<string, number> {
+  const flat: Record<string, number> = {};
+  for (const [key, value] of Object.entries(entry)) {
+    if (typeof value === "number") flat[key] = value;
+  }
+  const inputs = Array.isArray(entry.inputs) ? (entry.inputs as { resource: string; perWorkerPerHour: number }[]) : [];
+  const outputs = Array.isArray(entry.outputs) ? (entry.outputs as { resource: string; perWorkerPerHour: number }[]) : [];
+  for (const c of inputs) flat[`input${c.resource.charAt(0).toUpperCase()}${c.resource.slice(1)}`] = c.perWorkerPerHour;
+  for (const c of outputs) flat[`output${c.resource.charAt(0).toUpperCase()}${c.resource.slice(1)}`] = c.perWorkerPerHour;
+  return flat;
+}
+
+// One card per industry, not a shared table — each industry's recipe
+// fields differ (Power Plant has no inputs, Bakery has three), so a single
+// uniform column set doesn't fit the data. Mirrors TuningGroupCard's
+// save/reset/dirty-tracking pattern, just keyed by industry id instead of
+// by tuning group.
+function CompanyIndustryCard({
+  id,
+  entry,
   fields,
-  entries,
 }: {
-  title: string;
-  description: string;
-  group: "COMPANY_INDUSTRIES";
+  id: string;
+  entry: Record<string, unknown>;
   fields: string[];
-  entries: Record<string, Record<string, unknown>>;
 }) {
   const queryClient = useQueryClient();
-  const ids = Object.keys(entries);
-  const [drafts, setDrafts] = useState<Record<string, Record<string, number>>>({});
-  const [rowError, setRowError] = useState<Record<string, string>>({});
-  const [savingRow, setSavingRow] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Record<string, number>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const flatEntry = flattenIndustryEntry(entry);
 
   useEffect(() => {
-    const next: Record<string, Record<string, number>> = {};
-    for (const [id, entry] of Object.entries(entries)) {
-      const row: Record<string, number> = {};
-      for (const field of fields) row[field] = Number(entry[field] ?? 0);
-      next[id] = row;
-    }
-    setDrafts(next);
+    const next: Record<string, number> = {};
+    for (const field of fields) next[field] = Number(flatEntry[field] ?? 0);
+    setDraft(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(entries)]);
+  }, [JSON.stringify(entry), fields.join(",")]);
 
-  const isDirty = (id: string) => fields.some((f) => drafts[id]?.[f] !== Number(entries[id]?.[f] ?? 0));
+  const dirty = fields.some((f) => draft[f] !== Number(flatEntry[f] ?? 0));
 
-  const saveRow = async (id: string) => {
-    setSavingRow(id);
-    setRowError((e) => ({ ...e, [id]: "" }));
+  const save = async () => {
+    setSaving(true);
+    setError(null);
     try {
-      const res = await api.adminSetRecord(group, id, drafts[id] ?? {});
+      const res = await api.adminSetRecord("COMPANY_INDUSTRIES", id, draft);
       setConfigCache(queryClient, res.config);
     } catch (err) {
-      setRowError((e) => ({ ...e, [id]: err instanceof ApiError ? err.message : "Save failed" }));
+      setError(err instanceof ApiError ? err.message : "Save failed");
     } finally {
-      setSavingRow(null);
+      setSaving(false);
     }
   };
 
-  const resetRow = async (id: string) => {
-    setSavingRow(id);
-    setRowError((e) => ({ ...e, [id]: "" }));
+  const reset = async () => {
+    setSaving(true);
+    setError(null);
     try {
-      const res = await api.adminResetRecord(group, id);
+      const res = await api.adminResetRecord("COMPANY_INDUSTRIES", id);
       setConfigCache(queryClient, res.config);
     } catch (err) {
-      setRowError((e) => ({ ...e, [id]: err instanceof ApiError ? err.message : "Reset failed" }));
+      setError(err instanceof ApiError ? err.message : "Reset failed");
     } finally {
-      setSavingRow(null);
+      setSaving(false);
     }
   };
 
   return (
+    <div className="admin-config-card">
+      <div className="admin-config-card__header">
+        <span>{String(entry.name ?? id)}</span>
+        <div className="trade-row">
+          <button className="btn btn--accent" disabled={!dirty || saving} onClick={save}>
+            Save
+          </button>
+          <button className="btn" disabled={saving} onClick={reset}>
+            Reset
+          </button>
+        </div>
+      </div>
+      {error && <div className="auth-error">{error}</div>}
+      <div className="admin-config-card__fields">
+        {fields.map((field) => (
+          <label key={field} className="admin-config-field">
+            <span>{formatFieldLabel(field)}</span>
+            <input
+              type="number"
+              step={field.startsWith("input") || field.startsWith("output") ? 0.1 : 1}
+              value={Number.isFinite(draft[field]) ? draft[field] : 0}
+              onChange={(e) => setDraft((d) => ({ ...d, [field]: Number(e.target.value) }))}
+            />
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CompanyIndustriesSection({
+  description,
+  fields,
+  entries,
+}: {
+  description: string;
+  fields: Record<string, string[]>;
+  entries: Record<string, Record<string, unknown>>;
+}) {
+  const ids = Object.keys(entries);
+  return (
     <div className="card">
-      <h2 className="card__title">{title}</h2>
+      <h2 className="card__title">Company Industries</h2>
       {description && <p className="suggestion" style={{ marginTop: 0 }}>{description}</p>}
-      <div className="table-scroll">
-        <table className="settlement-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              {fields.map((f) => (
-                <th key={f}>{formatFieldLabel(f)}</th>
-              ))}
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {ids.map((id) => (
-              <tr key={id}>
-                <td>{String(entries[id]?.name ?? id)}</td>
-                {fields.map((field) => (
-                  <td key={field}>
-                    <input
-                      type="number"
-                      style={{ width: 90 }}
-                      value={drafts[id]?.[field] ?? 0}
-                      onChange={(e) =>
-                        setDrafts((d) => ({ ...d, [id]: { ...d[id], [field]: Number(e.target.value) } }))
-                      }
-                    />
-                  </td>
-                ))}
-                <td>
-                  <div className="trade-row">
-                    <button
-                      className="btn btn--accent"
-                      disabled={!isDirty(id) || savingRow === id}
-                      onClick={() => saveRow(id)}
-                    >
-                      Save
-                    </button>
-                    <button className="btn" disabled={savingRow === id} onClick={() => resetRow(id)}>
-                      Reset
-                    </button>
-                  </div>
-                  {rowError[id] && <div className="auth-error">{rowError[id]}</div>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="admin-config-grid">
+        {ids.map((id) => (
+          <CompanyIndustryCard key={id} id={id} entry={entries[id] ?? {}} fields={fields[id] ?? []} />
+        ))}
       </div>
     </div>
   );
@@ -293,10 +310,8 @@ export default function AdminConfig() {
         </p>
       </div>
 
-      <RecordGroupTable
-        title="Company Industries"
+      <CompanyIndustriesSection
         description={meta.companyIndustriesDescription}
-        group="COMPANY_INDUSTRIES"
         fields={meta.companyIndustryFields}
         entries={(config.COMPANY_INDUSTRIES ?? {}) as Record<string, Record<string, unknown>>}
       />
