@@ -3,9 +3,7 @@
 // owned territory, for the "My Territory" page (see routes/territory.ts's
 // GET /mine/detail). The full-resolution biome/territory-seed rasters are
 // loaded and cached once per server process, same lifetime assumption
-// loadedMapPreview.ts already makes — cropping per-request is cheap even
-// against the full ~5M-cell grid (a handful of milliseconds), since it's a
-// rare per-player action, not a hot loop.
+// loadedMapPreview.ts already makes.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,10 +18,26 @@ const NO_SEED = 0xffff;
 // context without ballooning the crop for a small territory.
 const CROP_MARGIN_CELLS = 30;
 
+interface SeedBounds {
+  minCol: number;
+  minRow: number;
+  maxCol: number;
+  maxRow: number;
+}
+
 interface FullGrid {
   biomeIds: BiomeId[];
   biome: Uint8Array;
   seed: Uint16Array;
+  // Precomputed once at load time so a request only ever touches its own
+  // territory's cells, not the whole grid — at today's ~5M-cell continent a
+  // per-request O(grid) scan was a few milliseconds and unnoticeable, but it
+  // scales with grid size regardless of how small the requesting player's
+  // land is, which stops being fine at a much bigger continent (see the
+  // worldgen scale-test notes: ~252M cells for a Europe+Asia-sized world).
+  // Paying one O(grid) pass here, once per server process, turns every
+  // subsequent request into an O(territories owned) lookup instead.
+  seedBounds: Map<number, SeedBounds>;
 }
 
 let cached: FullGrid | null = null;
@@ -33,11 +47,28 @@ function loadFullGrid(): FullGrid {
   const manifest = JSON.parse(fs.readFileSync(path.join(OUTPUT_DIR, "manifest.json"), "utf-8"));
   const biomeBuf = fs.readFileSync(path.join(OUTPUT_DIR, "biome.u8"));
   const seedBuf = fs.readFileSync(path.join(OUTPUT_DIR, "territoryOwner.u16"));
-  cached = {
-    biomeIds: manifest.biomeIds,
-    biome: new Uint8Array(biomeBuf.buffer, biomeBuf.byteOffset, biomeBuf.byteLength),
-    seed: new Uint16Array(seedBuf.buffer, seedBuf.byteOffset, seedBuf.byteLength / 2),
-  };
+  const biome = new Uint8Array(biomeBuf.buffer, biomeBuf.byteOffset, biomeBuf.byteLength);
+  const seed = new Uint16Array(seedBuf.buffer, seedBuf.byteOffset, seedBuf.byteLength / 2);
+
+  const seedBounds = new Map<number, SeedBounds>();
+  for (let row = 0; row < GRID_ROWS; row++) {
+    const rowBase = row * GRID_COLS;
+    for (let col = 0; col < GRID_COLS; col++) {
+      const s = seed[rowBase + col];
+      if (s === NO_SEED) continue;
+      const bounds = seedBounds.get(s);
+      if (!bounds) {
+        seedBounds.set(s, { minCol: col, minRow: row, maxCol: col, maxRow: row });
+      } else {
+        if (col < bounds.minCol) bounds.minCol = col;
+        if (col > bounds.maxCol) bounds.maxCol = col;
+        if (row < bounds.minRow) bounds.minRow = row;
+        if (row > bounds.maxRow) bounds.maxRow = row;
+      }
+    }
+  }
+
+  cached = { biomeIds: manifest.biomeIds, biome, seed, seedBounds };
   return cached;
 }
 
@@ -58,20 +89,16 @@ export interface TerritoryCrop {
 // with zero territories has nothing to crop).
 export function getTerritoryCrop(seedIndexes: number[]): TerritoryCrop | null {
   const grid = loadFullGrid();
-  const wanted = new Set(seedIndexes);
-  if (wanted.size === 0) return null;
+  if (seedIndexes.length === 0) return null;
 
   let minCol = GRID_COLS, minRow = GRID_ROWS, maxCol = -1, maxRow = -1;
-  for (let row = 0; row < GRID_ROWS; row++) {
-    const rowBase = row * GRID_COLS;
-    for (let col = 0; col < GRID_COLS; col++) {
-      const s = grid.seed[rowBase + col];
-      if (s === NO_SEED || !wanted.has(s)) continue;
-      if (col < minCol) minCol = col;
-      if (col > maxCol) maxCol = col;
-      if (row < minRow) minRow = row;
-      if (row > maxRow) maxRow = row;
-    }
+  for (const s of seedIndexes) {
+    const bounds = grid.seedBounds.get(s);
+    if (!bounds) continue;
+    if (bounds.minCol < minCol) minCol = bounds.minCol;
+    if (bounds.maxCol > maxCol) maxCol = bounds.maxCol;
+    if (bounds.minRow < minRow) minRow = bounds.minRow;
+    if (bounds.maxRow > maxRow) maxRow = bounds.maxRow;
   }
   if (maxCol < 0) return null;
 
