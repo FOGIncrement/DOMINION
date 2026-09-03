@@ -20,6 +20,7 @@ import {
   useMarket,
   useMyCompanies,
   useMyContracts,
+  useMyTerritories,
   useTutorial,
   useWorldContracts,
   useZones,
@@ -914,6 +915,90 @@ function CommandCenter({ onProposeTo, jumpToId, onJumpHandled }: CommandCenterPr
   );
 }
 
+// Land-gated industries (powerPlant, farm, fertilizerPlant, wheatFarm,
+// packagingPlant) can also be founded from the Continent page by clicking an
+// owned territory tile (see LandCompanyFounder there) — this card surfaces
+// the exact same founding action here too, since a new player has no reason
+// to know that clicking a map tile is where electricity/food/wheat
+// production lives. One row per land-gated industry per owned territory.
+function LandCompanyRow({
+  seedIndex,
+  industryId,
+  onFounded,
+}: {
+  seedIndex: number;
+  industryId: CompanyIndustryId;
+  onFounded: () => void;
+}) {
+  const industry = COMPANY_INDUSTRIES[industryId];
+  const [name, setName] = useState(`${industry.name} #${seedIndex}`);
+  const [error, setError] = useState<string | null>(null);
+
+  const found = useMutation({
+    mutationFn: () => api.foundOnTerritory(seedIndex, industryId, name),
+    onSuccess: () => {
+      setError(null);
+      onFounded();
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Founding failed"),
+  });
+
+  return (
+    <div className="trade-row" style={{ flexWrap: "wrap", marginTop: 4, alignItems: "center" }}>
+      <input type="text" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1, minWidth: 140 }} />
+      <button className="btn" disabled={found.isPending} onClick={() => found.mutate()}>
+        Found {industry.name} ({industry.foundingCost}g)
+      </button>
+      {error && <div className="auth-error">{error}</div>}
+    </div>
+  );
+}
+
+function LandCompaniesCard() {
+  const queryClient = useQueryClient();
+  const { data: territories } = useMyTerritories();
+  const { data: myCompanies } = useMyCompanies();
+  const mine = territories?.territories ?? [];
+  const landGatedIndustries = COMPANY_INDUSTRY_IDS.filter((id) => COMPANY_INDUSTRIES[id].requiresTerritory);
+
+  if (mine.length === 0) return null;
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["myCompanies"] });
+    queryClient.invalidateQueries({ queryKey: ["gameState"] });
+  };
+
+  return (
+    <div className="card">
+      <h2 className="card__title">Land-Gated Companies</h2>
+      <p className="suggestion" style={{ marginTop: 0 }}>
+        Power Plant, Farm, Wheat Farm, Fertilizer Plant, and Packaging Plant run on your own territory instead of a
+        zone — one of each per territory you own.
+      </p>
+      {mine.map((t) => {
+        const territoryCompanies = (myCompanies?.companies ?? []).filter((c) => c.territorySeedIndex === t.seedIndex);
+        return (
+          <div key={t.seedIndex} style={{ marginTop: 10 }}>
+            <div className="card-section-label">
+              Territory #{t.seedIndex} — {t.dominantBiome} · {Math.round(t.areaKm2).toLocaleString()} km²
+            </div>
+            {landGatedIndustries.map((industryId) => {
+              const founded = territoryCompanies.find((c) => c.industry === industryId);
+              return founded ? (
+                <p className="suggestion" key={industryId} style={{ marginTop: 4 }}>
+                  {founded.name} ({COMPANY_INDUSTRIES[industryId].name}) is running here.
+                </p>
+              ) : (
+                <LandCompanyRow key={industryId} seedIndex={t.seedIndex} industryId={industryId} onFounded={invalidate} />
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function FoundCompanyForm() {
   const queryClient = useQueryClient();
   const { data: gameState } = useGameState();
@@ -967,7 +1052,7 @@ function FoundCompanyForm() {
 
   return (
     <div className="card">
-      <h2 className="card__title">Found a Company</h2>
+      <h2 className="card__title">Found a Company (Zoned)</h2>
       {error && <div className="auth-error">{error}</div>}
       <div className="trade-row" style={{ flexWrap: "wrap" }}>
         <input
@@ -1311,6 +1396,7 @@ export default function Companies() {
     <div className="page page--full">
       <CommandCenter onProposeTo={setProposeToId} jumpToId={jumpToId} onJumpHandled={() => setJumpToId(null)} />
 
+      <LandCompaniesCard />
       <FoundCompanyForm />
       <SupplyContractForm presetCounterpartyId={proposeToId} />
       <MyContractsList />
