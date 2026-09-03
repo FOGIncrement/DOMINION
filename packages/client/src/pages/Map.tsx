@@ -19,9 +19,17 @@ const CENTER_ZOOM = 3;
 
 // The zone-placement grid is an abstract PLOT_ZONING_SIZE x PLOT_ZONING_SIZE
 // slot grid, same as it always was — not tied to real km/terrain geometry
-// (a zone "cell" isn't a real-world area), just visually anchored over the
-// rendered territory so drawing a zone feels grounded in "your land."
-const ZONE_CELL_PX = 22; // at zoom=1
+// (a zone "cell" isn't a real-world area). Its on-screen SIZE, though, is
+// computed per-render from the territory crop's own dimensions (see
+// zoneGridSizePx below) rather than this fixed px-per-cell constant it used
+// to be — a fixed 220px square (10 cells * 22px) was a tiny, easy-to-miss
+// patch in the center of a much bigger territory crop (often 2000+ px wide
+// at native resolution), which read as "zoning barely works on my land"
+// rather than "zoning is an abstract capacity tool." PLOT_ZONING_SIZE (the
+// cell COUNT, which is what founding-capacity math actually cares about,
+// see CELLS_PER_ZONE_SLOT) is unchanged — only how large each cell renders.
+const MIN_ZONE_GRID_PX = 300;
+const ZONE_GRID_FRACTION = 0.7; // of the smaller crop dimension, at zoom=1
 
 function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
@@ -150,9 +158,12 @@ const TerritoryCanvas = forwardRef<
   const nativeW = geometry.cols * CANVAS_SCALE;
   const nativeH = geometry.rows * CANVAS_SCALE;
   // The zone grid is anchored at the center of the rendered crop — an
-  // abstract overlay, not a real geographic placement (see the module
-  // comment on ZONE_CELL_PX).
-  const zoneGridSizePx = PLOT_ZONING_SIZE * ZONE_CELL_PX;
+  // abstract overlay, not a real geographic placement — but sized as a
+  // fraction of the crop itself so it reads as spanning "your land," not a
+  // small fixed patch lost in the middle of it (see the module comment
+  // above MIN_ZONE_GRID_PX).
+  const zoneGridSizePx = Math.max(MIN_ZONE_GRID_PX, Math.min(nativeW, nativeH) * ZONE_GRID_FRACTION);
+  const zoneCellPx = zoneGridSizePx / PLOT_ZONING_SIZE;
   const zoneGridLeft = nativeW / 2 - zoneGridSizePx / 2;
   const zoneGridTop = nativeH / 2 - zoneGridSizePx / 2;
 
@@ -306,8 +317,8 @@ const TerritoryCanvas = forwardRef<
     if (!svg) return null;
     const rect = svg.getBoundingClientRect();
     const zoom = zoomRef.current || 1;
-    const x = clampCell((e.clientX - rect.left) / zoom / ZONE_CELL_PX, PLOT_ZONING_SIZE);
-    const y = clampCell((e.clientY - rect.top) / zoom / ZONE_CELL_PX, PLOT_ZONING_SIZE);
+    const x = clampCell((e.clientX - rect.left) / zoom / zoneCellPx, PLOT_ZONING_SIZE);
+    const y = clampCell((e.clientY - rect.top) / zoom / zoneCellPx, PLOT_ZONING_SIZE);
     return { x, y };
   };
 
@@ -371,17 +382,17 @@ const TerritoryCanvas = forwardRef<
           <rect width={zoneGridSizePx} height={zoneGridSizePx} fill="rgba(0,0,0,0.15)" stroke="var(--accent)" strokeWidth={2} strokeOpacity={0.7} />
           {Array.from({ length: PLOT_ZONING_SIZE + 1 }).map((_, i) => (
             <g key={`grid-${i}`}>
-              <line x1={i * ZONE_CELL_PX} y1={0} x2={i * ZONE_CELL_PX} y2={zoneGridSizePx} stroke="rgba(255,255,255,0.18)" />
-              <line x1={0} y1={i * ZONE_CELL_PX} x2={zoneGridSizePx} y2={i * ZONE_CELL_PX} stroke="rgba(255,255,255,0.18)" />
+              <line x1={i * zoneCellPx} y1={0} x2={i * zoneCellPx} y2={zoneGridSizePx} stroke="rgba(255,255,255,0.18)" />
+              <line x1={0} y1={i * zoneCellPx} x2={zoneGridSizePx} y2={i * zoneCellPx} stroke="rgba(255,255,255,0.18)" />
             </g>
           ))}
           {zones.map((z, i) => (
             <rect
               key={i}
-              x={z.x * ZONE_CELL_PX}
-              y={z.y * ZONE_CELL_PX}
-              width={z.width * ZONE_CELL_PX}
-              height={z.height * ZONE_CELL_PX}
+              x={z.x * zoneCellPx}
+              y={z.y * zoneCellPx}
+              width={z.width * zoneCellPx}
+              height={z.height * zoneCellPx}
               fill={ZONE_TYPE_COLORS[z.zoneType as ZoneTypeId] ?? "var(--text-muted)"}
               opacity={z.status === "completed" ? 0.85 : 0.55}
             >
@@ -392,10 +403,10 @@ const TerritoryCanvas = forwardRef<
           ))}
           {selection && (
             <rect
-              x={selection.x * ZONE_CELL_PX}
-              y={selection.y * ZONE_CELL_PX}
-              width={selection.width * ZONE_CELL_PX}
-              height={selection.height * ZONE_CELL_PX}
+              x={selection.x * zoneCellPx}
+              y={selection.y * zoneCellPx}
+              width={selection.width * zoneCellPx}
+              height={selection.height * zoneCellPx}
               fill="var(--accent)"
               opacity={0.4}
               stroke="var(--accent)"
