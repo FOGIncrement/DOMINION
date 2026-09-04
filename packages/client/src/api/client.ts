@@ -57,6 +57,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ name, industry, seedMoney }),
     }),
+  // Founding Grid — the map-driven founding path (see Map.tsx's inline
+  // drawer): the player picks the exact cell, rather than the plain
+  // foundCompany() route or the zone-capacity pool picking one for them.
+  foundCompanyAtCell: (zoneId: string, cellX: number, cellY: number, industry: CompanyIndustryId, name: string, seedMoney = 0) =>
+    request<{ ok: true; companyId: string; zoneId: string; cellX: number; cellY: number }>("/companies/at-cell", {
+      method: "POST",
+      body: JSON.stringify({ zoneId, cellX, cellY, industry, name, seedMoney }),
+    }),
   setCompanyWorkers: (companyId: string, workersAssigned: number) =>
     request<{ ok: true; workersAssigned: number }>(`/companies/${companyId}/workers`, {
       method: "POST",
@@ -318,6 +326,13 @@ export interface MyCompany {
   // Set only for a land-gated company founded via POST
   // /territory/:seedIndex/found — which territory it's founded on.
   territorySeedIndex: number | null;
+  // Founding Grid: the zoning-grid cell this company occupies (see
+  // Map.tsx). Null for a land-gated company (uses territorySeedIndex
+  // instead), for one founded before this feature existed, or for one
+  // still covered by its zone category's baseline free-slot allowance.
+  zoneId: string | null;
+  cellX: number | null;
+  cellY: number | null;
   cash: number;
   // One entry per resource this company currently holds any stock of
   // (every recipe input it's stockpiled, every output not yet sold).
@@ -575,6 +590,10 @@ export interface MyZoneProject {
 }
 
 export interface ZoneRect {
+  // The SettlementZone row's id — only present once a zone is "completed"
+  // (the only status a company can be founded into, via foundCompanyAtCell
+  // above). Null for a still-pending/building zone project.
+  id: string | null;
   zoneType: string;
   x: number;
   y: number;

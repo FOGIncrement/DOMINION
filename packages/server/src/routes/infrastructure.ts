@@ -16,6 +16,11 @@ function statusOf(p: { cancelledAt: Date | null; acceptedAt: Date | null; comple
 }
 
 export interface ZoneRect {
+  // The SettlementZone row's id — only present once a zone is "completed"
+  // (the only status a company can actually be founded into via POST
+  // /companies/at-cell). Null for a still-pending/building ZoneProject,
+  // which has no SettlementZone row yet to address.
+  id: string | null;
   zoneType: string;
   x: number;
   y: number;
@@ -40,6 +45,7 @@ export async function getSettlementZoneRects(settlementId: string): Promise<Zone
   ]);
 
   const rects: ZoneRect[] = completed.map((z) => ({
+    id: z.id,
     zoneType: z.type,
     x: z.zoneX!,
     y: z.zoneY!,
@@ -49,6 +55,7 @@ export async function getSettlementZoneRects(settlementId: string): Promise<Zone
   }));
   for (const p of projects) {
     rects.push({
+      id: null,
       zoneType: p.zoneType,
       x: p.zoneX!,
       y: p.zoneY!,
@@ -67,26 +74,73 @@ function rectsOverlap(
   return !(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y);
 }
 
-// Capacity used is the sum of facilityCount across every non-closed company
-// this player owns in the category — a multi-facility company consumes
-// proportionally more, same as founding another company would (see
-// Company.facilityCount and routes/companies.ts's expand route, both of
-// which reuse this instead of maintaining their own count). Capacity
-// available is the baseline free allowance plus every completed zone's
-// slotsGranted. Only completed zones count — a project that's still
-// "building" hasn't delivered capacity yet.
+// Capacity used is a count of non-closed companies this player owns in the
+// category — one company occupies one cell on the map (see the Founding
+// Grid feature, Company.zoneId/cellX/cellY), regardless of its
+// facilityCount (an orthogonal economic-scaling lever, see
+// COMPANY_FACILITY_TUNING, that no longer claims additional zoning
+// footprint — POST /:id/expand has no zone-capacity gate of its own
+// accordingly). Capacity available is the baseline free allowance plus
+// every completed zone's slotsGranted. Only completed zones count — a
+// project that's still "building" hasn't delivered capacity yet. Since
+// CELLS_PER_ZONE_SLOT is 1, slotsGranted already equals a zone's literal
+// cell count, so "used" (companies) vs. "available" (cells) are directly
+// comparable — this is the same number the map's occupied-vs-empty cells
+// show, not a separate abstraction.
 export async function computeZoneCategoryUsage(playerId: string, settlementId: string, zoneType: ZoneTypeId) {
   const def = ZONE_TYPES[zoneType];
-  const [companies, zones] = await Promise.all([
-    prisma.company.findMany({
-      where: { ownerId: playerId, closedAt: null, industry: { in: def.industries } },
-      select: { facilityCount: true },
-    }),
+  const [companyCount, zones] = await Promise.all([
+    prisma.company.count({ where: { ownerId: playerId, closedAt: null, industry: { in: def.industries } } }),
     prisma.settlementZone.findMany({ where: { settlementId, type: zoneType } }),
   ]);
-  const used = companies.reduce((sum, c) => sum + c.facilityCount, 0);
   const available = ZONE_BASELINE_FREE_SLOTS[zoneType] + zones.reduce((sum, z) => sum + z.slotsGranted, 0);
-  return { used, available };
+  return { used: companyCount, available };
+}
+
+// How many of this player's non-closed companies in this zone category were
+// founded WITHOUT a cell — i.e. drew on the ZONE_BASELINE_FREE_SLOTS pool
+// rather than a placed zone (either founded before this feature existed, or
+// founded while the baseline pool still had room). This is the pool
+// POST /companies (the plain, non-map founding form) checks before it needs
+// to fall back to auto-placing on a real cell.
+export async function countLegacyFoundings(playerId: string, zoneType: ZoneTypeId): Promise<number> {
+  const def = ZONE_TYPES[zoneType];
+  return prisma.company.count({
+    where: { ownerId: playerId, closedAt: null, industry: { in: def.industries }, zoneId: null },
+  });
+}
+
+// Scans this player's completed, spatially-placed zones of a given type
+// (oldest first, so filling happens in commission order) and each zone's
+// cells in row-major order for the first one with no non-closed company
+// already on it. Returns null once every zone of this type is full (or none
+// exist yet) — the caller treats that as "no capacity," same as the old
+// slot-counter running out.
+export async function findFreeCellInZoneCategory(
+  playerId: string,
+  settlementId: string,
+  zoneType: ZoneTypeId,
+): Promise<{ zoneId: string; cellX: number; cellY: number } | null> {
+  const zones = await prisma.settlementZone.findMany({
+    where: { settlementId, type: zoneType, zoneX: { not: null } },
+    orderBy: { completedAt: "asc" },
+  });
+  if (zones.length === 0) return null;
+
+  const occupied = await prisma.company.findMany({
+    where: { ownerId: playerId, closedAt: null, zoneId: { in: zones.map((z) => z.id) } },
+    select: { zoneId: true, cellX: true, cellY: true },
+  });
+  const occupiedKeys = new Set(occupied.map((c) => `${c.zoneId}:${c.cellX}:${c.cellY}`));
+
+  for (const zone of zones) {
+    for (let y = zone.zoneY!; y < zone.zoneY! + zone.zoneHeight!; y++) {
+      for (let x = zone.zoneX!; x < zone.zoneX! + zone.zoneWidth!; x++) {
+        if (!occupiedKeys.has(`${zone.id}:${x}:${y}`)) return { zoneId: zone.id, cellX: x, cellY: y };
+      }
+    }
+  }
+  return null;
 }
 
 infrastructureRouter.get("/", async (req: AuthedRequest, res) => {

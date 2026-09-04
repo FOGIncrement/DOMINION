@@ -485,6 +485,116 @@ a {
   color: var(--text-primary, inherit);
 }
 
+/* --- Founding Grid (My Territory) --- */
+
+.founding-grid-shell {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.founding-grid-shell__map {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.founding-grid-shell__detail {
+  width: 400px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--gridline);
+  padding-left: 16px;
+  max-height: 560px;
+  overflow-y: auto;
+}
+
+/* Slides up from the bottom of the map viewport for founding — the first
+   drawer pattern in this codebase; every other spatial popup here is
+   either inline or a full-backdrop .map-territory-popup/.modal. */
+.cell-drawer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.3);
+  max-height: 60%;
+  overflow-y: auto;
+  padding: 14px 16px;
+  z-index: 6;
+  animation: cell-drawer-up 180ms ease-out;
+}
+
+@keyframes cell-drawer-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.cell-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.cell-drawer__head span {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cell-drawer__close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.cell-drawer__close:hover {
+  color: var(--text-primary);
+}
+
+.cell-drawer__industries {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.cell-drawer__industry {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.cell-drawer__industry:hover {
+  color: var(--text-primary);
+  background: var(--surface-0);
+}
+
+.cell-drawer__industry-cost {
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
 .card-section-label {
   font-size: 11px;
   font-weight: 600;

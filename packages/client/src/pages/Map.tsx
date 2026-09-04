@@ -1,8 +1,21 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { BIOME_COLORS, CELLS_PER_ZONE_SLOT, PLOT_ZONING_SIZE, ZONE_TYPES, ZONE_TYPE_IDS, type BiomeId, type ZoneTypeId } from "@dominion/shared";
-import { api, ApiError, type ZoneRect } from "../api/client.js";
-import { useMyTerritories, useMyTerritoryDetail, useWorldMap, useZones } from "../api/hooks.js";
+import { useNavigate } from "react-router-dom";
+import {
+  BIOME_COLORS,
+  CELLS_PER_ZONE_SLOT,
+  COMPANY_INDUSTRIES,
+  PLOT_ZONING_SIZE,
+  ZONE_TYPES,
+  ZONE_TYPE_IDS,
+  type BiomeId,
+  type CompanyIndustryId,
+  type ZoneTypeId,
+} from "@dominion/shared";
+import { api, ApiError, type MyCompany, type ZoneRect } from "../api/client.js";
+import { useMyCompanies, useMyContracts, useMyTerritories, useMyTerritoryDetail, useWorldMap, useZones } from "../api/hooks.js";
+import { CompanyAvatar, INDUSTRY_META } from "../industryMeta.js";
+import { ContractsTab, LostControlOverview, OverviewTab, WorkforceTab } from "../components/CompanyDetailTabs.js";
 
 // "My Territory" — repurposed 2026-09-03 from the old per-island world map
 // (now fully superseded by Continent.tsx) into a close-up, native-resolution
@@ -128,19 +141,41 @@ export interface TerritoryCanvasHandle {
   centerOnZoneGrid: () => void;
 }
 
+// A company placed via the Founding Grid — just enough to render a marker
+// and to tell an empty cell from an occupied one on click.
+export interface PlacedCompanyMarker {
+  id: string;
+  zoneId: string;
+  cellX: number;
+  cellY: number;
+  industry: CompanyIndustryId;
+  name: string;
+}
+
+// What clicking a cell means, when the zone tool (drag-to-draw-a-zone) is
+// off — the two Founding Grid entry points: an empty cell inside a
+// completed zone opens the founding drawer, an occupied one opens the
+// split management panel. Clicking outside any zone, or inside one that's
+// still building/pending, does nothing.
+export type CellClickResult =
+  | { mode: "found"; zoneId: string; zoneType: ZoneTypeId; x: number; y: number }
+  | { mode: "manage"; companyId: string };
+
 const TerritoryCanvas = forwardRef<
   TerritoryCanvasHandle,
   {
     geometry: Geometry;
     mySeedIndexes: Set<number>;
     zones: ZoneRect[];
+    placedCompanies: PlacedCompanyMarker[];
     zoneToolActive: boolean;
     selection: Selection | null;
     onSelectionChange: (s: Selection | null) => void;
     onSelectionDone: (s: Selection) => void;
+    onCellClick: (result: CellClickResult) => void;
   }
 >(function TerritoryCanvas(
-  { geometry, mySeedIndexes, zones, zoneToolActive, selection, onSelectionChange, onSelectionDone },
+  { geometry, mySeedIndexes, zones, placedCompanies, zoneToolActive, selection, onSelectionChange, onSelectionDone, onCellClick },
   ref,
 ) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -268,9 +303,16 @@ const TerritoryCanvas = forwardRef<
   }, [nativeW, nativeH]);
 
   useEffect(() => {
-    const onResize = () => applyTransform();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    // A ResizeObserver on the viewport itself, not just a window resize
+    // listener — the Founding Grid's split management panel opening/
+    // closing resizes .map-viewport via CSS flex with no window resize
+    // event firing at all, which would otherwise leave pan/zoom stale
+    // (clipped content, an un-reclamped pan) the moment the panel mounts.
+    const observer = new ResizeObserver(() => applyTransform());
+    observer.observe(viewport);
+    return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -352,6 +394,23 @@ const TerritoryCanvas = forwardRef<
     onSelectionDone(selection);
   };
 
+  // Founding Grid — active whenever the zone tool (drag-to-draw) is off.
+  // Simple click, not a drag: find which zone the clicked cell falls in
+  // (zones don't overlap by construction), then whether that cell is
+  // already occupied.
+  const handleCellPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    const cell = pointToZoneCell(e);
+    if (!cell) return;
+    const zone = zones.find((z) => cell.x >= z.x && cell.x < z.x + z.width && cell.y >= z.y && cell.y < z.y + z.height);
+    if (!zone || zone.status !== "completed" || !zone.id) return;
+    const occupant = placedCompanies.find((c) => c.zoneId === zone.id && c.cellX === cell.x && c.cellY === cell.y);
+    onCellClick(
+      occupant
+        ? { mode: "manage", companyId: occupant.id }
+        : { mode: "found", zoneId: zone.id, zoneType: zone.zoneType as ZoneTypeId, x: cell.x, y: cell.y },
+    );
+  };
+
   return (
     <div
       ref={viewportRef}
@@ -372,12 +431,12 @@ const TerritoryCanvas = forwardRef<
             left: zoneGridLeft,
             top: zoneGridTop,
             touchAction: "none",
-            cursor: zoneToolActive ? "crosshair" : "default",
-            pointerEvents: zoneToolActive ? "auto" : "none",
+            cursor: zoneToolActive ? "crosshair" : "pointer",
+            pointerEvents: "auto",
           }}
-          onPointerDown={handleZonePointerDown}
-          onPointerMove={handleZonePointerMove}
-          onPointerUp={handleZonePointerUp}
+          onPointerDown={zoneToolActive ? handleZonePointerDown : undefined}
+          onPointerMove={zoneToolActive ? handleZonePointerMove : undefined}
+          onPointerUp={zoneToolActive ? handleZonePointerUp : handleCellPointerUp}
         >
           <rect width={zoneGridSizePx} height={zoneGridSizePx} fill="rgba(0,0,0,0.15)" stroke="var(--accent)" strokeWidth={2} strokeOpacity={0.7} />
           {Array.from({ length: PLOT_ZONING_SIZE + 1 }).map((_, i) => (
@@ -401,6 +460,30 @@ const TerritoryCanvas = forwardRef<
               </title>
             </rect>
           ))}
+          {placedCompanies.map((c) => {
+            const meta = INDUSTRY_META[c.industry];
+            const cx = c.cellX * zoneCellPx;
+            const cy = c.cellY * zoneCellPx;
+            return (
+              <g key={c.id}>
+                <rect x={cx + 1} y={cy + 1} width={zoneCellPx - 2} height={zoneCellPx - 2} fill={meta.color} rx={2}>
+                  <title>{c.name}</title>
+                </rect>
+                <text
+                  x={cx + zoneCellPx / 2}
+                  y={cy + zoneCellPx / 2}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fontSize={Math.min(11, zoneCellPx * 0.32)}
+                  fontWeight={700}
+                  fill="var(--surface-0)"
+                  style={{ pointerEvents: "none", userSelect: "none" }}
+                >
+                  {meta.letter}
+                </text>
+              </g>
+            );
+          })}
           {selection && (
             <rect
               x={selection.x * zoneCellPx}
@@ -508,12 +591,184 @@ function CommissionPanel({ selection, onClear }: { selection: Selection; onClear
   );
 }
 
+// Founding Grid — founding. Slides up from the bottom of the map viewport
+// (the first drawer pattern in this codebase; everything else spatial is
+// either inline or a full-backdrop .modal). Two steps: pick an industry
+// (filtered to what the zone's own type allows), then name + seed money.
+// Closes on success — the player clicks the now-filled cell again to
+// manage it, per the approved flow; this does not auto-transition into
+// the split panel.
+function CellFoundingDrawer({
+  zoneId,
+  zoneType,
+  x,
+  y,
+  onClose,
+  onFounded,
+}: {
+  zoneId: string;
+  zoneType: ZoneTypeId;
+  x: number;
+  y: number;
+  onClose: () => void;
+  onFounded: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const validIndustries = ZONE_TYPES[zoneType].industries;
+  const [industry, setIndustry] = useState<CompanyIndustryId | null>(null);
+  const [name, setName] = useState("");
+  const [seedMoney, setSeedMoney] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  const found = useMutation({
+    mutationFn: () => api.foundCompanyAtCell(zoneId, x, y, industry!, name, seedMoney),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["myCompanies"] });
+      queryClient.invalidateQueries({ queryKey: ["gameState"] });
+      queryClient.invalidateQueries({ queryKey: ["allCompanies"] });
+      queryClient.invalidateQueries({ queryKey: ["worldMap"] });
+      queryClient.invalidateQueries({ queryKey: ["zones"] });
+      onFounded();
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Founding failed"),
+  });
+
+  return (
+    <div className="cell-drawer">
+      <div className="cell-drawer__head">
+        <span>{industry ? `Found ${ZONE_TYPES[zoneType].name} company` : "Pick a company for this square"}</span>
+        <button className="cell-drawer__close" onClick={onClose} aria-label="Close">
+          ×
+        </button>
+      </div>
+      {error && <div className="auth-error">{error}</div>}
+      {!industry ? (
+        <div className="cell-drawer__industries">
+          {validIndustries.map((id) => {
+            const meta = INDUSTRY_META[id];
+            const def = COMPANY_INDUSTRIES[id];
+            return (
+              <button
+                key={id}
+                className="cell-drawer__industry"
+                style={{ borderColor: meta.color }}
+                onClick={() => {
+                  setIndustry(id);
+                  setName(`${def.name} #${x}-${y}`);
+                }}
+              >
+                <span className="cc-avatar" style={{ background: meta.color }}>
+                  {meta.letter}
+                </span>
+                <span>{def.name}</span>
+                <span className="cell-drawer__industry-cost">{def.foundingCost}g</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="trade-row" style={{ flexWrap: "wrap" }}>
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1, minWidth: 160 }} />
+          <label className="suggestion" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            Seed money
+            <input
+              type="number"
+              min={0}
+              step={10}
+              value={seedMoney}
+              onChange={(e) => setSeedMoney(Math.max(0, Number(e.target.value) || 0))}
+              style={{ width: 90 }}
+            />
+          </label>
+          <button className="btn" onClick={() => setIndustry(null)}>
+            ← Back
+          </button>
+          <button className="btn btn--accent" disabled={found.isPending || name.trim().length < 2} onClick={() => found.mutate()}>
+            Found
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Founding Grid — managing. A persistent panel next to the map (not a
+// drawer) reusing the same tabbed detail view Companies.tsx's Command
+// Center already uses, via the extracted CompanyDetailTabs components — a
+// second entry point onto the exact same management UI, not a
+// reimplementation of it.
+function PlacedCompanyDetail({ companyId, onClose }: { companyId: string; onClose: () => void }) {
+  const navigate = useNavigate();
+  const { data: mine } = useMyCompanies();
+  const { data: myContracts } = useMyContracts();
+  const [activeTab, setActiveTab] = useState<"overview" | "workforce" | "contracts">("overview");
+
+  const company = (mine?.companies ?? []).find((c) => c.id === companyId);
+  if (!company) return null;
+
+  const jumpToCompanies = (id: string) => navigate("/companies", { state: { jumpToCompanyId: id } });
+
+  const tabs: { key: "overview" | "workforce" | "contracts"; label: string }[] = [
+    { key: "overview", label: "Overview" },
+    ...(company.controlledByMe ? [{ key: "workforce" as const, label: "Workforce" }] : []),
+    { key: "contracts", label: "Contracts" },
+  ];
+
+  return (
+    <div className="founding-grid-shell__detail cc-detail">
+      <div className="cc-detail__header">
+        <div className="cc-detail__title-row">
+          <CompanyAvatar industry={company.industry as CompanyIndustryId} size="lg" />
+          <div>
+            <div className="cc-detail__name">{company.name}</div>
+            <div className="cc-detail__meta">
+              {COMPANY_INDUSTRIES[company.industry as CompanyIndustryId].name} · Level {company.level}
+            </div>
+          </div>
+        </div>
+        <div className="trade-row">
+          <span className={`cc-badge cc-badge--${company.controlledByMe ? "mine" : "other"}`}>
+            {company.controlledByMe ? "Yours" : company.controllerLabel}
+          </span>
+          <button className="btn" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </div>
+      </div>
+      <div className="cc-tabs">
+        {tabs.map((t) => (
+          <button key={t.key} className={`cc-tab${activeTab === t.key ? " cc-tab--active" : ""}`} onClick={() => setActiveTab(t.key)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {activeTab === "overview" &&
+        (company.controlledByMe ? (
+          <OverviewTab company={company} contracts={myContracts?.contracts ?? []} onGoToWorkforce={() => setActiveTab("workforce")} />
+        ) : (
+          <LostControlOverview company={company} />
+        ))}
+      {activeTab === "workforce" && company.controlledByMe && <WorkforceTab company={company} />}
+      {activeTab === "contracts" && (
+        <ContractsTab companyId={company.id} isMine onSelectCompany={jumpToCompanies} onProposeTo={jumpToCompanies} />
+      )}
+    </div>
+  );
+}
+
 export default function MyTerritoryPage() {
   const { data: detail, isLoading, isError } = useMyTerritoryDetail();
   const { data: mine } = useMyTerritories();
   const { data: worldMap } = useWorldMap();
+  const { data: myCompanies } = useMyCompanies();
   const [selection, setSelection] = useState<Selection | null>(null);
   const [zoneToolActive, setZoneToolActive] = useState(false);
+  // Founding Grid — mutually exclusive with each other and with the zone
+  // tool: starting one clears the others, matching the approved flow
+  // (founding via the drawer, managing via the split panel, never both at
+  // once).
+  const [foundingCell, setFoundingCell] = useState<{ zoneId: string; zoneType: ZoneTypeId; x: number; y: number } | null>(null);
+  const [managingCompanyId, setManagingCompanyId] = useState<string | null>(null);
   const canvasHandleRef = useRef<TerritoryCanvasHandle>(null);
 
   const geometry = useMemo<Geometry | null>(() => {
@@ -531,6 +786,20 @@ export default function MyTerritoryPage() {
   const mySeedIndexes = useMemo(() => new Set((mine?.territories ?? []).map((t) => t.seedIndex)), [mine]);
   const zones = worldMap?.myZones ?? [];
   const totalArea = (mine?.territories ?? []).reduce((sum, t) => sum + t.areaKm2, 0);
+  const placedCompanies = useMemo(
+    () =>
+      (myCompanies?.companies ?? [])
+        .filter((c): c is MyCompany & { zoneId: string; cellX: number; cellY: number } => c.zoneId !== null && c.cellX !== null && c.cellY !== null)
+        .map((c) => ({ id: c.id, zoneId: c.zoneId, cellX: c.cellX, cellY: c.cellY, industry: c.industry as CompanyIndustryId, name: c.name })),
+    [myCompanies],
+  );
+
+  const startZoneTool = () => {
+    setZoneToolActive((v) => !v);
+    setFoundingCell(null);
+    setManagingCompanyId(null);
+    setSelection(null);
+  };
 
   if (isLoading || !geometry) {
     return (
@@ -570,7 +839,7 @@ export default function MyTerritoryPage() {
             </button>
             <button
               className={zoneToolActive ? "btn btn--accent" : "btn"}
-              onClick={() => setZoneToolActive((v) => !v)}
+              onClick={startZoneTool}
               title="Drag inside the highlighted grid to select a zone"
             >
               Zone Tool
@@ -580,19 +849,46 @@ export default function MyTerritoryPage() {
         <p className="suggestion" style={{ marginTop: 0 }}>
           {mine?.territories.length ?? 0} territor{(mine?.territories.length ?? 0) === 1 ? "y" : "ies"} ·{" "}
           {Math.round(totalArea).toLocaleString()} km² total — rendered at native resolution, much higher detail than
-          the Continent overview. Toggle Zone Tool, then drag inside the highlighted grid to select and commission a
-          zone.
+          the Continent overview. Toggle Zone Tool to draw a new one, or click an empty square in a completed zone to
+          found a company there — click a founded square to manage it.
         </p>
-        <TerritoryCanvas
-          ref={canvasHandleRef}
-          geometry={geometry}
-          mySeedIndexes={mySeedIndexes}
-          zones={zones}
-          zoneToolActive={zoneToolActive}
-          selection={selection}
-          onSelectionChange={setSelection}
-          onSelectionDone={setSelection}
-        />
+        <div className="founding-grid-shell">
+          <div className="founding-grid-shell__map">
+            <TerritoryCanvas
+              ref={canvasHandleRef}
+              geometry={geometry}
+              mySeedIndexes={mySeedIndexes}
+              zones={zones}
+              placedCompanies={placedCompanies}
+              zoneToolActive={zoneToolActive}
+              selection={selection}
+              onSelectionChange={setSelection}
+              onSelectionDone={setSelection}
+              onCellClick={(result) => {
+                if (result.mode === "found") {
+                  setFoundingCell({ zoneId: result.zoneId, zoneType: result.zoneType, x: result.x, y: result.y });
+                  setManagingCompanyId(null);
+                } else {
+                  setManagingCompanyId(result.companyId);
+                  setFoundingCell(null);
+                }
+              }}
+            />
+            {foundingCell && (
+              <CellFoundingDrawer
+                zoneId={foundingCell.zoneId}
+                zoneType={foundingCell.zoneType}
+                x={foundingCell.x}
+                y={foundingCell.y}
+                onClose={() => setFoundingCell(null)}
+                onFounded={() => setFoundingCell(null)}
+              />
+            )}
+          </div>
+          {managingCompanyId && (
+            <PlacedCompanyDetail companyId={managingCompanyId} onClose={() => setManagingCompanyId(null)} />
+          )}
+        </div>
       </div>
 
       {selection && <CommissionPanel selection={selection} onClear={() => setSelection(null)} />}

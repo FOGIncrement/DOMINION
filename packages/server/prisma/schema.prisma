@@ -148,6 +148,8 @@ model SettlementZone {
   zoneWidth    Int?
   zoneHeight   Int?
 
+  companies    Company[]
+
   @@index([settlementId])
 }
 
@@ -257,6 +259,26 @@ model Company {
   // getSeedByIndex wherever this matters, so it can never drift out of sync.
   territorySeedIndex Int?
 
+  // Founding Grid: the specific zoning-grid cell (see PLOT_ZONING_SIZE) this
+  // company occupies within one of its founder's own completed
+  // SettlementZones — set by routes/companies.ts's POST /at-cell (map-driven
+  // founding) or auto-assigned by the ordinary POST / once the zone
+  // category's baseline free-slot allowance is exhausted (see
+  // findFreeCellInZoneCategory in routes/infrastructure.ts). Null for
+  // companies founded before this feature, companies still covered by their
+  // category's baseline free slots, and always for land-gated companies
+  // (which use territorySeedIndex instead — the two are mutually exclusive
+  // by construction). No DB-level uniqueness on (zoneId, cellX, cellY):
+  // occupancy is an app-level check (closedAt: null + matching cell), same
+  // treatment as zone-rectangle overlap and the one-land-company-per-
+  // industry-per-territory rule elsewhere in this schema — a real
+  // constraint would also permanently block re-founding on a closed
+  // company's old cell.
+  zoneId          String?
+  zone            SettlementZone? @relation(fields: [zoneId], references: [id])
+  cellX           Int?
+  cellY           Int?
+
   resourceStocks    CompanyResourceStock[]
   trades            MarketTrade[]
   shareholdings     Shareholding[]
@@ -267,6 +289,7 @@ model Company {
   contractsAsBuyer  Contract[] @relation("ContractBuyer")
 
   @@index([ownerId])
+  @@index([zoneId])
 }
 
 // One row per resource a company holds stock of — replaces the old single

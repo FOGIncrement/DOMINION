@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import {
   COMPANY_INDUSTRY_IDS,
+  ZONE_BASELINE_FREE_SLOTS,
   ZONE_TYPES,
   computeCompanyFacilityCost,
   computeCompanyHourlyRates,
@@ -18,7 +19,7 @@ import { getConfig } from "../gameConfigStore.js";
 import { applyTradeImpact } from "../simulation/market.js";
 import { getControllerLabel, getControllingPlayerId } from "../simulation/control.js";
 import { buildCorporateBondClosureOps } from "../simulation/corporateBonds.js";
-import { computeZoneCategoryUsage } from "./infrastructure.js";
+import { computeZoneCategoryUsage, countLegacyFoundings, findFreeCellInZoneCategory } from "./infrastructure.js";
 
 export const companiesRouter = Router();
 
@@ -86,6 +87,9 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
         name: c.name,
         industry: c.industry,
         territorySeedIndex: c.territorySeedIndex,
+        zoneId: c.zoneId,
+        cellX: c.cellX,
+        cellY: c.cellY,
         cash: c.cash,
         stocks: stocksByCompany.get(c.id) ?? {},
         workersAssigned: c.workersAssigned,
@@ -167,6 +171,28 @@ companiesRouter.post("/", async (req: AuthedRequest, res) => {
     return;
   }
 
+  // Founding Grid: this route doesn't let the player choose a cell (see
+  // POST /at-cell for that) — it stays position-less while the player's
+  // free ZONE_BASELINE_FREE_SLOTS allowance covers it, exactly like before
+  // this feature existed. Once that's exhausted, it still works — it just
+  // auto-places the company on the first free cell in one of the player's
+  // own completed zones of the right type, rather than newly requiring a
+  // trip to the map. The capacity check above already guarantees a free
+  // cell exists whenever legacyUsed has run out, so a null placement here
+  // would mean that invariant broke (e.g. a race) — treated the same as
+  // ordinary capacity exhaustion rather than a distinct error.
+  let placement: { zoneId: string; cellX: number; cellY: number } | null = null;
+  const legacyUsed = await countLegacyFoundings(req.playerId!, zoneType);
+  if (legacyUsed >= ZONE_BASELINE_FREE_SLOTS[zoneType]) {
+    placement = await findFreeCellInZoneCategory(req.playerId!, settlement.id, zoneType);
+    if (!placement) {
+      res.status(400).json({
+        error: `Not enough ${zoneDef.name} capacity (${usedInCategory}/${capacity} used) — commission a ${zoneDef.name} from your government to found more.`,
+      });
+      return;
+    }
+  }
+
   const totalCost = industry.foundingCost + parsed.data.seedMoney;
   if (settlement.gold < totalCost) {
     res.status(400).json({ error: `Need ${totalCost} gold to found a ${industry.name} with that much seed money` });
@@ -184,11 +210,99 @@ companiesRouter.post("/", async (req: AuthedRequest, res) => {
         name: parsed.data.name,
         industry: parsed.data.industry,
         cash: totalCost,
+        ...(placement ? { zoneId: placement.zoneId, cellX: placement.cellX, cellY: placement.cellY } : {}),
       },
     }),
   ]);
 
   res.status(201).json({ ok: true, companyId: company.id });
+});
+
+const foundAtCellSchema = z.object({
+  name: z.string().min(2).max(60),
+  industry: z.enum(COMPANY_INDUSTRY_IDS),
+  seedMoney: z.number().min(0).max(1_000_000).default(0),
+  zoneId: z.string().min(1),
+  cellX: z.number().int().min(0),
+  cellY: z.number().int().min(0),
+});
+
+// Founding Grid — the map-driven founding path (packages/client/src/pages/
+// Map.tsx's inline drawer): the player picks the exact cell, rather than
+// this route or the zone-capacity pool picking one for them. Deliberately
+// does NOT call computeZoneCategoryUsage — confirming this one specific
+// cell is free, inside a zone the player owns, of the right type, *is* the
+// capacity check now (see computeZoneCategoryUsage's own comment).
+companiesRouter.post("/at-cell", async (req: AuthedRequest, res) => {
+  const parsed = foundAtCellSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    return;
+  }
+  const { name, industry: industryId, seedMoney, zoneId, cellX, cellY } = parsed.data;
+
+  const settlement = await prisma.settlement.findUnique({ where: { playerId: req.playerId! } });
+  if (!settlement) {
+    res.status(404).json({ error: "No settlement found for this player" });
+    return;
+  }
+
+  const zone = await prisma.settlementZone.findUnique({ where: { id: zoneId } });
+  if (!zone) {
+    res.status(404).json({ error: "No such zone" });
+    return;
+  }
+  if (zone.settlementId !== settlement.id) {
+    res.status(403).json({ error: "You don't control this zone" });
+    return;
+  }
+  if (zone.zoneX === null || zone.zoneY === null || zone.zoneWidth === null || zone.zoneHeight === null) {
+    res.status(400).json({ error: "This zone has no placement" });
+    return;
+  }
+
+  const industry = getConfig().COMPANY_INDUSTRIES[industryId];
+  if (industry.requiresTerritory) {
+    res.status(400).json({ error: `${industry.name} must be founded on a territory you own, not through zoning` });
+    return;
+  }
+
+  const zoneDef = ZONE_TYPES[zone.type as keyof typeof ZONE_TYPES];
+  if (!zoneDef.industries.includes(industryId)) {
+    res.status(400).json({ error: `${industry.name} can't be founded in a ${zoneDef.name}` });
+    return;
+  }
+
+  if (
+    cellX < zone.zoneX ||
+    cellX >= zone.zoneX + zone.zoneWidth ||
+    cellY < zone.zoneY ||
+    cellY >= zone.zoneY + zone.zoneHeight
+  ) {
+    res.status(400).json({ error: "That cell is outside this zone" });
+    return;
+  }
+
+  const occupant = await prisma.company.findFirst({ where: { zoneId, cellX, cellY, closedAt: null } });
+  if (occupant) {
+    res.status(400).json({ error: `That square is already occupied by ${occupant.name}` });
+    return;
+  }
+
+  const totalCost = industry.foundingCost + seedMoney;
+  if (settlement.gold < totalCost) {
+    res.status(400).json({ error: `Need ${totalCost} gold to found a ${industry.name} with that much seed money` });
+    return;
+  }
+
+  const [, company] = await prisma.$transaction([
+    prisma.settlement.update({ where: { id: settlement.id }, data: { gold: settlement.gold - totalCost } }),
+    prisma.company.create({
+      data: { ownerId: req.playerId!, name, industry: industryId, cash: totalCost, zoneId, cellX, cellY },
+    }),
+  ]);
+
+  res.status(201).json({ ok: true, companyId: company.id, zoneId, cellX, cellY });
 });
 
 /**
@@ -324,26 +438,14 @@ companiesRouter.post("/:id/expand", async (req: AuthedRequest, res) => {
     return;
   }
 
-  // Zone capacity is attributed to wherever the company was founded
-  // (ownerId's settlement), not whoever currently controls it — same
-  // reasoning as computeZoneCategoryUsage grouping by ownerId. A company
-  // with no owner (NPC-founded, possibly stock-acquired since) has no
-  // settlement/zoning to check against at all, same bypass NPC founding has.
-  if (company.ownerId) {
-    const settlement = await prisma.settlement.findUnique({ where: { playerId: company.ownerId } });
-    if (settlement) {
-      const zoneType = zoneCategoryForIndustry(industry.id);
-      const zoneDef = ZONE_TYPES[zoneType];
-      const { used, available } = await computeZoneCategoryUsage(company.ownerId, settlement.id, zoneType);
-      if (used >= available) {
-        res.status(400).json({
-          error: `Not enough ${zoneDef.name} capacity (${used}/${available} used) — commission a ${zoneDef.name} from your government to expand further.`,
-        });
-        return;
-      }
-    }
-  }
-
+  // No zone-capacity gate here (removed with the Founding Grid feature) — a
+  // facility expansion is "more sites running the same practices," an
+  // economic-scaling lever (see COMPANY_FACILITY_TUNING), not a claim on
+  // more physical zoning footprint. Zone capacity is now spent by occupying
+  // a cell at founding time (see computeZoneCategoryUsage's comment); this
+  // company already did that once and doesn't need to do it again to grow.
+  // computeCompanyFacilityCost's escalating gold cost below is the only
+  // brake on facility growth from here.
   if (company.cash < cost) {
     res.status(400).json({ error: `Need ${cost.toFixed(0)} gold in company cash to expand` });
     return;
