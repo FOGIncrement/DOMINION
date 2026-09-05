@@ -17,6 +17,12 @@ import { getConfig } from "../gameConfigStore.js";
 import { accrueDepositInterest, accrueLoanInterest, isLoanDefaulted, maybeBorrow, maybeRepayLoan } from "./banks.js";
 import { tickCompany } from "./companies.js";
 import { autoCloseCompany, shouldAutoClose, shouldForceLayoff } from "./companyFailure.js";
+import {
+  buildOwnerTerritoryCentroids,
+  computeDistanceKm,
+  computeTransitHours,
+  resolveCompanyPosition,
+} from "./companyPosition.js";
 import { settleContract } from "./contracts.js";
 import { getControllingPlayerId } from "./control.js";
 import { computeConsumption } from "./consumption.js";
@@ -33,6 +39,7 @@ import {
   type MutableCompanyState,
 } from "./npcCompanyEconomy.js";
 import { runNpcInvestorTick, type PublicCompanyForInvesting } from "./npcInvestors.js";
+import { deliverMaturedShipments } from "./shipments.js";
 import { driftSharePrice, maybeDividend } from "./stocks.js";
 import type { CompanySnapshot, SettlementSnapshot } from "./types.js";
 
@@ -103,7 +110,23 @@ async function loadCompanySnapshots(): Promise<CompanySnapshot[]> {
  * economies interact through the same market prices, closed out by a single
  * tickMarket call at the end.
  */
-export async function runTick(): Promise<{ settlementsProcessed: number; companiesProcessed: number }> {
+export async function runTick(): Promise<{
+  settlementsProcessed: number;
+  companiesProcessed: number;
+  shipmentsDelivered: number;
+}> {
+  // Hoisted to the very top, ahead of every read below (was previously
+  // computed further down, right before the settlement loop) — delivering
+  // matured shipments has to happen before loadCompanySnapshots() takes its
+  // in-memory stock snapshot, or a shipment maturing this tick would credit
+  // the DB after that snapshot was already taken: invisible to this tick's
+  // production pass, an extra ~1 minute of lag stacked on top of the
+  // transit time already computed for exactly this purpose. Every other
+  // step in this function already follows "read fresh state, then compute
+  // this tick's deltas" — this just makes shipment delivery the first read.
+  const now = new Date();
+  const { delivered: shipmentsDelivered } = await deliverMaturedShipments(now);
+
   await ensureMarketSeeded();
   const snapshots = await loadSnapshots();
   const companies = await loadCompanySnapshots();
@@ -165,8 +188,6 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
   const flows = Object.fromEntries(
     TRADEABLE_RESOURCES.map((r) => [r, { supply: 0, demand: 0 }]),
   ) as Record<TradeableResource, { supply: number; demand: number }>;
-
-  const now = new Date();
 
   // How much real time this call represents for the shared market/stock
   // pricing — normally ~1 minute (the scheduler's cadence), but can be much
@@ -514,6 +535,17 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     include: { seller: true, buyer: true },
   });
 
+  // Shipments: batched once per tick, not per contract — every distinct
+  // owner whose zoning-gated seller/buyer is party to a contract this tick,
+  // so resolveCompanyPosition below never re-queries a territory centroid
+  // it's already looked up (see companyPosition.ts).
+  const zoningOwnerIds = new Set<string>();
+  for (const c of activeContracts) {
+    if (c.seller.zoneId && c.seller.ownerId) zoningOwnerIds.add(c.seller.ownerId);
+    if (c.buyer.zoneId && c.buyer.ownerId) zoningOwnerIds.add(c.buyer.ownerId);
+  }
+  const ownerTerritoryCentroids = await buildOwnerTerritoryCentroids([...zoningOwnerIds]);
+
   // Every seller's current stock of exactly the resource its contract(s)
   // trade — a contract only ever concerns one resourceType, so this is a
   // single lookup per (company, resource) pair, not the whole stock table.
@@ -567,6 +599,20 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     cashLedger.set(contract.buyerCompanyId, buyerCash - grossCost);
     cashLedger.set(contract.sellerCompanyId, ledgerCash(contract.sellerCompanyId, contract.seller.cash) + netProceeds);
 
+    // Shipments: if either side's position can't be resolved (an NPC
+    // company, or any company somehow founded without one), this takes the
+    // literal same code path as before this feature existed — a direct,
+    // same-transaction buyer-stock credit. That's a deliberate safety
+    // guarantee for the existing NPC economy, not just a shortcut: it's the
+    // only way to make "unresolvable position behaves exactly like today"
+    // literally true, with no dependency on the delivery sweep, no lag,
+    // byte-for-byte the same DB effect as before. A contract where both
+    // sides DO resolve a position (even the same one, distanceKm 0) goes
+    // through a real Shipment instead, delivered on the very next sweep.
+    const sellerPos = resolveCompanyPosition(contract.seller, ownerTerritoryCentroids, config.LOGISTICS_TUNING.kmPerZoneCell);
+    const buyerPos = resolveCompanyPosition(contract.buyer, ownerTerritoryCentroids, config.LOGISTICS_TUNING.kmPerZoneCell);
+    const distanceKm = sellerPos && buyerPos ? computeDistanceKm(sellerPos, buyerPos) : null;
+
     await prisma.$transaction([
       prisma.companyResourceStock.upsert({
         where: { companyId_resourceType: { companyId: contract.sellerCompanyId, resourceType: contract.resourceType } },
@@ -577,11 +623,34 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
         where: { id: contract.sellerCompanyId },
         data: { cash: { increment: netProceeds }, totalRevenue: { increment: netProceeds } },
       }),
-      prisma.companyResourceStock.upsert({
-        where: { companyId_resourceType: { companyId: contract.buyerCompanyId, resourceType: contract.resourceType } },
-        create: { companyId: contract.buyerCompanyId, resourceType: contract.resourceType, amount: transferred },
-        update: { amount: { increment: transferred } },
-      }),
+      distanceKm === null
+        ? prisma.companyResourceStock.upsert({
+            where: { companyId_resourceType: { companyId: contract.buyerCompanyId, resourceType: contract.resourceType } },
+            create: { companyId: contract.buyerCompanyId, resourceType: contract.resourceType, amount: transferred },
+            update: { amount: { increment: transferred } },
+          })
+        : prisma.shipment.create({
+            data: {
+              contractId: contract.id,
+              sellerCompanyId: contract.sellerCompanyId,
+              buyerCompanyId: contract.buyerCompanyId,
+              resourceType: contract.resourceType,
+              quantity: transferred,
+              originWorldX: sellerPos!.worldX,
+              originWorldY: sellerPos!.worldY,
+              destWorldX: buyerPos!.worldX,
+              destWorldY: buyerPos!.worldY,
+              distanceKm,
+              dispatchedAt: now,
+              dueAt: new Date(
+                now.getTime() +
+                  computeTransitHours(distanceKm, config.LOGISTICS_TUNING.transitSpeedKmPerHour, config.LOGISTICS_TUNING.maxTransitHours) *
+                    60 *
+                    60 *
+                    1000,
+              ),
+            },
+          }),
       prisma.company.update({
         where: { id: contract.buyerCompanyId },
         data: { cash: { decrement: grossCost } },
@@ -634,5 +703,5 @@ export async function runTick(): Promise<{ settlementsProcessed: number; compani
     create: { id: 1, lastTickAt: now },
   });
 
-  return { settlementsProcessed: snapshots.length, companiesProcessed: companies.length };
+  return { settlementsProcessed: snapshots.length, companiesProcessed: companies.length, shipmentsDelivered };
 }

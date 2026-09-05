@@ -337,6 +337,11 @@ export interface MyCompany {
   // One entry per resource this company currently holds any stock of
   // (every recipe input it's stockpiled, every output not yet sold).
   stocks: Partial<Record<MarketResourceType, number>>;
+  // Sum of quantity across this company's still-undelivered incoming
+  // Shipment rows, grouped by resourceType — goods a supply contract
+  // already dispatched but that haven't physically arrived yet (real
+  // in-transit shipments; see GET /companies/mine).
+  incomingShipments: Partial<Record<MarketResourceType, number>>;
   workersAssigned: number;
   autoStaff: boolean;
   maxWorkers: number;

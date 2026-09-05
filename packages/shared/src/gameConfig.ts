@@ -393,6 +393,29 @@ export const COMPANY_FAILURE_TUNING = {
 // (same-player-controlled) companies agree to, not risk-priced by the game.
 export const CONTRACT_TERM_HOURS_OPTIONS = [24, 72, 168];
 
+// Shipment dispatch/transit tuning (real in-transit contract shipments —
+// see simulation/shipments.ts and simulation/companyPosition.ts). This is
+// deliberately an ABSTRACTED logistics speed, not a literal truck's
+// ~60km/h — this is a real-time 1:1 simulation (1 real hour = 1 sim hour),
+// so a literal truck speed would make a cross-continent shipment take
+// multiple real DAYS, which is bad game feel. At these defaults: a
+// same-settlement shipment (a few km, see kmPerZoneCell) arrives
+// effectively next-tick; a typical territory-to-territory shipment (the
+// ~100-300km spacing between this continent's ~48 territories) resolves in
+// well under an hour; even the continent's ~3,300km diagonal corner case
+// is capped at maxTransitHours rather than growing unbounded. All three
+// are easy-retune placeholders (also live-editable via /admin/config), not
+// load-bearing precision.
+export const LOGISTICS_TUNING = {
+  // Real km one PLOT_ZONING_SIZE grid cell represents for a zoning-gated
+  // company's position — a whole 10x10 zoning grid spans ~10km at this
+  // default, "your own settlement's local footprint," much smaller than
+  // inter-territory distances (hundreds to thousands of km).
+  kmPerZoneCell: 1,
+  transitSpeedKmPerHour: 500,
+  maxTransitHours: 6,
+};
+
 export const NPC_COMPANY_TUNING = {
   inputBuffer: 20, // NPC companies buy input up to this stock level
   goodsSellBuffer: 15, // and sell goods stock held above this level

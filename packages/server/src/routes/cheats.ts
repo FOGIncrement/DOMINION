@@ -220,7 +220,7 @@ async function backdateAccrualTimestamps(shiftMs: number) {
 // shifting them once per chunk would over-shift by chunkCount x the
 // intended amount.
 async function shiftAbsoluteMaturityTimestamps(totalShiftMs: number) {
-  const [bonds, corporateBonds, zoneProjects, loans] = await Promise.all([
+  const [bonds, corporateBonds, zoneProjects, loans, shipments] = await Promise.all([
     prisma.bond.findMany({ where: { redeemedAt: null }, select: { id: true, maturesAt: true } }),
     prisma.corporateBond.findMany({ where: { redeemedAt: null }, select: { id: true, maturesAt: true } }),
     prisma.zoneProject.findMany({
@@ -231,6 +231,10 @@ async function shiftAbsoluteMaturityTimestamps(totalShiftMs: number) {
       where: { defaultedAt: null, maturityAt: { not: null } },
       select: { id: true, maturityAt: true },
     }),
+    // Shipment.dueAt (real in-transit contract shipments, see
+    // simulation/shipments.ts) is the same kind of absolute deadline as the
+    // four above — belongs here, not in backdateAccrualTimestamps.
+    prisma.shipment.findMany({ where: { deliveredAt: null }, select: { id: true, dueAt: true } }),
   ]);
 
   await Promise.all([
@@ -256,6 +260,12 @@ async function shiftAbsoluteMaturityTimestamps(totalShiftMs: number) {
       prisma.loan.update({
         where: { id: l.id },
         data: { maturityAt: new Date(l.maturityAt!.getTime() - totalShiftMs) },
+      }),
+    ),
+    ...shipments.map((s) =>
+      prisma.shipment.update({
+        where: { id: s.id },
+        data: { dueAt: new Date(s.dueAt.getTime() - totalShiftMs) },
       }),
     ),
   ]);

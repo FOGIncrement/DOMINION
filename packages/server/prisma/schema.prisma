@@ -287,6 +287,8 @@ model Company {
   bondsIssued       CorporateBond[]
   contractsAsSeller Contract[] @relation("ContractSeller")
   contractsAsBuyer  Contract[] @relation("ContractBuyer")
+  shipmentsAsSeller Shipment[] @relation("ShipmentSeller")
+  shipmentsAsBuyer  Shipment[] @relation("ShipmentBuyer")
 
   @@index([ownerId])
   @@index([zoneId])
@@ -359,7 +361,51 @@ model Contract {
   lastSettledAt   DateTime  @default(now())
   cancelledAt     DateTime?
 
+  shipments Shipment[]
+
   @@index([sellerCompanyId])
+  @@index([buyerCompanyId])
+}
+
+// A contract's goods physically in transit between seller and buyer,
+// created at dispatch time (Contract settlement in simulation/engine.ts)
+// instead of crediting the buyer's CompanyResourceStock immediately — see
+// simulation/shipments.ts (delivery) and simulation/companyPosition.ts
+// (distance/timing). The contract's cash and the seller's stock still move
+// in the very same dispatch transaction as before; only the buyer-side
+// goods credit is deferred here until dueAt.
+//
+// contractId is kept for traceability (a future UI could show "this
+// shipment fulfills contract X") — delivery never reads back to
+// Contract.cancelledAt, which is exactly why a contract cancelled after
+// dispatch still delivers its already-created shipment on schedule.
+//
+// origin/dest WorldX/Y are resolved-position SNAPSHOTS in km (see
+// continentTerrain.ts's CELL_SIZE_KM) taken at dispatch time, not live
+// references — a company's position is effectively permanent after
+// founding, and snapshotting means a future truck-visualization feature
+// never needs to re-resolve position or handle a since-closed company's
+// position disappearing.
+model Shipment {
+  id              String    @id @default(cuid())
+  contractId      String
+  contract        Contract  @relation(fields: [contractId], references: [id])
+  sellerCompanyId String
+  seller          Company   @relation("ShipmentSeller", fields: [sellerCompanyId], references: [id])
+  buyerCompanyId  String
+  buyer           Company   @relation("ShipmentBuyer", fields: [buyerCompanyId], references: [id])
+  resourceType    String
+  quantity        Float
+  originWorldX    Float
+  originWorldY    Float
+  destWorldX      Float
+  destWorldY      Float
+  distanceKm      Float
+  dispatchedAt    DateTime  @default(now())
+  dueAt           DateTime
+  deliveredAt     DateTime?
+
+  @@index([deliveredAt, dueAt])
   @@index([buyerCompanyId])
 }
 

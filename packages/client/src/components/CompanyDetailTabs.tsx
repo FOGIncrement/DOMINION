@@ -344,6 +344,19 @@ export function OverviewTab({ company, contracts, onGoToWorkforce }: { company: 
             <div className="cc-stat-tile__value">{Math.floor(amount)}</div>
           </div>
         ))}
+        {(Object.entries(company.incomingShipments) as [MarketResourceType, number][])
+          .filter(([, qty]) => qty > 0)
+          .map(([resource, qty]) => (
+            <div className="cc-stat-tile" key={`incoming-${resource}`}>
+              <div className="cc-stat-tile__label">{OUTPUT_LABELS[resource]} incoming</div>
+              {/* Math.floor would show "0" for a fresh shipment that's only
+                  accrued a small fraction so far, reading as "nothing is
+                  actually in transit" — the opposite of the point of
+                  surfacing this at all (see the "ships visible, not
+                  silent" note on Shipment). */}
+              <div className="cc-stat-tile__value">{qty < 1 ? "<1" : Math.floor(qty)}</div>
+            </div>
+          ))}
         <div className="cc-stat-tile">
           <div className="cc-stat-tile__label">Lifetime profit</div>
           <div className="cc-stat-tile__value" style={{ color: netProfit >= 0 ? "var(--success)" : "var(--critical)" }}>

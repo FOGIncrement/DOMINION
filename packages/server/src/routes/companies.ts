@@ -77,6 +77,21 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
     stocksByCompany.set(row.companyId, bucket);
   }
 
+  // Goods dispatched but not yet arrived (see simulation/shipments.ts) —
+  // summed per resource so a player can see why a contract that "should
+  // have" delivered by now hasn't landed in `stocks` yet.
+  const pendingShipmentRows = await prisma.shipment.findMany({
+    where: { buyerCompanyId: { in: companies.map((c) => c.id) }, deliveredAt: null },
+    select: { buyerCompanyId: true, resourceType: true, quantity: true },
+  });
+  const incomingByCompany = new Map<string, Partial<Record<MarketResourceType, number>>>();
+  for (const row of pendingShipmentRows) {
+    const bucket = incomingByCompany.get(row.buyerCompanyId) ?? {};
+    const resource = row.resourceType as MarketResourceType;
+    bucket[resource] = (bucket[resource] ?? 0) + row.quantity;
+    incomingByCompany.set(row.buyerCompanyId, bucket);
+  }
+
   const withControl = await Promise.all(
     companies.map(async (c) => {
       const industry = config.COMPANY_INDUSTRIES[c.industry as CompanyIndustryId];
@@ -92,6 +107,7 @@ companiesRouter.get("/mine", async (req: AuthedRequest, res) => {
         cellY: c.cellY,
         cash: c.cash,
         stocks: stocksByCompany.get(c.id) ?? {},
+        incomingShipments: incomingByCompany.get(c.id) ?? {},
         workersAssigned: c.workersAssigned,
         autoStaff: c.autoStaff,
         maxWorkers: computeCompanyMaxWorkers(industry, c.level, config.COMPANY_UPGRADE_TUNING, c.facilityCount),

@@ -22,6 +22,7 @@ import {
   DIVIDEND_TUNING,
   EVENT_TUNING,
   HOUSING_TUNING,
+  LOGISTICS_TUNING,
   LUXURY_GOODS_TUNING,
   MARKET_TUNING,
   MILITARY_TUNING,
@@ -72,6 +73,7 @@ const FLAT_GROUPS = {
   BASE_PRICES,
   TERRITORY_TUNING,
   MILITARY_TUNING,
+  LOGISTICS_TUNING,
 };
 
 type FlatGroupName = keyof typeof FLAT_GROUPS;
@@ -106,6 +108,7 @@ const FLAT_GROUP_DESCRIPTIONS: Record<FlatGroupName, string> = {
   BASE_PRICES: "Starting price for every tradeable resource before supply/demand moves it.",
   TERRITORY_TUNING: "Territory sizing, dormant/abandoned timing, the one-time starter grant, and the price to buy unclaimed land.",
   MILITARY_TUNING: "Army strength, attack cooldown, and combat odds for conquering territory by force.",
+  LOGISTICS_TUNING: "How far a zoning-grid cell is in real km, and how fast a contract's shipped goods travel between two positioned companies (capped so even the longest shipment has a bounded transit time).",
 };
 
 // COMPANY_INDUSTRIES mixes tunable rate fields with structural/identity
